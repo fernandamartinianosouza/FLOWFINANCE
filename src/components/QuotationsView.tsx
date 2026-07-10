@@ -47,6 +47,24 @@ const numeroSeguro = (valor: unknown) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const normalizarTexto = (valor: unknown) =>
+  String(valor ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+const obterIdProcesso = (processo: any) =>
+  String(processo?.id ?? processo?.dbId ?? '');
+
+const obterDescricaoProcesso = (processo: any) =>
+  String(
+    processo?.descricao ??
+      processo?.titulo ??
+      processo?.nome ??
+      'Processo sem descrição'
+  );
+
 export const QuotationsView: React.FC = () => {
   const {
     processos,
@@ -99,11 +117,29 @@ export const QuotationsView: React.FC = () => {
   );
 
   const processosDisponiveis = useMemo(() => {
-    return processos.filter(
-      processo =>
-        processo.status === 'solicitacao' ||
-        processo.status === 'cotacao'
-    );
+    const statusBloqueados = new Set([
+      'finalizado',
+      'finalizada',
+      'cancelado',
+      'cancelada',
+      'reprovado',
+      'reprovada',
+    ]);
+
+    return processos
+      .filter(processo => {
+        const id = obterIdProcesso(processo);
+        const status = normalizarTexto(processo.status);
+
+        return Boolean(id) && !statusBloqueados.has(status);
+      })
+      .sort((a, b) =>
+        obterIdProcesso(a).localeCompare(
+          obterIdProcesso(b),
+          'pt-BR',
+          { numeric: true }
+        )
+      );
   }, [processos]);
 
   const carregarCotacoes = async () => {
@@ -196,19 +232,29 @@ export const QuotationsView: React.FC = () => {
   const selecionarProcesso = (id: string) => {
     setProcessoId(id);
 
-    const processo = processos.find(item => item.id === id);
+    const processo = processos.find(
+      item =>
+        String(item.id) === id ||
+        String(item.dbId ?? '') === id
+    );
 
-    if (!processo) return;
+    if (!processo) {
+      setTitulo('');
+      return;
+    }
+
+    const codigoProcesso = obterIdProcesso(processo);
+    const descricaoProcesso =
+      obterDescricaoProcesso(processo);
 
     setTitulo(
-      titulo ||
-        `Cotação ${processo.id} — ${processo.descricao}`
+      `Cotação ${codigoProcesso} — ${descricaoProcesso}`
     );
 
     setItensFormulario([
       {
         idLocal: criarIdLocal(),
-        descricao: processo.descricao,
+        descricao: descricaoProcesso,
         quantidade: '1',
         unidade: 'UN',
         especificacao: '',
@@ -259,7 +305,11 @@ export const QuotationsView: React.FC = () => {
   const salvarNovaCotacao = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const processo = processos.find(item => item.id === processoId);
+    const processo = processos.find(
+      item =>
+        String(item.id) === processoId ||
+        String(item.dbId ?? '') === processoId
+    );
 
     if (!processo) {
       alert('Selecione um processo válido.');
@@ -310,7 +360,13 @@ export const QuotationsView: React.FC = () => {
         itens: itensValidos,
       });
 
-      if (processo.status === 'solicitacao') {
+      const statusAtual = normalizarTexto(processo.status);
+
+      if (
+        statusAtual === 'solicitacao' ||
+        statusAtual === 'solicitacao de compra' ||
+        statusAtual === 'central'
+      ) {
         await editarProcesso(processo.id, {
           status: 'cotacao',
         });
@@ -1322,12 +1378,28 @@ export const QuotationsView: React.FC = () => {
                 onChange={selecionarProcesso}
                 options={processosDisponiveis.map(
                   processo => ({
-                    value: processo.id,
-                    label: `${processo.id} — ${processo.descricao}`,
+                    value: obterIdProcesso(processo),
+                    label: `${obterIdProcesso(
+                      processo
+                    )} — ${obterDescricaoProcesso(
+                      processo
+                    )}`,
                   })
                 )}
                 placeholder="Selecione o processo"
               />
+
+              {processosDisponiveis.length === 0 && (
+                <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-xs font-semibold text-amber-700">
+                    Nenhum processo disponível para cotação.
+                  </p>
+                  <p className="mt-1 text-[10px] text-amber-600">
+                    Cadastre uma solicitação de compra ou verifique
+                    se os processos foram carregados no FinanceContext.
+                  </p>
+                </div>
+              )}
 
               <CampoInput
                 label="Título da cotação"
@@ -1441,8 +1513,11 @@ export const QuotationsView: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={salvandoCotacao}
-                className="w-full py-3 rounded-[12px] bg-[#0F172A] text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-60"
+                disabled={
+                  salvandoCotacao ||
+                  processosDisponiveis.length === 0
+                }
+                className="w-full py-3 rounded-[12px] bg-[#0F172A] text-white font-bold text-xs flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save className="w-4 h-4" />
                 {salvandoCotacao

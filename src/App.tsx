@@ -18,6 +18,8 @@ import { AuthView } from './views/AuthView';
 import { PaymentScheduleView } from './components/PaymentScheduleView';
 import { podeAcessar } from './config/permissions';
 import { UsersAdminView } from './components/UsersAdminView';
+import { QuotationsView } from './components/QuotationsView';
+
 
 // Subcomponente interno para consumir o context useFinance
 const AppContent: React.FC = () => {
@@ -38,6 +40,8 @@ const { user, loading, perfil } = useAuth();
         return <AccountsPayableView />;
       case 'conciliacao':
         return <ReconciliationView />;
+       case 'cotacoes':
+         return <QuotationsView />;
       case 'centro-financeiro':
         return <FinancialCenterView />;
       case 'calendario':
