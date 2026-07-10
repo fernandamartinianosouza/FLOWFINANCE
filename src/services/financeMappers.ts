@@ -13,6 +13,11 @@ const numero = (valor: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const textoOuNull = (valor: any) => {
+  const texto = String(valor ?? '').trim();
+  return texto ? texto : null;
+};
+
 export const mapEmpresaFromDb = (item: any): Empresa => ({
   id: item.id,
   nome: item.nome,
@@ -23,7 +28,9 @@ export const mapEmpresaFromDb = (item: any): Empresa => ({
   saldoAtual: numero(item.saldo_atual),
 });
 
-export const mapEmpresaToDb = (item: Omit<Empresa, 'id'>) => ({
+export const mapEmpresaToDb = (
+  item: Omit<Empresa, 'id'>
+) => ({
   nome: item.nome,
   cnpj: item.cnpj,
   banco: item.banco,
@@ -32,7 +39,9 @@ export const mapEmpresaToDb = (item: Omit<Empresa, 'id'>) => ({
   saldo_atual: numero(item.saldoAtual),
 });
 
-export const mapFornecedorFromDb = (item: any): Fornecedor => ({
+export const mapFornecedorFromDb = (
+  item: any
+): Fornecedor => ({
   id: item.id,
   nome: item.nome,
   cnpj: item.cnpj,
@@ -40,11 +49,16 @@ export const mapFornecedorFromDb = (item: any): Fornecedor => ({
   telefone: item.telefone,
   historicoCompras: numero(item.historico_compras),
   ultimaCompra: item.ultima_compra || '-',
-  tempoMedioPagamento: numero(item.tempo_medio_pagamento || 30),
+  tempoMedioPagamento: numero(
+    item.tempo_medio_pagamento || 30
+  ),
 });
 
 export const mapFornecedorToDb = (
-  item: Omit<Fornecedor, 'id' | 'historicoCompras' | 'tempoMedioPagamento'>
+  item: Omit<
+    Fornecedor,
+    'id' | 'historicoCompras' | 'tempoMedioPagamento'
+  >
 ) => ({
   nome: item.nome,
   cnpj: item.cnpj,
@@ -52,7 +66,9 @@ export const mapFornecedorToDb = (
   telefone: item.telefone,
 });
 
-export const mapPlanoFromDb = (item: any): PlanoFinanceiro => {
+export const mapPlanoFromDb = (
+  item: any
+): PlanoFinanceiro => {
   const tetoAnual = numero(
     item.teto_anual ??
       item.orcamento_anual ??
@@ -116,7 +132,9 @@ export const mapPlanoToDb = (item: any) => {
   };
 };
 
-export const mapCentroFromDb = (item: any): CentroCusto => {
+export const mapCentroFromDb = (
+  item: any
+): CentroCusto => {
   const tetoMensal = numero(
     item.teto_mensal ??
       item.orcamento_mensal ??
@@ -158,7 +176,9 @@ export const mapCentroToDb = (item: any) => {
   };
 };
 
-export const mapHistoricoFromDb = (item: any): HistoricoStatus => ({
+export const mapHistoricoFromDb = (
+  item: any
+): HistoricoStatus => ({
   data: item.data,
   usuario: item.usuario,
   deStatus: item.de_status,
@@ -166,70 +186,138 @@ export const mapHistoricoFromDb = (item: any): HistoricoStatus => ({
   observacao: item.observacao,
 });
 
-export const mapProcessoFromDb = (item: any): ProcessoCompra => ({
-  id: item.codigo || item.id,
-  dbId: item.id,
-  fornecedorId: item.fornecedor_id,
-  empresaId: item.empresa_id,
-  planoFinanceiroId: item.plano_financeiro_id,
-  centroCustoId: item.centro_custo_id,
-  descricao: item.descricao,
-  valor: numero(item.valor),
-  urgencia: item.urgencia,
-  responsavel: item.responsavel,
-  dataCriacao: item.data_criacao,
-  status: item.status,
-  prazo: item.prazo,
+export const mapProcessoFromDb = (
+  item: any
+): ProcessoCompra =>
+  ({
+    id: item.codigo || item.id,
+    dbId: item.id,
 
-  anexoNome: item.anexo_nome,
-  anexoUrl: item.anexo_url,
+    tipoPagamento:
+      item.tipo_pagamento || 'fornecedor',
 
-  comprovanteNome: item.comprovante_nome,
-  comprovanteUrl: item.comprovante_url,
+    fornecedorId: item.fornecedor_id || null,
+    beneficiarioInterno:
+      item.beneficiario_interno || null,
 
-  metodoPagamento: item.metodo_pagamento,
-  dataPagamento: item.data_pagamento,
+    empresaId: item.empresa_id,
+    planoFinanceiroId: item.plano_financeiro_id,
+    centroCustoId: item.centro_custo_id,
 
-  dataProgramadaPagamento: item.data_programada_pagamento,
-  statusProgramacao: item.status_programacao || 'nao_programado',
-  programadoPor: item.programado_por,
-  dataProgramacao: item.data_programacao,
+    descricao: item.descricao,
+    valor: numero(item.valor),
+    urgencia: item.urgencia,
+    responsavel: item.responsavel,
+    dataCriacao: item.data_criacao,
+    status: item.status,
+    prazo: item.prazo,
 
-  historico: Array.isArray(item.historico_processos)
-    ? item.historico_processos.map(mapHistoricoFromDb)
-    : [],
-} as any);
+    anexoNome: item.anexo_nome,
+    anexoUrl: item.anexo_url,
 
-export const mapProcessoToDb = (item: any) => ({
-  codigo: item.id,
-  fornecedor_id: item.fornecedorId,
-  empresa_id: item.empresaId,
-  plano_financeiro_id: item.planoFinanceiroId,
-  centro_custo_id: item.centroCustoId,
-  descricao: item.descricao,
-  valor: numero(item.valor),
-  urgencia: item.urgencia,
-  responsavel: item.responsavel,
-  data_criacao: item.dataCriacao,
-  status: item.status,
-  prazo: item.prazo,
+    comprovanteNome: item.comprovante_nome,
+    comprovanteUrl: item.comprovante_url,
 
-  anexo_nome: item.anexoNome,
-  anexo_url: item.anexoUrl,
+    metodoPagamento: item.metodo_pagamento,
+    dataPagamento: item.data_pagamento,
 
-  comprovante_nome: item.comprovanteNome,
-  comprovante_url: item.comprovanteUrl,
+    dataProgramadaPagamento:
+      item.data_programada_pagamento,
+    statusProgramacao:
+      item.status_programacao || 'nao_programado',
+    programadoPor: item.programado_por,
+    dataProgramacao: item.data_programacao,
 
-  metodo_pagamento: item.metodoPagamento,
-  data_pagamento: item.dataPagamento,
+    formaPagamento: item.forma_pagamento || null,
+    pixTipoChave: item.pix_tipo_chave || null,
+    pixChave: item.pix_chave || null,
+    pixFavorecido: item.pix_favorecido || null,
+    pixBanco: item.pix_banco || null,
+    pixObservacao: item.pix_observacao || null,
 
-  data_programada_pagamento: item.dataProgramadaPagamento,
-  status_programacao: item.statusProgramacao || 'nao_programado',
-  programado_por: item.programadoPor,
-  data_programacao: item.dataProgramacao,
-});
+    historico: Array.isArray(
+      item.historico_processos
+    )
+      ? item.historico_processos.map(
+          mapHistoricoFromDb
+        )
+      : [],
+  }) as any;
 
-export const mapAlertaFromDb = (item: any): AlertaSistema => ({
+export const mapProcessoToDb = (item: any) => {
+  const tipoPagamento =
+    item.tipoPagamento === 'interno'
+      ? 'interno'
+      : 'fornecedor';
+
+  const fornecedorId =
+    tipoPagamento === 'interno'
+      ? null
+      : item.fornecedorId || null;
+
+  const beneficiarioInterno =
+    tipoPagamento === 'interno'
+      ? textoOuNull(item.beneficiarioInterno)
+      : null;
+
+  const pixChave = item.pixChave
+    ? String(item.pixChave).trim().toLowerCase()
+    : null;
+
+  return {
+    codigo: item.id,
+
+    tipo_pagamento: tipoPagamento,
+    fornecedor_id: fornecedorId,
+    beneficiario_interno: beneficiarioInterno,
+
+    empresa_id: item.empresaId,
+    plano_financeiro_id: item.planoFinanceiroId,
+    centro_custo_id: item.centroCustoId,
+
+    descricao: item.descricao,
+    valor: numero(item.valor),
+    urgencia: item.urgencia,
+    responsavel: item.responsavel,
+    data_criacao: item.dataCriacao,
+    status: item.status,
+    prazo: item.prazo,
+
+    anexo_nome: item.anexoNome || null,
+    anexo_url: item.anexoUrl || null,
+
+    comprovante_nome:
+      item.comprovanteNome || null,
+    comprovante_url:
+      item.comprovanteUrl || null,
+
+    metodo_pagamento:
+      item.metodoPagamento || null,
+    data_pagamento: item.dataPagamento || null,
+
+    data_programada_pagamento:
+      item.dataProgramadaPagamento || null,
+    status_programacao:
+      item.statusProgramacao || 'nao_programado',
+    programado_por: item.programadoPor || null,
+    data_programacao: item.dataProgramacao || null,
+
+    forma_pagamento:
+      item.formaPagamento || null,
+    pix_tipo_chave:
+      item.pixTipoChave || null,
+    pix_chave: pixChave,
+    pix_favorecido:
+      textoOuNull(item.pixFavorecido),
+    pix_banco: textoOuNull(item.pixBanco),
+    pix_observacao:
+      textoOuNull(item.pixObservacao),
+  };
+};
+
+export const mapAlertaFromDb = (
+  item: any
+): AlertaSistema => ({
   id: item.id,
   tipo: item.tipo,
   titulo: item.titulo,

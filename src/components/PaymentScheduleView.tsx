@@ -4,9 +4,10 @@ import { formatarReal } from '../utils';
 import {
   CalendarDays,
   Clock,
-  CheckCircle2,
   AlertTriangle,
   Wallet,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 const hojeISO = () => new Date().toISOString().split('T')[0];
@@ -29,6 +30,7 @@ export const PaymentScheduleView: React.FC = () => {
   const hoje = hojeISO();
 
   const [dataFiltro, setDataFiltro] = useState(hoje);
+  const [pixCopiadoId, setPixCopiadoId] = useState<string | null>(null);
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'vencidas' | 'a_vencer' | 'programadas' | 'nao_programadas'>('todos');
 
   const contasPagamento = processos.filter((p: any) => p.status === 'pagamento');
@@ -116,6 +118,30 @@ export const PaymentScheduleView: React.FC = () => {
       };
     });
   }, [contasPagamento]);
+
+  const copiarPix = async (
+    processoId: string,
+    chavePix?: string | null
+  ) => {
+    const chave = chavePix?.trim().toLowerCase();
+
+    if (!chave) {
+      alert('Esta solicitação não possui chave PIX cadastrada.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(chave);
+      setPixCopiadoId(processoId);
+
+      window.setTimeout(() => {
+        setPixCopiadoId(null);
+      }, 1800);
+    } catch (error) {
+      console.error('Erro ao copiar chave PIX:', error);
+      alert('Não foi possível copiar a chave PIX.');
+    }
+  };
 
   const handleProgramar = async (processoId: string, data: string) => {
     if (!data) {
@@ -213,7 +239,7 @@ export const PaymentScheduleView: React.FC = () => {
                 <div key={p.id} className="py-3 flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-bold text-slate-800">
-                      {p.id} — {fornecedor?.nome || 'Fornecedor não encontrado'}
+                      {p.id} — {p.tipoPagamento === 'interno' ? p.beneficiarioInterno || 'Pagamento interno' : fornecedor?.nome || 'Fornecedor não encontrado'}
                     </p>
                     <p className="text-[10px] text-slate-400 mt-1">
                       Vencimento: {p.prazo}
@@ -308,6 +334,7 @@ export const PaymentScheduleView: React.FC = () => {
                   <th className="px-5 py-3 font-bold">Processo</th>
                   <th className="px-5 py-3 font-bold">Fornecedor</th>
                   <th className="px-5 py-3 font-bold">Empresa</th>
+                  <th className="px-5 py-3 font-bold">PIX</th>
                   <th className="px-5 py-3 font-bold">Valor</th>
                   <th className="px-5 py-3 font-bold">Vencimento</th>
                   <th className="px-5 py-3 font-bold">Programado Para</th>
@@ -345,11 +372,51 @@ export const PaymentScheduleView: React.FC = () => {
                       </td>
 
                       <td className="px-5 py-4 text-xs text-slate-600">
-                        {fornecedor?.nome || '-'}
+                        {p.tipoPagamento === 'interno' ? p.beneficiarioInterno || 'Pagamento interno' : fornecedor?.nome || '-'}
                       </td>
 
                       <td className="px-5 py-4 text-xs text-slate-600">
                         {empresa?.nome || '-'}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        {p.pixChave ? (
+                          <div className="flex items-center gap-2 min-w-[180px]">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[9px] uppercase font-bold text-slate-400">
+                                {p.pixTipoChave || 'Chave'}
+                              </p>
+                              <p
+                                className="text-[10px] font-mono text-slate-700 truncate max-w-[160px]"
+                                title={p.pixChave}
+                              >
+                                {p.pixChave}
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => copiarPix(p.id, p.pixChave)}
+                              title="Copiar chave PIX"
+                              aria-label="Copiar chave PIX"
+                              className={`w-8 h-8 shrink-0 rounded-[10px] flex items-center justify-center transition ${
+                                pixCopiadoId === p.id
+                                  ? 'bg-emerald-50 text-emerald-600'
+                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                              }`}
+                            >
+                              {pixCopiadoId === p.id ? (
+                                <Check className="w-4 h-4" />
+                              ) : (
+                                <Copy className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">
+                            Não informado
+                          </span>
+                        )}
                       </td>
 
                       <td className="px-5 py-4 text-xs font-bold font-mono text-[#0F172A]">

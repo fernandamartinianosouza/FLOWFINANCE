@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { useAuth } from '../context/AuthContext';
 import { Urgencia } from '../types';
-import { Send, Upload, CheckCircle } from 'lucide-react';
+import { Send, Upload, CheckCircle, CreditCard } from 'lucide-react';
 
 export const NewRequestView: React.FC = () => {
   const finance = useFinance();
@@ -31,6 +31,16 @@ const usuarioLogado =
   const [prazo, setPrazo] = useState('2026-07-20');
   const [responsavel, setResponsavel] = useState(usuarioLogado);
 
+  const [tipoPagamento, setTipoPagamento] = useState<'fornecedor' | 'interno'>('fornecedor');
+  const [beneficiarioInterno, setBeneficiarioInterno] = useState('');
+
+  const [formaPagamento, setFormaPagamento] = useState('pix');
+  const [tipoChavePix, setTipoChavePix] = useState('cnpj');
+  const [chavePix, setChavePix] = useState('');
+  const [favorecidoPix, setFavorecidoPix] = useState('');
+  const [bancoPix, setBancoPix] = useState('');
+  const [observacaoPagamento, setObservacaoPagamento] = useState('');
+
   const [isDragging, setIsDragging] = useState(false);
   const [anexoNome, setAnexoNome] = useState<string | null>(null);
   const [arquivoAnexo, setArquivoAnexo] = useState<File | null>(null);
@@ -43,8 +53,15 @@ const usuarioLogado =
   }, [empresas, empresaId]);
 
   useEffect(() => {
-    if (!fornecedorId && fornecedores.length > 0) setFornecedorId(fornecedores[0].id);
-  }, [fornecedores, fornecedorId]);
+    if (tipoPagamento === 'fornecedor') {
+      if (!fornecedorId && fornecedores.length > 0) {
+        setFornecedorId(fornecedores[0].id);
+      }
+      return;
+    }
+
+    setFornecedorId('');
+  }, [fornecedores, fornecedorId, tipoPagamento]);
 
   useEffect(() => {
     if (!planoId && planosFinanceiros.length > 0) setPlanoId(planosFinanceiros[0].id);
@@ -101,8 +118,18 @@ const usuarioLogado =
 
     if (enviando) return;
 
-    if (!descricao || !valor || !fornecedorId || !empresaId || !planoId || !centroId) {
+    if (!descricao || !valor || !empresaId || !planoId || !centroId) {
       alert('Por favor, preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    if (tipoPagamento === 'fornecedor' && !fornecedorId) {
+      alert('Selecione o fornecedor.');
+      return;
+    }
+
+    if (tipoPagamento === 'interno' && !beneficiarioInterno.trim()) {
+      alert('Informe o beneficiário do pagamento interno.');
       return;
     }
 
@@ -110,6 +137,11 @@ const usuarioLogado =
 
     if (!Number.isFinite(valorNumerico) || valorNumerico <= 0) {
       alert('Informe um valor válido.');
+      return;
+    }
+
+    if (formaPagamento === 'pix' && !chavePix.trim()) {
+      alert('Informe a chave PIX.');
       return;
     }
 
@@ -123,7 +155,15 @@ const usuarioLogado =
       }
 
       await criarSolicitacao({
-        fornecedorId,
+        tipoPagamento,
+        fornecedorId:
+          tipoPagamento === 'fornecedor'
+            ? fornecedorId
+            : null,
+        beneficiarioInterno:
+          tipoPagamento === 'interno'
+            ? beneficiarioInterno.trim()
+            : null,
         empresaId,
         planoFinanceiroId: planoId,
         centroCustoId: centroId,
@@ -134,6 +174,22 @@ const usuarioLogado =
         prazo,
         anexoNome: anexoUpload?.nome ?? null,
         anexoUrl: anexoUpload?.url ?? null,
+        formaPagamento,
+        pixTipoChave: formaPagamento === 'pix' ? tipoChavePix : null,
+        pixChave:
+          formaPagamento === 'pix'
+            ? chavePix.trim().toLowerCase()
+            : null,
+        pixFavorecido:
+          formaPagamento === 'pix'
+            ? favorecidoPix.trim()
+            : null,
+        pixBanco:
+          formaPagamento === 'pix'
+            ? bancoPix.trim()
+            : null,
+        pixObservacao:
+          observacaoPagamento.trim() || null,
       });
 
       setSucesso(true);
@@ -200,24 +256,88 @@ const usuarioLogado =
               </select>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 md:col-span-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                Fornecedor
+                Tipo do pagamento
               </label>
-              <select
-                value={fornecedorId}
-                onChange={(e) => setFornecedorId(e.target.value)}
-                className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-[#0F172A] font-semibold"
-                required
-              >
-                <option value="">Selecione</option>
-                {fornecedores.map((forn: any) => (
-                  <option key={forn.id} value={forn.id}>
-                    {forn.nome}
-                  </option>
-                ))}
-              </select>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTipoPagamento('fornecedor');
+                    setBeneficiarioInterno('');
+                  }}
+                  className={`rounded-[12px] border px-4 py-3 text-left transition ${
+                    tipoPagamento === 'fornecedor'
+                      ? 'border-[#0F172A] bg-slate-50 ring-1 ring-[#0F172A]/10'
+                      : 'border-slate-100 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <p className="text-xs font-bold text-[#0F172A]">
+                    Fornecedor
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Compra de produto ou contratação de serviço.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTipoPagamento('interno');
+                    setFornecedorId('');
+                  }}
+                  className={`rounded-[12px] border px-4 py-3 text-left transition ${
+                    tipoPagamento === 'interno'
+                      ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-100'
+                      : 'border-slate-100 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <p className="text-xs font-bold text-[#0F172A]">
+                    Pagamento interno
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Salário, adiantamento ou outra despesa interna.
+                  </p>
+                </button>
+              </div>
             </div>
+
+            {tipoPagamento === 'fornecedor' ? (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
+                  Fornecedor
+                </label>
+                <select
+                  value={fornecedorId}
+                  onChange={e => setFornecedorId(e.target.value)}
+                  className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-[#0F172A] font-semibold"
+                  required
+                >
+                  <option value="">Selecione o fornecedor</option>
+                  {fornecedores.map((forn: any) => (
+                    <option key={forn.id} value={forn.id}>
+                      {forn.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
+                  Beneficiário interno
+                </label>
+                <input
+                  type="text"
+                  value={beneficiarioInterno}
+                  onChange={e => setBeneficiarioInterno(e.target.value)}
+                  placeholder="Ex.: Funcionário João da Silva"
+                  className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+                  required
+                />
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
@@ -321,6 +441,122 @@ const usuarioLogado =
   readOnly
   className="w-full bg-slate-100 border-0 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700 font-medium cursor-not-allowed"
 />
+            </div>
+          </div>
+
+          <div className="border border-slate-100 rounded-[18px] p-5 bg-slate-50/40 space-y-5">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white border border-slate-100 flex items-center justify-center">
+                <CreditCard className="w-4 h-4 text-[#0F172A]" />
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold text-[#0F172A]">
+                  Dados para Pagamento
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Essas informações serão utilizadas pelo financeiro na etapa de pagamento.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 block">
+                  Forma de pagamento
+                </label>
+                <select
+                  value={formaPagamento}
+                  onChange={e => setFormaPagamento(e.target.value)}
+                  className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+                >
+                  <option value="pix">PIX</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="ted">TED</option>
+                  <option value="deposito">Depósito</option>
+                </select>
+              </div>
+
+              {formaPagamento === 'pix' && (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 block">
+                      Tipo da chave
+                    </label>
+                    <select
+                      value={tipoChavePix}
+                      onChange={e => setTipoChavePix(e.target.value)}
+                      className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+                    >
+                      <option value="cpf">CPF</option>
+                      <option value="cnpj">CNPJ</option>
+                      <option value="email">E-mail</option>
+                      <option value="telefone">Telefone</option>
+                      <option value="aleatoria">Chave aleatória</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 block">
+                      Chave PIX
+                    </label>
+                    <input
+                      type="text"
+                      value={chavePix}
+                      onChange={e =>
+                        setChavePix(
+                          e.target.value.trimStart().toLowerCase()
+                        )
+                      }
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder="Informe a chave PIX"
+                      className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700 font-mono"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 block">
+                      Favorecido
+                    </label>
+                    <input
+                      type="text"
+                      value={favorecidoPix}
+                      onChange={e => setFavorecidoPix(e.target.value)}
+                      placeholder="Nome do favorecido"
+                      className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 block">
+                      Banco
+                    </label>
+                    <input
+                      type="text"
+                      value={bancoPix}
+                      onChange={e => setBancoPix(e.target.value)}
+                      placeholder="Ex.: Nubank"
+                      className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400 block">
+                      Observação do pagamento
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={observacaoPagamento}
+                      onChange={e => setObservacaoPagamento(e.target.value)}
+                      placeholder="Informações adicionais para o financeiro"
+                      className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

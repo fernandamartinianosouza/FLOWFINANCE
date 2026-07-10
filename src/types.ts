@@ -122,6 +122,13 @@ export interface ProcessoCompra {
   programadoPor?: string | null;
   dataProgramacao?: string | null;
 
+  formaPagamento?: string;
+pixTipoChave?: string | null;
+pixChave?: string | null;
+pixFavorecido?: string | null;
+pixBanco?: string | null;
+pixObservacao?: string | null;
+
   historico: HistoricoStatus[];
 }
 

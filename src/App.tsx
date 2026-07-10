@@ -52,8 +52,9 @@ const { user, loading, perfil } = useAuth();
         return <CompaniesView />;
       case 'fornecedores':
         return <SuppliersView />;
+      case 'programacao':
       case 'pagamentos-programados':
-        return <PaymentScheduleView />;
+      return <PaymentScheduleView />;
       case 'usuarios':
         return <UsersAdminView />;
       default:

@@ -19,6 +19,7 @@ import {
   Usercog,
   UserCog,
   ClipboardList,
+  CalendarDays,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -70,10 +71,9 @@ export const Sidebar: React.FC = () => {
           badge: contasAPagar,
         },
         {
-          id: 'programacao-pagamentos',
-          label: 'Programação de Pagamentos',
-          icon: Calendar,
-          badge: pagamentosProgramados,
+          id: 'pagamentos-programados',
+          label: 'Programação',
+          icon: CalendarDays,
         },
         {
           id: 'conciliacao',

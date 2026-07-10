@@ -45,8 +45,19 @@ interface FinanceContextType {
     url: string;
   }>;
 
+  getDocumentosProcesso: (processoDbId: string) => Promise<any[]>;
+
+  anexarDocumentoProcesso: (params: {
+    processoDbId: string;
+    file: File;
+    tipo?: string;
+    enviadoPor?: string;
+  }) => Promise<any>;
+
   criarSolicitacao: (dados: {
-    fornecedorId: string;
+    tipoPagamento: 'fornecedor' | 'interno';
+    fornecedorId: string | null;
+    beneficiarioInterno?: string | null;
     empresaId: string;
     planoFinanceiroId: string;
     centroCustoId: string;
@@ -57,6 +68,12 @@ interface FinanceContextType {
     prazo: string;
     anexoNome?: string | null;
     anexoUrl?: string | null;
+    formaPagamento?: string;
+    pixTipoChave?: string | null;
+    pixChave?: string | null;
+    pixFavorecido?: string | null;
+    pixBanco?: string | null;
+    pixObservacao?: string | null;
   }) => Promise<void>;
 
   editarProcesso: (id: string, dados: Partial<ProcessoCompra>) => Promise<void>;
@@ -217,7 +234,9 @@ const anexarDocumentoProcesso = async (params: {
 };
 
   const criarSolicitacao = async (dados: {
-    fornecedorId: string;
+    tipoPagamento: 'fornecedor' | 'interno';
+    fornecedorId: string | null;
+    beneficiarioInterno?: string | null;
     empresaId: string;
     planoFinanceiroId: string;
     centroCustoId: string;
@@ -228,6 +247,12 @@ const anexarDocumentoProcesso = async (params: {
     prazo: string;
     anexoNome?: string | null;
     anexoUrl?: string | null;
+    formaPagamento?: string;
+    pixTipoChave?: string | null;
+    pixChave?: string | null;
+    pixFavorecido?: string | null;
+    pixBanco?: string | null;
+    pixObservacao?: string | null;
   }) => {
     try {
       const novoCodigo = `FF-${new Date().getFullYear()}-${String(
@@ -238,7 +263,15 @@ const anexarDocumentoProcesso = async (params: {
 
       const novoProcesso: ProcessoCompra = {
         id: novoCodigo,
-        fornecedorId: dados.fornecedorId,
+        tipoPagamento: dados.tipoPagamento,
+        fornecedorId:
+          dados.tipoPagamento === 'fornecedor'
+            ? dados.fornecedorId
+            : null,
+        beneficiarioInterno:
+          dados.tipoPagamento === 'interno'
+            ? dados.beneficiarioInterno || null
+            : null,
         empresaId: dados.empresaId,
         planoFinanceiroId: dados.planoFinanceiroId,
         centroCustoId: dados.centroCustoId,
@@ -252,6 +285,15 @@ const anexarDocumentoProcesso = async (params: {
 
         anexoNome: dados.anexoNome || null,
         anexoUrl: dados.anexoUrl || null,
+
+        formaPagamento: dados.formaPagamento || 'pix',
+        pixTipoChave: dados.pixTipoChave || null,
+        pixChave: dados.pixChave
+          ? dados.pixChave.trim().toLowerCase()
+          : null,
+        pixFavorecido: dados.pixFavorecido || null,
+        pixBanco: dados.pixBanco || null,
+        pixObservacao: dados.pixObservacao || null,
 
         historico: [
           {
@@ -279,7 +321,11 @@ const anexarDocumentoProcesso = async (params: {
       const novoAlerta = await financeService.criarAlerta({
         tipo: dados.urgencia === 'alta' ? 'urgente' : 'info',
         titulo: 'Nova Solicitação Aguardando Aprovação',
-        mensagem: `${novoCodigo} enviado para aprovação no valor de R$ ${dados.valor.toLocaleString(
+        mensagem: `${novoCodigo} (${
+          dados.tipoPagamento === 'interno'
+            ? dados.beneficiarioInterno || 'Pagamento interno'
+            : 'Fornecedor'
+        }) enviado para aprovação no valor de R$ ${dados.valor.toLocaleString(
           'pt-BR',
           { minimumFractionDigits: 2 }
         )}`,
@@ -798,15 +844,6 @@ const anexarDocumentoProcesso = async (params: {
           acaoLabel: 'Ver Processo',
           viewTarget: 'processos',
         };
-
-        getDocumentosProcesso: (processoDbId: string) => Promise<any[]>;
-
-anexarDocumentoProcesso: (params: {
-  processoDbId: string;
-  file: File;
-  tipo?: string;
-  enviadoPor?: string;
-}) => Promise<any>;
 
     }
   };
