@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   Usercog,
   UserCog,
+  ClipboardList,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -56,6 +57,7 @@ export const Sidebar: React.FC = () => {
           icon: CheckSquare,
           badge: aguardandoAprovacao,
         },
+        { id: 'cotacoes', label: 'Cotações', icon: ClipboardList },
       ],
     },
     {

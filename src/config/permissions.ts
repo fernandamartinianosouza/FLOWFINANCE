@@ -6,11 +6,12 @@ export type PerfilUsuario =
 
 export const PERMISSIONS: Record<PerfilUsuario, string[]> = {
   compras: [
-    'dashboard',
-    'processos',
-    'solicitacao',
-    'fornecedores',
-  ],
+  'dashboard',
+  'processos',
+  'solicitacao',
+  'cotacoes',
+  'fornecedores',
+],
 
   contas_pagar: [
     'dashboard',
@@ -18,6 +19,7 @@ export const PERMISSIONS: Record<PerfilUsuario, string[]> = {
     'solicitacao',
     'autorizacoes',
     'contas-pagar',
+    'cotacoes',
     'programacao-pagamentos',
     'conciliacao',
     'centro-financeiro',
