@@ -1,225 +1,1001 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
-import { ProcessoCompra } from '../types';
 import { formatarReal } from '../utils';
-import { 
-  Wallet, 
-  ArrowRight, 
-  CreditCard, 
-  DollarSign, 
-  FileText, 
-  CheckCircle,
+import {
+  AlertTriangle,
+  CalendarDays,
+  Check,
   Clock,
-  Briefcase,
-  Building,
-  User,
-  ShieldCheck
+  Copy,
+  FileText,
+  Search,
+  Wallet,
+  X,
 } from 'lucide-react';
 
-export const AccountsPayableView: React.FC = () => {
-  const { 
-    processos, 
-    empresas, 
-    fornecedores, 
-    planosFinanceiros,
-    registrarPagamento,
-    setActiveView 
-  } = useFinance();
+type FiltroSituacao =
+  | 'todas'
+  | 'vencidas'
+  | 'a_vencer'
+  | 'programadas'
+  | 'nao_programadas'
+  | 'pagas';
 
-  // Filtrar apenas contas prontas para pagamento
-  const contasPendentes = processos.filter(p => p.status === 'pagamento');
+const hojeISO = () =>
+  new Date().toISOString().split('T')[0];
 
-  // Selecionado
-  const [selectedId, setSelectedId] = useState<string | null>(
-    contasPendentes.length > 0 ? contasPendentes[0].id : null
+const inicioMesISO = () => {
+  const hoje = new Date();
+  return `${hoje.getFullYear()}-${String(
+    hoje.getMonth() + 1
+  ).padStart(2, '0')}-01`;
+};
+
+const fimMesISO = () => {
+  const hoje = new Date();
+  const ultimoDia = new Date(
+    hoje.getFullYear(),
+    hoje.getMonth() + 1,
+    0
   );
 
-  const [metodo, setMetodo] = useState<'pix' | 'ted' | 'boleto' | 'dinheiro' | 'cartao'>('pix');
-  const [comprovanteNome, setComprovanteNome] = useState('');
+  return ultimoDia.toISOString().split('T')[0];
+};
 
-  // Sincronizar ID selecionado se a lista mudar
-  React.useEffect(() => {
-    if (contasPendentes.length > 0) {
-      if (!selectedId || !contasPendentes.some(p => p.id === selectedId)) {
-        setSelectedId(contasPendentes[0].id);
+const diferencaDias = (data: string) => {
+  const hoje = new Date(`${hojeISO()}T00:00:00`);
+  const alvo = new Date(`${data}T00:00:00`);
+
+  return Math.ceil(
+    (alvo.getTime() - hoje.getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+};
+
+export const AccountsPayableView: React.FC = () => {
+  const {
+    processos,
+    fornecedores,
+    empresas,
+    programarPagamento,
+    registrarPagamento,
+    setActiveProcessId,
+    setActiveView,
+  } = useFinance() as any;
+
+  const hoje = hojeISO();
+
+  const [busca, setBusca] = useState('');
+  const [situacao, setSituacao] =
+    useState<FiltroSituacao>('todas');
+  const [empresaFiltro, setEmpresaFiltro] =
+    useState('');
+  const [formaFiltro, setFormaFiltro] =
+    useState('');
+  const [dataInicio, setDataInicio] =
+    useState(inicioMesISO());
+  const [dataFim, setDataFim] =
+    useState(fimMesISO());
+  const [pixCopiadoId, setPixCopiadoId] =
+    useState<string | null>(null);
+  const [processoPagando, setProcessoPagando] =
+    useState<any | null>(null);
+  const [metodoPagamento, setMetodoPagamento] =
+    useState('pix');
+  const [comprovante, setComprovante] =
+    useState('');
+
+  const todasContas = useMemo(
+    () =>
+      processos.filter((processo: any) =>
+        [
+          'pagamento',
+          'conciliacao',
+          'finalizado',
+        ].includes(String(processo.status))
+      ),
+    [processos]
+  );
+
+  const contaPaga = (processo: any) =>
+    Boolean(processo.dataPagamento) ||
+    ['conciliacao', 'finalizado'].includes(
+      String(processo.status)
+    );
+
+  const dataBase = (processo: any) =>
+    processo.dataProgramadaPagamento ||
+    processo.prazo ||
+    '';
+
+  const contasVencidas = todasContas.filter(
+    (processo: any) =>
+      !contaPaga(processo) &&
+      dataBase(processo) &&
+      dataBase(processo) < hoje
+  );
+
+  const contasAVencer = todasContas.filter(
+    (processo: any) => {
+      if (
+        contaPaga(processo) ||
+        !dataBase(processo)
+      ) {
+        return false;
       }
-    } else {
-      setSelectedId(null);
+
+      const dias = diferencaDias(
+        dataBase(processo)
+      );
+
+      return dias >= 0 && dias <= 7;
     }
-  }, [processos]);
+  );
 
-  const processo = processos.find(p => p.id === selectedId);
+  const totalEmAberto = todasContas
+    .filter((item: any) => !contaPaga(item))
+    .reduce(
+      (total: number, item: any) =>
+        total + Number(item.valor || 0),
+      0
+    );
 
-  const handlePagar = (p: ProcessoCompra) => {
-    const nomeComprovanteReal = comprovanteNome || `comprovante_bancario_${metodo}_${p.id.toLowerCase()}.pdf`;
-    registrarPagamento(p.id, metodo, nomeComprovanteReal);
-    setComprovanteNome('');
+  const totalVencido = contasVencidas.reduce(
+    (total: number, item: any) =>
+      total + Number(item.valor || 0),
+    0
+  );
+
+  const totalAVencer = contasAVencer.reduce(
+    (total: number, item: any) =>
+      total + Number(item.valor || 0),
+    0
+  );
+
+  const totalPagoPeriodo = todasContas
+    .filter((item: any) => {
+      if (!contaPaga(item)) return false;
+
+      const data =
+        item.dataPagamento || item.prazo || '';
+
+      return (
+        (!dataInicio || data >= dataInicio) &&
+        (!dataFim || data <= dataFim)
+      );
+    })
+    .reduce(
+      (total: number, item: any) =>
+        total + Number(item.valor || 0),
+      0
+    );
+
+  const contasFiltradas = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+
+    return todasContas
+      .filter((processo: any) => {
+        const fornecedor = fornecedores.find(
+          (item: any) =>
+            item.id === processo.fornecedorId
+        );
+
+        const empresa = empresas.find(
+          (item: any) =>
+            item.id === processo.empresaId
+        );
+
+        const favorecido =
+          processo.tipoPagamento === 'interno'
+            ? processo.beneficiarioInterno ||
+              'Pagamento interno'
+            : fornecedor?.nome || '';
+
+        const correspondeBusca =
+          !termo ||
+          String(processo.id)
+            .toLowerCase()
+            .includes(termo) ||
+          String(processo.descricao || '')
+            .toLowerCase()
+            .includes(termo) ||
+          String(favorecido)
+            .toLowerCase()
+            .includes(termo) ||
+          String(empresa?.nome || '')
+            .toLowerCase()
+            .includes(termo);
+
+        if (!correspondeBusca) return false;
+
+        if (
+          empresaFiltro &&
+          processo.empresaId !== empresaFiltro
+        ) {
+          return false;
+        }
+
+        if (
+          formaFiltro &&
+          String(
+            processo.formaPagamento ||
+              processo.metodoPagamento ||
+              ''
+          ) !== formaFiltro
+        ) {
+          return false;
+        }
+
+        const data =
+          processo.dataPagamento ||
+          processo.dataProgramadaPagamento ||
+          processo.prazo ||
+          '';
+
+        if (
+          dataInicio &&
+          data &&
+          data < dataInicio
+        ) {
+          return false;
+        }
+
+        if (
+          dataFim &&
+          data &&
+          data > dataFim
+        ) {
+          return false;
+        }
+
+        if (
+          situacao === 'vencidas' &&
+          !contasVencidas.some(
+            (item: any) =>
+              item.id === processo.id
+          )
+        ) {
+          return false;
+        }
+
+        if (
+          situacao === 'a_vencer' &&
+          !contasAVencer.some(
+            (item: any) =>
+              item.id === processo.id
+          )
+        ) {
+          return false;
+        }
+
+        if (
+          situacao === 'programadas' &&
+          processo.statusProgramacao !==
+            'programado'
+        ) {
+          return false;
+        }
+
+        if (
+          situacao === 'nao_programadas' &&
+          (contaPaga(processo) ||
+            processo.statusProgramacao ===
+              'programado')
+        ) {
+          return false;
+        }
+
+        if (
+          situacao === 'pagas' &&
+          !contaPaga(processo)
+        ) {
+          return false;
+        }
+
+        return true;
+      })
+      .sort((a: any, b: any) =>
+        dataBase(a).localeCompare(dataBase(b))
+      );
+  }, [
+    todasContas,
+    busca,
+    situacao,
+    empresaFiltro,
+    formaFiltro,
+    dataInicio,
+    dataFim,
+    fornecedores,
+    empresas,
+    contasVencidas,
+    contasAVencer,
+  ]);
+
+  const copiarPix = async (
+    processoId: string,
+    chave?: string | null
+  ) => {
+    const pix = chave?.trim();
+
+    if (!pix) {
+      alert(
+        'Esta conta não possui chave PIX cadastrada.'
+      );
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(pix);
+      setPixCopiadoId(processoId);
+
+      window.setTimeout(
+        () => setPixCopiadoId(null),
+        1800
+      );
+    } catch {
+      alert(
+        'Não foi possível copiar a chave PIX.'
+      );
+    }
+  };
+
+  const programar = async (
+    processoId: string
+  ) => {
+    const input = document.getElementById(
+      `data-programacao-${processoId}`
+    ) as HTMLInputElement | null;
+
+    if (!input?.value) {
+      alert(
+        'Informe a data de programação.'
+      );
+      return;
+    }
+
+    await programarPagamento(
+      processoId,
+      input.value,
+      'Contas a Pagar'
+    );
+  };
+
+  const confirmarPagamento = async () => {
+    if (!processoPagando) return;
+
+    await registrarPagamento(
+      processoPagando.id,
+      metodoPagamento,
+      comprovante.trim() || undefined
+    );
+
+    setProcessoPagando(null);
+    setComprovante('');
+    setMetodoPagamento('pix');
+  };
+
+  const abrirProcesso = (id: string) => {
+    setActiveProcessId(id);
+    setActiveView('processos');
   };
 
   return (
-    <div className="space-y-10" id="accounts-payable-view-container">
-      {/* Title */}
+    <div
+      className="space-y-8"
+      id="accounts-payable-view-container"
+    >
       <div>
-        <h1 className="text-2xl font-bold font-sans tracking-tight text-[#0F172A]">Contas a Pagar</h1>
-        <p className="text-xs text-slate-400 mt-1">Gerencie a liquidação de faturas e compromissos comerciais totalmente autorizados.</p>
+        <h1 className="text-2xl font-bold text-[#0F172A]">
+          Contas a Pagar
+        </h1>
+
+        <p className="mt-1 text-xs text-slate-400">
+          Consulte contas vencidas, a vencer,
+          programadas e pagas.
+        </p>
       </div>
 
-      {contasPendentes.length === 0 ? (
-        <div className="bg-white rounded-[18px] border border-slate-100 p-16 text-center shadow-sm">
-          <div className="w-12 h-12 bg-emerald-50 text-[#10B981] rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-5 h-5" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card
+          titulo="Em aberto"
+          valor={formatarReal(totalEmAberto)}
+          icon={Wallet}
+        />
+
+        <Card
+          titulo="Vencidas"
+          valor={formatarReal(totalVencido)}
+          icon={AlertTriangle}
+          classe="text-red-600 bg-red-50"
+        />
+
+        <Card
+          titulo="A vencer em 7 dias"
+          valor={formatarReal(totalAVencer)}
+          icon={Clock}
+          classe="text-amber-600 bg-amber-50"
+        />
+
+        <Card
+          titulo="Pago no período"
+          valor={formatarReal(
+            totalPagoPeriodo
+          )}
+          icon={Check}
+          classe="text-emerald-600 bg-emerald-50"
+        />
+      </div>
+
+      <div className="rounded-[18px] border border-slate-100 bg-white p-5 shadow-sm">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="flex items-center gap-2 rounded-[12px] bg-slate-50 px-3.5">
+            <Search className="h-4 w-4 text-slate-400" />
+
+            <input
+              value={busca}
+              onChange={event =>
+                setBusca(event.target.value)
+              }
+              placeholder="Processo, favorecido..."
+              className="w-full border-0 bg-transparent py-2.5 text-xs focus:ring-0"
+            />
           </div>
-          <h3 className="text-sm font-bold text-[#0F172A]">Nenhum pagamento pendente</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Excelente! Todas as faturas faturadas foram registradas ou estão em etapas anteriores de aprovação.</p>
+
+          <select
+            value={situacao}
+            onChange={event =>
+              setSituacao(
+                event.target
+                  .value as FiltroSituacao
+              )
+            }
+            className="rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+          >
+            <option value="todas">
+              Todas
+            </option>
+            <option value="vencidas">
+              Vencidas
+            </option>
+            <option value="a_vencer">
+              A vencer
+            </option>
+            <option value="programadas">
+              Programadas
+            </option>
+            <option value="nao_programadas">
+              Não programadas
+            </option>
+            <option value="pagas">
+              Pagas
+            </option>
+          </select>
+
+          <select
+            value={empresaFiltro}
+            onChange={event =>
+              setEmpresaFiltro(
+                event.target.value
+              )
+            }
+            className="rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+          >
+            <option value="">
+              Todas as empresas
+            </option>
+
+            {empresas.map((empresa: any) => (
+              <option
+                key={empresa.id}
+                value={empresa.id}
+              >
+                {empresa.nome}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={formaFiltro}
+            onChange={event =>
+              setFormaFiltro(event.target.value)
+            }
+            className="rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+          >
+            <option value="">
+              Todas as formas
+            </option>
+            <option value="pix">PIX</option>
+            <option value="boleto">
+              Boleto
+            </option>
+            <option value="ted">TED</option>
+            <option value="deposito">
+              Depósito
+            </option>
+            <option value="dinheiro">
+              Dinheiro
+            </option>
+            <option value="cartao">
+              Cartão
+            </option>
+          </select>
+
+          <input
+            type="date"
+            value={dataInicio}
+            onChange={event =>
+              setDataInicio(event.target.value)
+            }
+            className="rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+            title="Data inicial"
+          />
+
+          <input
+            type="date"
+            value={dataFim}
+            onChange={event =>
+              setDataFim(event.target.value)
+            }
+            className="rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+            title="Data final"
+          />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Left Column: Authorized payments list (5 Cols) */}
-          <div className="lg:col-span-5 space-y-4 max-h-[500px] overflow-y-auto scrollbar-none pr-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Fila de Liquidação ({contasPendentes.length})</span>
-            <div className="space-y-3">
-              {contasPendentes.map((p) => {
-                const isSelected = p.id === selectedId;
-                const forn = fornecedores.find(f => f.id === p.fornecedorId);
-                const emp = empresas.find(e => e.id === p.empresaId);
+      </div>
 
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedId(p.id)}
-                    className={`w-full p-5 rounded-[18px] border text-left transition-all flex flex-col justify-between ${
-                      isSelected 
-                        ? 'bg-[#0F172A] border-[#0F172A] text-white shadow-md' 
-                        : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-bold font-mono tracking-wide">{p.id}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                          p.urgencia === 'alta' ? 'bg-red-500/10 text-red-500' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {p.urgencia}
-                        </span>
-                      </div>
-                      <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>
-                        {p.descricao}
-                      </h4>
-                      <p className={`text-[10px] mt-1.5 truncate ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
-                        Favorecido: {forn?.nome}
-                      </p>
-                      <p className={`text-[10px] truncate ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
-                        Empresa: {emp?.nome}
-                      </p>
-                    </div>
+      <div className="overflow-hidden rounded-[18px] border border-slate-100 bg-white shadow-sm">
+        {contasFiltradas.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-xs text-slate-400">
+              Nenhuma conta encontrada.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1450px] text-left">
+              <thead className="bg-slate-50">
+                <tr className="text-[10px] uppercase text-slate-400">
+                  <th className="px-4 py-3">
+                    Situação
+                  </th>
+                  <th className="px-4 py-3">
+                    Processo
+                  </th>
+                  <th className="px-4 py-3">
+                    Favorecido
+                  </th>
+                  <th className="px-4 py-3">
+                    Empresa
+                  </th>
+                  <th className="px-4 py-3">
+                    Descrição
+                  </th>
+                  <th className="px-4 py-3">
+                    PIX
+                  </th>
+                  <th className="px-4 py-3">
+                    Valor
+                  </th>
+                  <th className="px-4 py-3">
+                    Vencimento
+                  </th>
+                  <th className="px-4 py-3">
+                    Programação
+                  </th>
+                  <th className="px-4 py-3">
+                    Pagamento
+                  </th>
+                  <th className="px-4 py-3 text-right">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
 
-                    <div className="flex items-center justify-between mt-4 pt-2.5 border-t border-white/5">
-                      <span className="text-[10px] font-mono">Vencimento: {p.prazo}</span>
-                      <span className="text-xs font-bold font-mono">{formatarReal(p.valor)}</span>
-                    </div>
-                  </button>
-                );
-              })}
+              <tbody className="divide-y divide-slate-50">
+                {contasFiltradas.map(
+                  (processo: any) => {
+                    const fornecedor =
+                      fornecedores.find(
+                        (item: any) =>
+                          item.id ===
+                          processo.fornecedorId
+                      );
+
+                    const empresa =
+                      empresas.find(
+                        (item: any) =>
+                          item.id ===
+                          processo.empresaId
+                      );
+
+                    const pago =
+                      contaPaga(processo);
+                    const vencida =
+                      !pago &&
+                      dataBase(processo) &&
+                      dataBase(processo) < hoje;
+
+                    const favorecido =
+                      processo.tipoPagamento ===
+                      'interno'
+                        ? processo.beneficiarioInterno ||
+                          'Pagamento interno'
+                        : fornecedor?.nome || '-';
+
+                    return (
+                      <tr
+                        key={processo.id}
+                        className="hover:bg-slate-50/60"
+                      >
+                        <td className="px-4 py-4">
+                          <Situacao
+                            pago={pago}
+                            vencida={Boolean(vencida)}
+                            programada={
+                              processo.statusProgramacao ===
+                              'programado'
+                            }
+                          />
+                        </td>
+
+                        <td className="px-4 py-4 font-mono text-xs font-bold">
+                          {processo.id}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <p className="text-xs font-semibold text-slate-700">
+                            {favorecido}
+                          </p>
+
+                          <p className="mt-1 text-[9px] uppercase text-slate-400">
+                            {processo.tipoPagamento ===
+                            'interno'
+                              ? 'Interno'
+                              : 'Fornecedor'}
+                          </p>
+                        </td>
+
+                        <td className="px-4 py-4 text-xs text-slate-600">
+                          {empresa?.nome || '-'}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <p
+                            className="max-w-[220px] truncate text-xs text-slate-600"
+                            title={
+                              processo.descricao
+                            }
+                          >
+                            {processo.descricao ||
+                              '-'}
+                          </p>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {processo.pixChave ? (
+                            <div className="flex min-w-[180px] items-center gap-2">
+                              <p
+                                className="max-w-[130px] truncate font-mono text-[10px] text-slate-600"
+                                title={
+                                  processo.pixChave
+                                }
+                              >
+                                {
+                                  processo.pixChave
+                                }
+                              </p>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copiarPix(
+                                    processo.id,
+                                    processo.pixChave
+                                  )
+                                }
+                                className={`flex h-8 w-8 items-center justify-center rounded-[9px] ${
+                                  pixCopiadoId ===
+                                  processo.id
+                                    ? 'bg-emerald-50 text-emerald-600'
+                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                }`}
+                                title="Copiar PIX"
+                              >
+                                {pixCopiadoId ===
+                                processo.id ? (
+                                  <Check className="h-4 w-4" />
+                                ) : (
+                                  <Copy className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">
+                              Não informado
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 font-mono text-xs font-bold">
+                          {formatarReal(
+                            processo.valor
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 font-mono text-xs text-slate-500">
+                          {processo.prazo || '-'}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {pago ? (
+                            <span className="text-[10px] text-slate-400">
+                              Encerrada
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <input
+                                id={`data-programacao-${processo.id}`}
+                                type="date"
+                                defaultValue={
+                                  processo.dataProgramadaPagamento ||
+                                  ''
+                                }
+                                className="rounded-[9px] border-0 bg-slate-50 px-2 py-2 font-mono text-[10px]"
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  programar(
+                                    processo.id
+                                  )
+                                }
+                                className="rounded-[9px] bg-slate-100 px-2.5 py-2 text-[9px] font-bold text-slate-700 hover:bg-slate-200"
+                              >
+                                Programar
+                              </button>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {pago ? (
+                            <div>
+                              <p className="font-mono text-[10px] font-semibold text-emerald-600">
+                                {processo.dataPagamento ||
+                                  'Pago'}
+                              </p>
+
+                              <p className="mt-1 text-[9px] uppercase text-slate-400">
+                                {processo.metodoPagamento ||
+                                  processo.formaPagamento ||
+                                  '-'}
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">
+                              Aguardando
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                abrirProcesso(
+                                  processo.id
+                                )
+                              }
+                              className="rounded-[9px] border border-slate-100 bg-white px-3 py-2 text-[9px] font-bold text-slate-600 hover:bg-slate-50"
+                            >
+                              Detalhes
+                            </button>
+
+                            {processo.anexoUrl && (
+                              <a
+                                href={
+                                  processo.anexoUrl
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-1 rounded-[9px] bg-slate-100 px-3 py-2 text-[9px] font-bold text-slate-600 hover:bg-slate-200"
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                Anexo
+                              </a>
+                            )}
+
+                            {!pago && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProcessoPagando(
+                                    processo
+                                  );
+                                  setMetodoPagamento(
+                                    processo.formaPagamento ||
+                                      'pix'
+                                  );
+                                }}
+                                className="rounded-[9px] bg-emerald-600 px-3 py-2 text-[9px] font-bold text-white hover:bg-emerald-700"
+                              >
+                                Registrar pagamento
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {processoPagando && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-slate-900/30"
+            onClick={() =>
+              setProcessoPagando(null)
+            }
+          />
+
+          <div className="fixed inset-y-0 right-0 z-50 flex h-screen w-full max-w-md flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 p-6">
+              <div>
+                <h2 className="text-sm font-bold text-[#0F172A]">
+                  Registrar pagamento
+                </h2>
+
+                <p className="mt-1 text-[10px] text-slate-400">
+                  {processoPagando.id} •{' '}
+                  {formatarReal(
+                    processoPagando.valor
+                  )}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setProcessoPagando(null)
+                }
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-5 overflow-y-auto p-6">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-slate-400">
+                  Método
+                </label>
+
+                <select
+                  value={metodoPagamento}
+                  onChange={event =>
+                    setMetodoPagamento(
+                      event.target.value
+                    )
+                  }
+                  className="w-full rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+                >
+                  <option value="pix">
+                    PIX
+                  </option>
+                  <option value="boleto">
+                    Boleto
+                  </option>
+                  <option value="ted">
+                    TED
+                  </option>
+                  <option value="dinheiro">
+                    Dinheiro
+                  </option>
+                  <option value="cartao">
+                    Cartão
+                  </option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-slate-400">
+                  Comprovante ou observação
+                </label>
+
+                <input
+                  value={comprovante}
+                  onChange={event =>
+                    setComprovante(
+                      event.target.value
+                    )
+                  }
+                  placeholder="Nome, número ou observação do comprovante"
+                  className="w-full rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={confirmarPagamento}
+                className="w-full rounded-[12px] bg-emerald-600 py-3 text-xs font-bold text-white hover:bg-emerald-700"
+              >
+                Confirmar pagamento
+              </button>
             </div>
           </div>
-
-          {/* Right Column: Recording Panel (7 Cols) */}
-          <div className="lg:col-span-7">
-            {processo ? (
-              <div className="bg-white rounded-[18px] border border-slate-100 shadow-sm p-8 space-y-6">
-                
-                {/* Visual indicator of total safety */}
-                <div className="p-4 rounded-[14px] bg-emerald-50/50 border border-emerald-100/50 text-emerald-900 flex items-center gap-3.5">
-                  <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wide">Fatura Autorizada para Pagamento</h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Este processo passou por todas as alçadas de auditoria de compras e diretoria financeira.</p>
-                  </div>
-                </div>
-
-                {/* Info summary */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between text-xs border-b border-slate-50 pb-2.5">
-                    <span className="text-slate-400 font-medium">Favorecido (Fornecedor)</span>
-                    <span className="font-bold text-[#0F172A]">{fornecedores.find(f => f.id === processo.fornecedorId)?.nome}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs border-b border-slate-50 pb-2.5">
-                    <span className="text-slate-400 font-medium">CNPJ Credor</span>
-                    <span className="font-semibold text-slate-600 font-mono">{fornecedores.find(f => f.id === processo.fornecedorId)?.cnpj}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs border-b border-slate-50 pb-2.5">
-                    <span className="text-slate-400 font-medium">Subsidiária Pagadora</span>
-                    <span className="font-bold text-[#0F172A]">{empresas.find(e => e.id === processo.empresaId)?.nome}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs border-b border-slate-50 pb-2.5">
-                    <span className="text-slate-400 font-medium">Conta de Débito Sugerida</span>
-                    <span className="font-semibold text-slate-600 font-mono">{empresas.find(e => e.id === processo.empresaId)?.contaBancaria}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs border-b border-slate-50 pb-2.5">
-                    <span className="text-slate-400 font-medium">Plano de Budget</span>
-                    <span className="font-bold text-slate-700">{planosFinanceiros.find(p => p.id === processo.planoFinanceiroId)?.nome}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-slate-400 font-medium text-sm">Valor Líquido a Pagar</span>
-                    <span className="font-extrabold text-[#0F172A] font-mono text-lg">{formatarReal(processo.valor)}</span>
-                  </div>
-                </div>
-
-                {/* Payment setup Form */}
-                <div className="border-t border-slate-100 pt-6 space-y-4">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Registrar Liquidação de Título</h4>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Method */}
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Meio de Transferência</label>
-                      <select 
-                        value={metodo}
-                        onChange={(e: any) => setMetodo(e.target.value)}
-                        className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-[#0F172A] font-semibold"
-                      >
-                        <option value="pix">PIX Eletrônico (Instantâneo)</option>
-                        <option value="ted">TED / DOC (Mesmo Dia)</option>
-                        <option value="boleto">Boleto Registrado (Compensação 24h)</option>
-                        <option value="dinheiro">Espécie / Caixa Pequeno</option>
-                        <option value="cartao">Cartão de Crédito Corporativo</option>
-                      </select>
-                    </div>
-
-                    {/* Receipt Voucher simulated title */}
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Chave / ID do Comprovante (Opcional)</label>
-                      <input 
-                        type="text" 
-                        placeholder="Ex: tx_9812739812"
-                        value={comprovanteNome}
-                        onChange={(e) => setComprovanteNome(e.target.value)}
-                        className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700 placeholder-slate-400"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Button Trigger */}
-                  <button
-                    onClick={() => handlePagar(processo)}
-                    className="w-full py-3 bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold text-xs rounded-[12px] flex items-center justify-center gap-2 transition-all shadow-md mt-2"
-                  >
-                    <Wallet className="w-4 h-4 text-[#D4AF37]" />
-                    <span>Dar Baixa e Enviar para Conciliação</span>
-                  </button>
-                </div>
-
-              </div>
-            ) : (
-              <div className="bg-white rounded-[18px] border border-slate-100 p-16 text-center text-slate-400 shadow-sm">
-                Selecione uma conta na lista à esquerda para registrar a baixa bancária.
-              </div>
-            )}
-          </div>
-
-        </div>
+        </>
       )}
     </div>
   );
 };
+
+const Card = ({
+  titulo,
+  valor,
+  icon: Icon,
+  classe = 'text-[#0F172A] bg-slate-100',
+}: any) => (
+  <div className="rounded-[18px] border border-slate-100 bg-white p-5 shadow-sm">
+    <div
+      className={`flex h-10 w-10 items-center justify-center rounded-xl ${classe}`}
+    >
+      <Icon className="h-5 w-5" />
+    </div>
+
+    <p className="mt-4 text-[10px] font-bold uppercase text-slate-400">
+      {titulo}
+    </p>
+
+    <p className="mt-1 font-mono text-lg font-bold text-[#0F172A]">
+      {valor}
+    </p>
+  </div>
+);
+
+const Situacao = ({
+  pago,
+  vencida,
+  programada,
+}: {
+  pago: boolean;
+  vencida: boolean;
+  programada: boolean;
+}) => {
+  if (pago) {
+    return (
+      <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-600">
+        PAGA
+      </span>
+    );
+  }
+
+  if (vencida) {
+    return (
+      <span className="rounded-full border border-red-100 bg-red-50 px-2 py-1 text-[9px] font-bold text-red-600">
+        VENCIDA
+      </span>
+    );
+  }
+
+  if (programada) {
+    return (
+      <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-1 text-[9px] font-bold text-blue-600">
+        PROGRAMADA
+      </span>
+    );
+  }
+
+  return (
+    <span className="rounded-full border border-amber-100 bg-amber-50 px-2 py-1 text-[9px] font-bold text-amber-600">
+      A VENCER
+    </span>
+  );
+};
+
+export default AccountsPayableView;

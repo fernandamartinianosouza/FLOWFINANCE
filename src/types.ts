@@ -4,8 +4,8 @@ export type StatusProcesso =
   | 'solicitacao'
   | 'cotacao'
   | 'conferencia'
-  | 'autorizacao_cp'
   | 'autorizacao_diretoria'
+  | 'autorizacao_contas'
   | 'pagamento'
   | 'conciliacao'
   | 'finalizado';
@@ -93,43 +93,27 @@ export interface ProcessoDocumento {
 }
 
 export interface ProcessoCompra {
-  id: string;
-  dbId?: string;
+  tipoPagamento?: 'fornecedor' | 'interno';
+fornecedorId?: string | null;
+beneficiarioInterno?: string | null;
 
-  fornecedorId: string;
-  empresaId: string;
-  planoFinanceiroId: string;
-  centroCustoId: string;
-
-  descricao: string;
-  valor: number;
-  urgencia: Urgencia;
-  responsavel: string;
-  dataCriacao: string;
-  status: StatusProcesso;
-  prazo: string;
-
-  anexoNome?: string | null;
-  anexoUrl?: string | null;
-
-  metodoPagamento?: MetodoPagamento;
-  dataPagamento?: string;
-  comprovanteNome?: string | null;
-  comprovanteUrl?: string | null;
-
-  dataProgramadaPagamento?: string | null;
-  statusProgramacao?: StatusProgramacaoPagamento;
-  programadoPor?: string | null;
-  dataProgramacao?: string | null;
-
-  formaPagamento?: string;
+formaPagamento?: string | null;
 pixTipoChave?: string | null;
 pixChave?: string | null;
 pixFavorecido?: string | null;
 pixBanco?: string | null;
 pixObservacao?: string | null;
 
-  historico: HistoricoStatus[];
+dataProgramadaPagamento?: string | null;
+statusProgramacao?: string;
+programadoPor?: string | null;
+dataProgramacao?: string | null;
+
+metodoPagamento?: string | null;
+dataPagamento?: string | null;
+comprovanteNome?: string | null;
+comprovanteUrl?: string | null;
+
 }
 
 export interface AlertaSistema {

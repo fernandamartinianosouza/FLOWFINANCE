@@ -8,7 +8,7 @@ export const STATUS_LABELS: Record<string, string> = {
   solicitacao: 'Solicitação',
   cotacao: 'Cotação',
   conferencia: 'Conferência',
-  autorizacao_cp: 'Autorização CP',
+  autorizacao_contas: 'Aprovação do Contas a Pagar',
   autorizacao_diretoria: 'Diretoria',
   pagamento: 'Contas a Pagar',
   conciliacao: 'Conciliação',

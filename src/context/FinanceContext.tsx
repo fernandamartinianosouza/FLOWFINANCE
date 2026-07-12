@@ -280,7 +280,7 @@ const anexarDocumentoProcesso = async (params: {
         urgencia: dados.urgencia,
         responsavel: dados.responsavel,
         dataCriacao: new Date().toISOString().split('T')[0],
-        status: 'autorizacao_cp',
+        status: 'autorizacao_diretoria',
         prazo: dados.prazo,
 
         anexoNome: dados.anexoNome || null,
@@ -307,9 +307,9 @@ const anexarDocumentoProcesso = async (params: {
             data: agora,
             usuario: usuarioLogado,
             deStatus: 'solicitacao',
-            paraStatus: 'autorizacao_cp',
+            paraStatus: 'autorizacao_diretoria',
             observacao:
-              'Solicitação encaminhada automaticamente para aprovação do Controle de Pagamentos.',
+              'Solicitação encaminhada pelo setor de Compras para aprovação da Diretoria.',
           },
         ],
       } as any;
@@ -320,12 +320,12 @@ const anexarDocumentoProcesso = async (params: {
 
       const novoAlerta = await financeService.criarAlerta({
         tipo: dados.urgencia === 'alta' ? 'urgente' : 'info',
-        titulo: 'Nova Solicitação Aguardando Aprovação',
+        titulo: 'Nova Solicitação para Aprovação da Diretoria',
         mensagem: `${novoCodigo} (${
           dados.tipoPagamento === 'interno'
             ? dados.beneficiarioInterno || 'Pagamento interno'
             : 'Fornecedor'
-        }) enviado para aprovação no valor de R$ ${dados.valor.toLocaleString(
+        }) enviado para aprovação da Diretoria no valor de R$ ${dados.valor.toLocaleString(
           'pt-BR',
           { minimumFractionDigits: 2 }
         )}`,
@@ -798,29 +798,33 @@ const anexarDocumentoProcesso = async (params: {
 
       case 'conferencia':
         return {
-          texto: 'Conferência concluída. Encaminhe para aprovação do CP.',
-          acaoLabel: 'Solicitar Aprovação CP',
-          viewTarget: 'processos',
-        };
-
-      case 'autorizacao_cp':
-        return {
-          texto: 'Aguardando aprovação do Controle de Pagamentos.',
-          acaoLabel: 'Aprovar CP',
+          texto:
+            'Conferência concluída. Encaminhe para aprovação da Diretoria.',
+          acaoLabel: 'Enviar para Diretoria',
           viewTarget: 'autorizacoes',
         };
 
       case 'autorizacao_diretoria':
         return {
-          texto: 'Aguardando aprovação da Diretoria Financeira.',
+          texto:
+            'A solicitação de Compras está aguardando aprovação da Diretoria.',
           acaoLabel: 'Aprovar Diretoria',
+          viewTarget: 'autorizacoes',
+        };
+
+      case 'autorizacao_contas' as StatusProcesso:
+        return {
+          texto:
+            'A solicitação foi aprovada pela Diretoria e aguarda conferência do Contas a Pagar.',
+          acaoLabel: 'Aprovar Contas',
           viewTarget: 'autorizacoes',
         };
 
       case 'pagamento':
         return {
-          texto: 'Processo autorizado. Registre o pagamento.',
-          acaoLabel: 'Registrar Pagamento',
+          texto:
+            'Conta aprovada pelo Contas a Pagar e liberada para programação e pagamento.',
+          acaoLabel: 'Abrir Contas a Pagar',
           viewTarget: 'contas-pagar',
         };
 

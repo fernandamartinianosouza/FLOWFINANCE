@@ -1,317 +1,607 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
-import { ProcessoCompra } from '../types';
+import { ProcessoCompra, StatusProcesso } from '../types';
 import { formatarReal } from '../utils';
-import { 
-  CheckSquare, 
-  ShieldCheck, 
-  Crown, 
-  ArrowRight, 
-  FileText, 
-  AlertTriangle, 
-  X, 
-  CornerDownRight, 
-  ThumbsUp, 
-  AlertCircle,
-  Clock,
-  Briefcase,
-  Building,
-  User,
-  Check
+import {
+  Crown,
+  WalletCards,
+  FileText,
+  Check,
+  AlertTriangle,
 } from 'lucide-react';
 
+type EtapaAprovacao =
+  | 'autorizacao_diretoria'
+  | 'autorizacao_contas';
+
 export const ApprovalsView: React.FC = () => {
-  const { 
-    processos, 
-    empresas, 
-    fornecedores, 
-    planosFinanceiros, 
+  const {
+    processos,
+    empresas,
+    fornecedores,
+    planosFinanceiros,
     centrosCustos,
     avancarProcesso,
     reprovarProcesso,
-    solicitarAjustes 
+    solicitarAjustes,
   } = useFinance();
 
-  // Filtrar apenas processos que necessitam de aprovação CP ou Diretoria
-  const aprovacoesPendentes = processos.filter(
-    p => p.status === 'autorizacao_cp' || p.status === 'autorizacao_diretoria'
+  const aprovacoesPendentes = useMemo(
+    () =>
+      processos.filter(processo =>
+        [
+          'autorizacao_diretoria',
+          'autorizacao_contas',
+        ].includes(String(processo.status))
+      ),
+    [processos]
   );
 
-  // ID do processo selecionado para análise ativa
-  const [selectedId, setSelectedId] = useState<string | null>(
-    aprovacoesPendentes.length > 0 ? aprovacoesPendentes[0].id : null
+  const [selectedId, setSelectedId] = useState<
+    string | null
+  >(
+    aprovacoesPendentes.length > 0
+      ? aprovacoesPendentes[0].id
+      : null
   );
 
-  const [comentarioAcao, setComentarioAcao] = useState('');
+  const [comentarioAcao, setComentarioAcao] =
+    useState('');
+  const [processando, setProcessando] = useState(false);
 
-  // Garantir que temos um ID selecionado se a lista mudar
-  React.useEffect(() => {
-    if (aprovacoesPendentes.length > 0) {
-      if (!selectedId || !aprovacoesPendentes.some(p => p.id === selectedId)) {
-        setSelectedId(aprovacoesPendentes[0].id);
-      }
-    } else {
+  useEffect(() => {
+    if (aprovacoesPendentes.length === 0) {
       setSelectedId(null);
+      return;
     }
-  }, [processos]);
 
-  const processo = processos.find(p => p.id === selectedId);
+    const selecionadoAindaExiste =
+      selectedId &&
+      aprovacoesPendentes.some(
+        processo => processo.id === selectedId
+      );
 
-  const handleAprovarCP = (p: ProcessoCompra) => {
-    avancarProcesso(
-      p.id, 
-      'autorizacao_diretoria', 
-      'Validador CP (Maurício)', 
-      comentarioAcao || 'Aprovado Controle de Pagamentos. Limites e provisões de caixa validados.'
+    if (!selecionadoAindaExiste) {
+      setSelectedId(aprovacoesPendentes[0].id);
+    }
+  }, [aprovacoesPendentes, selectedId]);
+
+  const processo =
+    aprovacoesPendentes.find(
+      item => item.id === selectedId
+    ) || null;
+
+  const etapa = String(
+    processo?.status || ''
+  ) as EtapaAprovacao;
+
+  const isDiretoria =
+    etapa === 'autorizacao_diretoria';
+
+  const obterFavorecido = (
+    item: ProcessoCompra
+  ) => {
+    if (
+      (item as any).tipoPagamento === 'interno'
+    ) {
+      return (
+        (item as any).beneficiarioInterno ||
+        'Pagamento interno'
+      );
+    }
+
+    return (
+      fornecedores.find(
+        fornecedor =>
+          fornecedor.id === item.fornecedorId
+      )?.nome || 'Fornecedor não encontrado'
     );
-    setComentarioAcao('');
   };
 
-  const handleAutorizarDiretoria = (p: ProcessoCompra) => {
-    avancarProcesso(
-      p.id, 
-      'pagamento', 
-      'CFO (Cristeine)',
-      comentarioAcao || 'Autorizado Diretoria. Encaminhado para liquidação no contas a pagar.'
-    );
-    setComentarioAcao('');
+  const aprovar = async (
+    item: ProcessoCompra
+  ) => {
+    if (processando) return;
+
+    try {
+      setProcessando(true);
+
+      if (
+        String(item.status) ===
+        'autorizacao_diretoria'
+      ) {
+        await avancarProcesso(
+          item.id,
+          'autorizacao_contas' as StatusProcesso,
+          'Diretoria',
+          comentarioAcao.trim() ||
+            'Aprovado pela Diretoria e encaminhado para conferência do Contas a Pagar.'
+        );
+      } else {
+        await avancarProcesso(
+          item.id,
+          'pagamento' as StatusProcesso,
+          'Contas a Pagar',
+          comentarioAcao.trim() ||
+            'Conta conferida e aprovada pelo Contas a Pagar. Liberada para programação e pagamento.'
+        );
+      }
+
+      setComentarioAcao('');
+    } finally {
+      setProcessando(false);
+    }
   };
 
-  const handleReprovar = (p: ProcessoCompra) => {
-    reprovarProcesso(
-      p.id, 
-      p.status === 'autorizacao_cp' ? 'Validador CP' : 'CFO', 
-      comentarioAcao || 'Solicitação recusada. Revisar custos e justificativas.'
-    );
-    setComentarioAcao('');
+  const reprovar = async (
+    item: ProcessoCompra
+  ) => {
+    if (processando) return;
+
+    try {
+      setProcessando(true);
+
+      await reprovarProcesso(
+        item.id,
+        isDiretoria
+          ? 'Diretoria'
+          : 'Contas a Pagar',
+        comentarioAcao.trim() ||
+          'Solicitação reprovada. Revisar dados, valores e justificativas.'
+      );
+
+      setComentarioAcao('');
+    } finally {
+      setProcessando(false);
+    }
   };
 
-  const handleSolicitarAjustes = (p: ProcessoCompra) => {
-    solicitarAjustes(
-      p.id, 
-      p.status === 'autorizacao_cp' ? 'Validador CP' : 'CFO', 
-      comentarioAcao || 'Solicitada revisão de proposta comercial com fornecedor.'
-    );
-    setComentarioAcao('');
+  const pedirAjustes = async (
+    item: ProcessoCompra
+  ) => {
+    if (processando) return;
+
+    try {
+      setProcessando(true);
+
+      await solicitarAjustes(
+        item.id,
+        isDiretoria
+          ? 'Diretoria'
+          : 'Contas a Pagar',
+        comentarioAcao.trim() ||
+          'Foram solicitados ajustes antes de uma nova análise.'
+      );
+
+      setComentarioAcao('');
+    } finally {
+      setProcessando(false);
+    }
   };
 
   return (
-    <div className="space-y-10" id="approvals-view-container">
-      {/* View Header */}
+    <div
+      className="space-y-8"
+      id="approvals-view-container"
+    >
       <div>
-        <h1 className="text-2xl font-bold font-sans tracking-tight text-[#0F172A]">Central de Autorizações</h1>
-        <p className="text-xs text-slate-400 mt-1">Valide e assine compras corporativas de acordo com as alçadas e conformidade fiscal.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-[#0F172A]">
+          Central de Autorizações
+        </h1>
+
+        <p className="mt-1 text-xs text-slate-400">
+          Diretoria e Contas a Pagar realizam todas as
+          aprovações nesta página.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <ResumoEtapa
+          titulo="Aguardando Diretoria"
+          quantidade={
+            aprovacoesPendentes.filter(
+              item =>
+                String(item.status) ===
+                'autorizacao_diretoria'
+            ).length
+          }
+          icon={Crown}
+          classe="bg-purple-50 text-purple-700"
+        />
+
+        <ResumoEtapa
+          titulo="Aguardando Contas a Pagar"
+          quantidade={
+            aprovacoesPendentes.filter(
+              item =>
+                String(item.status) ===
+                'autorizacao_contas'
+            ).length
+          }
+          icon={WalletCards}
+          classe="bg-blue-50 text-blue-700"
+        />
       </div>
 
       {aprovacoesPendentes.length === 0 ? (
-        <div className="bg-white rounded-[18px] border border-slate-100 p-16 text-center shadow-sm">
-          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Check className="w-5 h-5" />
+        <div className="rounded-[18px] border border-slate-100 bg-white p-16 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <Check className="h-5 w-5" />
           </div>
-          <h3 className="text-sm font-bold text-[#0F172A]">Tudo Autorizado!</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Nenhuma compra pendente de aprovação CP ou de Diretoria no momento.</p>
+
+          <h3 className="text-sm font-bold text-[#0F172A]">
+            Nenhuma autorização pendente
+          </h3>
+
+          <p className="mx-auto mt-1 max-w-sm text-xs text-slate-400">
+            Todas as solicitações foram analisadas.
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Left Column: List of Pendings (4 Cols) */}
-          <div className="lg:col-span-5 space-y-4 max-h-[550px] overflow-y-auto scrollbar-none pr-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Fila de Pendências ({aprovacoesPendentes.length})</span>
-            <div className="space-y-3">
-              {aprovacoesPendentes.map((p) => {
-                const isSelected = p.id === selectedId;
-                const forn = fornecedores.find(f => f.id === p.fornecedorId);
-                const emp = empresas.find(e => e.id === p.empresaId);
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+          <div className="max-h-[680px] space-y-3 overflow-y-auto pr-1 lg:col-span-5">
+            {aprovacoesPendentes.map(item => {
+              const selecionado =
+                item.id === selectedId;
 
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedId(p.id)}
-                    className={`w-full p-4 rounded-[18px] border text-left transition-all flex flex-col justify-between ${
-                      isSelected 
-                        ? 'bg-[#0F172A] border-[#0F172A] text-white shadow-md' 
-                        : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'
+              const empresa = empresas.find(
+                registro =>
+                  registro.id === item.empresaId
+              );
+
+              const statusDiretoria =
+                String(item.status) ===
+                'autorizacao_diretoria';
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() =>
+                    setSelectedId(item.id)
+                  }
+                  className={`w-full rounded-[18px] border p-4 text-left transition-all ${
+                    selecionado
+                      ? 'border-[#0F172A] bg-[#0F172A] text-white shadow-md'
+                      : 'border-slate-100 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="font-mono text-[10px] font-bold">
+                      {item.id}
+                    </span>
+
+                    <span
+                      className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase ${
+                        statusDiretoria
+                          ? selecionado
+                            ? 'bg-purple-200 text-purple-900'
+                            : 'bg-purple-100 text-purple-700'
+                          : selecionado
+                            ? 'bg-blue-200 text-blue-900'
+                            : 'bg-blue-100 text-blue-700'
+                      }`}
+                    >
+                      {statusDiretoria
+                        ? 'Diretoria'
+                        : 'Contas a Pagar'}
+                    </span>
+                  </div>
+
+                  <h4
+                    className={`truncate text-xs font-bold ${
+                      selecionado
+                        ? 'text-white'
+                        : 'text-slate-800'
                     }`}
                   >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-bold font-mono tracking-wide">{p.id}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                          p.status === 'autorizacao_cp' 
-                            ? isSelected ? 'bg-[#D4AF37] text-[#0F172A]' : 'bg-amber-100 text-amber-800'
-                            : isSelected ? 'bg-purple-200 text-purple-900' : 'bg-purple-100 text-purple-800'
-                        }`}>
-                          {p.status === 'autorizacao_cp' ? 'CP' : 'DIRETORIA'}
-                        </span>
-                      </div>
-                      <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>
-                        {p.descricao}
-                      </h4>
-                      <p className={`text-[10px] mt-1 truncate ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
-                        Fornecedor: {forn?.nome} | Empresa: {emp?.nome.split(' ')[0]}
-                      </p>
-                    </div>
+                    {item.descricao}
+                  </h4>
 
-                    <div className="flex items-center justify-between mt-4 pt-2.5 border-t border-white/5">
-                      <span className="text-[10px] font-mono font-medium">Prazo: {p.prazo}</span>
-                      <span className="text-xs font-bold font-mono">{formatarReal(p.valor)}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                  <p
+                    className={`mt-1 truncate text-[10px] ${
+                      selecionado
+                        ? 'text-slate-300'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    {obterFavorecido(item)} •{' '}
+                    {empresa?.nome || '-'}
+                  </p>
+
+                  <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
+                    <span className="font-mono text-[10px]">
+                      Prazo: {item.prazo || '-'}
+                    </span>
+
+                    <span className="font-mono text-xs font-bold">
+                      {formatarReal(item.valor)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Right Column: Interaction Panel (7 Cols) */}
           <div className="lg:col-span-7">
-            {processo ? (
-              <div className="bg-white rounded-[18px] border border-slate-100 shadow-sm p-8 space-y-6">
-                
-                {/* Visual Header depending on status */}
-                <div className={`p-5 rounded-[14px] flex items-center gap-4 ${
-                  processo.status === 'autorizacao_cp' 
-                    ? 'bg-amber-50/50 border border-amber-100/50 text-amber-900' 
-                    : 'bg-purple-50/50 border border-purple-100/50 text-purple-900'
-                }`}>
-                  {processo.status === 'autorizacao_cp' ? (
-                    <ShieldCheck className="w-8 h-8 text-amber-600 shrink-0" />
+            {processo && (
+              <div className="space-y-6 rounded-[18px] border border-slate-100 bg-white p-8 shadow-sm">
+                <div
+                  className={`flex items-center gap-4 rounded-[14px] border p-5 ${
+                    isDiretoria
+                      ? 'border-purple-100 bg-purple-50 text-purple-900'
+                      : 'border-blue-100 bg-blue-50 text-blue-900'
+                  }`}
+                >
+                  {isDiretoria ? (
+                    <Crown className="h-8 w-8 shrink-0 text-purple-600" />
                   ) : (
-                    <Crown className="w-8 h-8 text-purple-600 shrink-0" />
+                    <WalletCards className="h-8 w-8 shrink-0 text-blue-600" />
                   )}
+
                   <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider">
-                      {processo.status === 'autorizacao_cp' 
-                        ? '🛡️ AGUARDANDO CONTROLE DE PAGAMENTOS (CP)' 
-                        : '👑 AGUARDANDO ALÇADA DE DIRETORIA EXECUTIVE'}
+                    <h3 className="text-xs font-bold uppercase tracking-wide">
+                      {isDiretoria
+                        ? 'Aguardando aprovação da Diretoria'
+                        : 'Aguardando aprovação do Contas a Pagar'}
                     </h3>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      {processo.status === 'autorizacao_cp'
-                        ? 'O CP valida adequação fiscal, teto anual do setor e consistência de fornecedor.'
-                        : 'Demanda de alto valor faturado requer autorização expressa do CFO para emissão bancária.'}
+
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {isDiretoria
+                        ? 'Após a aprovação, a solicitação seguirá para conferência do Contas a Pagar.'
+                        : 'Após a aprovação, a conta será liberada para programação e pagamento.'}
                     </p>
                   </div>
                 </div>
 
-                {/* Core Attributes */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-50 pb-3">
-                    <span className="text-xs font-bold text-slate-800">Finalidade:</span>
-                    <span className="text-xs text-slate-600 max-w-[320px] text-right truncate" title={processo.descricao}>{processo.descricao}</span>
-                  </div>
+                <div className="grid grid-cols-1 gap-4 text-xs md:grid-cols-2">
+                  <Info
+                    label="Empresa"
+                    value={
+                      empresas.find(
+                        item =>
+                          item.id === processo.empresaId
+                      )?.nome || '-'
+                    }
+                  />
 
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-xs">
-                    <div>
-                      <span className="text-slate-400 block font-medium">Empresa solicitante:</span>
-                      <span className="font-semibold text-slate-800">{empresas.find(e => e.id === processo.empresaId)?.nome}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-medium">Fornecedor:</span>
-                      <span className="font-semibold text-slate-800">{fornecedores.find(f => f.id === processo.fornecedorId)?.nome}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-medium">Plano de Budget:</span>
-                      <span className="font-semibold text-slate-800">{planosFinanceiros.find(p => p.id === processo.planoFinanceiroId)?.nome}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-medium">Centro de Custo:</span>
-                      <span className="font-semibold text-slate-800">{centrosCustos.find(c => c.id === processo.centroCustoId)?.nome}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-medium">Urgência:</span>
-                      <span className="font-bold text-red-600 uppercase">{processo.urgencia}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block font-medium">Valor Solicitado:</span>
-                      <span className="font-bold text-[#0F172A] font-mono text-sm">{formatarReal(processo.valor)}</span>
-                    </div>
-                  </div>
+                  <Info
+                    label={
+                      (processo as any)
+                        .tipoPagamento === 'interno'
+                        ? 'Beneficiário interno'
+                        : 'Fornecedor'
+                    }
+                    value={obterFavorecido(processo)}
+                  />
+
+                  <Info
+                    label="Plano de conta"
+                    value={
+                      planosFinanceiros.find(
+                        item =>
+                          item.id ===
+                          processo.planoFinanceiroId
+                      )?.nome || '-'
+                    }
+                  />
+
+                  <Info
+                    label="Centro de custo"
+                    value={
+                      centrosCustos.find(
+                        item =>
+                          item.id ===
+                          processo.centroCustoId
+                      )?.nome || '-'
+                    }
+                  />
+
+                  <Info
+                    label="Urgência"
+                    value={processo.urgencia || '-'}
+                  />
+
+                  <Info
+                    label="Valor"
+                    value={formatarReal(
+                      processo.valor
+                    )}
+                    destaque
+                  />
+
+                  <Info
+                    label="Prazo"
+                    value={processo.prazo || '-'}
+                  />
+
+                  <Info
+                    label="Responsável"
+                    value={
+                      processo.responsavel || '-'
+                    }
+                  />
                 </div>
 
-                {/* File / Doc */}
-                {processo.anexoNome && (
-                  <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-[14px] flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-slate-400" />
-                      <span className="font-medium text-slate-700">{processo.anexoNome}</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-mono">PDF | 1.4 MB</span>
+                <div className="rounded-[14px] border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">
+                    Finalidade
+                  </p>
+
+                  <p className="mt-2 text-xs leading-relaxed text-slate-700">
+                    {processo.descricao}
+                  </p>
+                </div>
+
+                {(processo as any).pixChave && (
+                  <div className="rounded-[14px] border border-emerald-100 bg-emerald-50 p-4">
+                    <p className="text-[10px] font-bold uppercase text-emerald-600">
+                      Dados PIX
+                    </p>
+
+                    <p className="mt-2 break-all font-mono text-xs font-semibold text-slate-700">
+                      {(processo as any).pixChave}
+                    </p>
+
+                    {(processo as any).pixFavorecido && (
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        Favorecido:{' '}
+                        {
+                          (processo as any)
+                            .pixFavorecido
+                        }
+                      </p>
+                    )}
                   </div>
                 )}
 
-                {/* Audit History Timeline */}
-                <div className="border-t border-slate-50 pt-5 space-y-3">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Trilha de Operação</h4>
-                  <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-none">
-                    {processo.historico.map((h, i) => (
-                      <div key={i} className="flex gap-2 text-[11px] leading-relaxed">
-                        <span className="text-[#D4AF37] shrink-0">↳</span>
-                        <div className="text-slate-500">
-                          <strong className="text-slate-700">{h.usuario}</strong> ({h.data}): De {h.deStatus === 'criacao' ? 'Início' : h.deStatus} para {h.paraStatus}. <span className="italic">"{h.observacao || 'Nenhum comentário'}"</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                {processo.anexoNome && (
+                  <div className="flex items-center justify-between rounded-[14px] border border-slate-100 bg-slate-50 p-4">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-slate-400" />
 
-                {/* Decisive Action Panel */}
-                <div className="border-t border-slate-50 pt-6 space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Despacho de Aprovação / Auditoria</label>
-                    <input 
-                      type="text" 
-                      placeholder="Anote considerações sobre limites orçamentários ou fiscais..."
-                      value={comentarioAcao}
-                      onChange={(e) => setComentarioAcao(e.target.value)}
-                      className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700 placeholder-slate-400"
-                    />
-                  </div>
+                      <span className="text-xs font-semibold text-slate-700">
+                        {processo.anexoNome}
+                      </span>
+                    </div>
 
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => handleReprovar(processo)}
-                      className="flex-1 py-3 border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-[12px] transition-all"
-                    >
-                      Reprovar Compra
-                    </button>
-                    <button
-                      onClick={() => handleSolicitarAjustes(processo)}
-                      className="flex-1 py-3 border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold text-xs rounded-[12px] transition-all"
-                    >
-                      Solicitar Ajustes
-                    </button>
-                    
-                    {processo.status === 'autorizacao_cp' ? (
-                      <button
-                        onClick={() => handleAprovarCP(processo)}
-                        className="flex-2 py-3 bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold text-xs rounded-[12px] flex items-center justify-center gap-2 transition-all shadow-md flex-1"
-                        id="btn_approve_cp"
+                    {processo.anexoUrl && (
+                      <a
+                        href={processo.anexoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-bold text-[#0F172A]"
                       >
-                        <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
-                        <span>Aprovar CP</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleAutorizarDiretoria(processo)}
-                        className="flex-2 py-3 bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold text-xs rounded-[12px] flex items-center justify-center gap-2 transition-all shadow-md flex-1"
-                        id="btn_approve_diretoria"
-                      >
-                        <Crown className="w-4 h-4 text-[#D4AF37]" />
-                        <span>Autorizar Diretoria</span>
-                      </button>
+                        Abrir
+                      </a>
                     )}
                   </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold uppercase text-slate-400">
+                    Comentário da decisão
+                  </label>
+
+                  <textarea
+                    rows={3}
+                    value={comentarioAcao}
+                    onChange={event =>
+                      setComentarioAcao(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Registre observações, condições ou justificativas..."
+                    className="w-full rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-700 focus:ring-1 focus:ring-[#0F172A]/25"
+                  />
                 </div>
 
-              </div>
-            ) : (
-              <div className="bg-white rounded-[18px] border border-slate-100 p-16 text-center text-slate-400 shadow-sm">
-                Selecione um processo na lista de pendências para analisar.
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      reprovar(processo)
+                    }
+                    disabled={processando}
+                    className="rounded-[12px] border border-red-200 bg-red-50 py-3 text-xs font-bold text-red-600 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    Reprovar
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      pedirAjustes(processo)
+                    }
+                    disabled={processando}
+                    className="rounded-[12px] border border-slate-200 bg-slate-50 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Solicitar ajustes
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      aprovar(processo)
+                    }
+                    disabled={processando}
+                    className="flex items-center justify-center gap-2 rounded-[12px] bg-[#0F172A] py-3 text-xs font-bold text-white shadow-md hover:bg-[#1E293B] disabled:opacity-50"
+                  >
+                    {processando
+                      ? 'Processando...'
+                      : isDiretoria
+                        ? 'Aprovar Diretoria'
+                        : 'Aprovar para Pagamento'}
+                  </button>
+                </div>
+
+                {!isDiretoria && (
+                  <div className="flex items-start gap-2 rounded-[12px] border border-amber-100 bg-amber-50 p-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+
+                    <p className="text-[10px] text-amber-700">
+                      Ao aprovar, a conta será exibida na
+                      página Contas a Pagar para
+                      programação e pagamento.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
-
         </div>
       )}
     </div>
   );
 };
+
+const ResumoEtapa = ({
+  titulo,
+  quantidade,
+  icon: Icon,
+  classe,
+}: any) => (
+  <div className="rounded-[18px] border border-slate-100 bg-white p-5 shadow-sm">
+    <div
+      className={`flex h-10 w-10 items-center justify-center rounded-xl ${classe}`}
+    >
+      <Icon className="h-5 w-5" />
+    </div>
+
+    <p className="mt-4 text-[10px] font-bold uppercase text-slate-400">
+      {titulo}
+    </p>
+
+    <p className="mt-1 font-mono text-xl font-bold text-[#0F172A]">
+      {quantidade}
+    </p>
+  </div>
+);
+
+const Info = ({
+  label,
+  value,
+  destaque,
+}: {
+  label: string;
+  value: string;
+  destaque?: boolean;
+}) => (
+  <div>
+    <span className="block text-slate-400">
+      {label}:
+    </span>
+
+    <span
+      className={`font-semibold ${
+        destaque
+          ? 'font-mono text-sm text-[#0F172A]'
+          : 'text-slate-800'
+      }`}
+    >
+      {value}
+    </span>
+  </div>
+);
+
+export default ApprovalsView;
