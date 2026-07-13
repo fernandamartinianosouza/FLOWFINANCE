@@ -93,7 +93,7 @@ export interface ProcessoDocumento {
 }
 
 export interface ProcessoCompra {
-  tipoPagamento?: 'fornecedor' | 'interno';
+tipoPagamento?: 'fornecedor' | 'interno';
 fornecedorId?: string | null;
 beneficiarioInterno?: string | null;
 

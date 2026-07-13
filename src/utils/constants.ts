@@ -4,13 +4,13 @@
 
 export const CORES_PIE = ['#0F172A', '#D4AF37', '#5E7A8C', '#8DA9C4'];
 
-export const STATUS_LABELS: Record<string, string> = {
+export const STATUS_LABELS = {
   solicitacao: 'Solicitação',
   cotacao: 'Cotação',
   conferencia: 'Conferência',
+  autorizacao_diretoria: 'Aprovação da Diretoria',
   autorizacao_contas: 'Aprovação do Contas a Pagar',
-  autorizacao_diretoria: 'Diretoria',
-  pagamento: 'Contas a Pagar',
+  pagamento: 'Aguardando Pagamento',
   conciliacao: 'Conciliação',
   finalizado: 'Finalizado',
 };

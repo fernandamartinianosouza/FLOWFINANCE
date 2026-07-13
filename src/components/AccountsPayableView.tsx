@@ -11,7 +11,10 @@ import {
   Search,
   Wallet,
   X,
+  Download,
 } from 'lucide-react';
+
+import { gerarRelatorioContasPagar } from '../services/relatorioContasPagarService';
 
 type FiltroSituacao =
   | 'todas'
@@ -84,6 +87,12 @@ export const AccountsPayableView: React.FC = () => {
     useState('pix');
   const [comprovante, setComprovante] =
     useState('');
+  const [observacaoPagamento, setObservacaoPagamento] =
+    useState('');
+  const [valorPagamento, setValorPagamento] =
+    useState('');
+  const [salvandoPagamento, setSalvandoPagamento] =
+    useState(false);
 
   const todasContas = useMemo(
     () =>
@@ -98,7 +107,7 @@ export const AccountsPayableView: React.FC = () => {
   );
 
   const contaPaga = (processo: any) =>
-    Boolean(processo.dataPagamento) ||
+    obterSaldoPagar(processo) <= 0.001 ||
     ['conciliacao', 'finalizado'].includes(
       String(processo.status)
     );
@@ -107,6 +116,16 @@ export const AccountsPayableView: React.FC = () => {
     processo.dataProgramadaPagamento ||
     processo.prazo ||
     '';
+
+  const obterValorPago = (processo: any) =>
+    Number(processo.valorPago || 0);
+
+  const obterSaldoPagar = (processo: any) =>
+    Math.max(
+      Number(processo.valor || 0) -
+        obterValorPago(processo),
+      0
+    );
 
   const contasVencidas = todasContas.filter(
     (processo: any) =>
@@ -311,6 +330,63 @@ export const AccountsPayableView: React.FC = () => {
     contasAVencer,
   ]);
 
+  const gerarRelatorioPDF = () => {
+    try {
+      const empresaSelecionada = empresas.find(
+        (empresa: any) =>
+          empresa.id === empresaFiltro
+      );
+
+      const nomesSituacoes: Record<
+        FiltroSituacao,
+        string
+      > = {
+        todas: 'Todas as contas',
+        vencidas: 'Contas vencidas',
+        a_vencer: 'Contas a vencer',
+        programadas: 'Contas programadas',
+        nao_programadas:
+          'Contas não programadas',
+        pagas: 'Contas pagas',
+      };
+
+      const filtrosAplicados = [
+        nomesSituacoes[situacao],
+        empresaSelecionada
+          ? `Empresa: ${empresaSelecionada.nome}`
+          : 'Todas as empresas',
+        formaFiltro
+          ? `Forma: ${formaFiltro.toUpperCase()}`
+          : 'Todas as formas',
+        busca.trim()
+          ? `Busca: ${busca.trim()}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+
+      gerarRelatorioContasPagar({
+        contas: contasFiltradas,
+        fornecedores,
+        empresas,
+        titulo: nomesSituacoes[situacao],
+        periodoInicio: dataInicio || undefined,
+        periodoFim: dataFim || undefined,
+        filtrosDescricao: filtrosAplicados,
+      });
+    } catch (error: any) {
+      console.error(
+        'Erro ao gerar relatório de contas a pagar:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível gerar o relatório PDF.'
+      );
+    }
+  };
+
   const copiarPix = async (
     processoId: string,
     chave?: string | null
@@ -361,17 +437,78 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const confirmarPagamento = async () => {
-    if (!processoPagando) return;
+    if (!processoPagando || salvandoPagamento) {
+      return;
+    }
 
-    await registrarPagamento(
-      processoPagando.id,
-      metodoPagamento,
-      comprovante.trim() || undefined
+    const valorNumerico = Number(valorPagamento);
+    const saldo = obterSaldoPagar(
+      processoPagando
     );
+
+    if (
+      !Number.isFinite(valorNumerico) ||
+      valorNumerico <= 0
+    ) {
+      alert(
+        'Informe um valor de pagamento válido.'
+      );
+      return;
+    }
+
+    if (valorNumerico > saldo + 0.001) {
+      alert(
+        `O valor informado é maior que o saldo de ${formatarReal(
+          saldo
+        )}.`
+      );
+      return;
+    }
+
+    try {
+      setSalvandoPagamento(true);
+
+      await registrarPagamento(
+        processoPagando.id,
+        metodoPagamento,
+        valorNumerico,
+        comprovante.trim() || undefined,
+        observacaoPagamento.trim() || undefined
+      );
+
+      setProcessoPagando(null);
+      setComprovante('');
+      setObservacaoPagamento('');
+      setValorPagamento('');
+      setMetodoPagamento('pix');
+    } finally {
+      setSalvandoPagamento(false);
+    }
+  };
+
+  const abrirModalPagamento = (
+    processo: any
+  ) => {
+    const saldo = obterSaldoPagar(processo);
+
+    setProcessoPagando(processo);
+    setMetodoPagamento(
+      processo.formaPagamento || 'pix'
+    );
+    setValorPagamento(
+      saldo > 0 ? String(saldo) : ''
+    );
+    setComprovante('');
+    setObservacaoPagamento('');
+  };
+
+  const fecharModalPagamento = () => {
+    if (salvandoPagamento) return;
 
     setProcessoPagando(null);
     setComprovante('');
-    setMetodoPagamento('pix');
+    setObservacaoPagamento('');
+    setValorPagamento('');
   };
 
   const abrirProcesso = (id: string) => {
@@ -384,15 +521,27 @@ export const AccountsPayableView: React.FC = () => {
       className="space-y-8"
       id="accounts-payable-view-container"
     >
-      <div>
-        <h1 className="text-2xl font-bold text-[#0F172A]">
-          Contas a Pagar
-        </h1>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[#0F172A]">
+            Contas a Pagar
+          </h1>
 
-        <p className="mt-1 text-xs text-slate-400">
-          Consulte contas vencidas, a vencer,
-          programadas e pagas.
-        </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Consulte contas vencidas, a vencer,
+            programadas e pagas.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={gerarRelatorioPDF}
+          disabled={contasFiltradas.length === 0}
+          className="flex items-center justify-center gap-2 rounded-[12px] bg-[#0F172A] px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" />
+          Baixar relatório PDF
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -573,7 +722,13 @@ export const AccountsPayableView: React.FC = () => {
                     PIX
                   </th>
                   <th className="px-4 py-3">
-                    Valor
+                    Valor total
+                  </th>
+                  <th className="px-4 py-3">
+                    Pago
+                  </th>
+                  <th className="px-4 py-3">
+                    Saldo
                   </th>
                   <th className="px-4 py-3">
                     Vencimento
@@ -721,6 +876,18 @@ export const AccountsPayableView: React.FC = () => {
                           )}
                         </td>
 
+                        <td className="px-4 py-4 font-mono text-xs font-semibold text-emerald-600">
+                          {formatarReal(
+                            obterValorPago(processo)
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 font-mono text-xs font-bold text-amber-600">
+                          {formatarReal(
+                            obterSaldoPagar(processo)
+                          )}
+                        </td>
+
                         <td className="px-4 py-4 font-mono text-xs text-slate-500">
                           {processo.prazo || '-'}
                         </td>
@@ -809,18 +976,16 @@ export const AccountsPayableView: React.FC = () => {
                             {!pago && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setProcessoPagando(
+                                onClick={() =>
+                                  abrirModalPagamento(
                                     processo
-                                  );
-                                  setMetodoPagamento(
-                                    processo.formaPagamento ||
-                                      'pix'
-                                  );
-                                }}
+                                  )
+                                }
                                 className="rounded-[9px] bg-emerald-600 px-3 py-2 text-[9px] font-bold text-white hover:bg-emerald-700"
                               >
-                                Registrar pagamento
+                                {obterValorPago(processo) > 0
+                                  ? 'Novo pagamento'
+                                  : 'Registrar pagamento'}
                               </button>
                             )}
                           </div>
@@ -839,9 +1004,7 @@ export const AccountsPayableView: React.FC = () => {
         <>
           <div
             className="fixed inset-0 z-50 bg-slate-900/30"
-            onClick={() =>
-              setProcessoPagando(null)
-            }
+            onClick={fecharModalPagamento}
           />
 
           <div className="fixed inset-y-0 right-0 z-50 flex h-screen w-full max-w-md flex-col bg-white shadow-2xl">
@@ -861,9 +1024,7 @@ export const AccountsPayableView: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() =>
-                  setProcessoPagando(null)
-                }
+                onClick={fecharModalPagamento}
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100"
               >
                 <X className="h-4 w-4" />
@@ -871,6 +1032,62 @@ export const AccountsPayableView: React.FC = () => {
             </div>
 
             <div className="flex-1 space-y-5 overflow-y-auto p-6">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <ResumoValor
+                  label="Valor total"
+                  value={formatarReal(
+                    processoPagando.valor
+                  )}
+                />
+
+                <ResumoValor
+                  label="Já pago"
+                  value={formatarReal(
+                    obterValorPago(
+                      processoPagando
+                    )
+                  )}
+                  classe="bg-emerald-50 text-emerald-700"
+                />
+
+                <ResumoValor
+                  label="Saldo restante"
+                  value={formatarReal(
+                    obterSaldoPagar(
+                      processoPagando
+                    )
+                  )}
+                  classe="bg-amber-50 text-amber-700"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-slate-400">
+                  Valor deste pagamento
+                </label>
+
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max={obterSaldoPagar(
+                    processoPagando
+                  )}
+                  value={valorPagamento}
+                  onChange={event =>
+                    setValorPagamento(
+                      event.target.value
+                    )
+                  }
+                  placeholder="0,00"
+                  className="w-full rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 font-mono text-xs font-bold"
+                />
+
+                <p className="text-[9px] text-slate-400">
+                  Informe um valor menor que o saldo para registrar pagamento parcial.
+                </p>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold uppercase text-slate-400">
                   Método
@@ -920,12 +1137,38 @@ export const AccountsPayableView: React.FC = () => {
                 />
               </div>
 
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-slate-400">
+                  Observação
+                </label>
+
+                <textarea
+                  rows={3}
+                  value={observacaoPagamento}
+                  onChange={event =>
+                    setObservacaoPagamento(
+                      event.target.value
+                    )
+                  }
+                  placeholder="Observação opcional sobre este pagamento"
+                  className="w-full rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+                />
+              </div>
+
               <button
                 type="button"
                 onClick={confirmarPagamento}
-                className="w-full rounded-[12px] bg-emerald-600 py-3 text-xs font-bold text-white hover:bg-emerald-700"
+                disabled={salvandoPagamento}
+                className="w-full rounded-[12px] bg-emerald-600 py-3 text-xs font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Confirmar pagamento
+                {salvandoPagamento
+                  ? 'Registrando...'
+                  : Number(valorPagamento) <
+                      obterSaldoPagar(
+                        processoPagando
+                      )
+                    ? 'Registrar pagamento parcial'
+                    : 'Quitar conta'}
               </button>
             </div>
           </div>
@@ -997,5 +1240,27 @@ const Situacao = ({
     </span>
   );
 };
+
+const ResumoValor = ({
+  label,
+  value,
+  classe = 'bg-slate-50 text-[#0F172A]',
+}: {
+  label: string;
+  value: string;
+  classe?: string;
+}) => (
+  <div
+    className={`rounded-[12px] p-3 ${classe}`}
+  >
+    <p className="text-[9px] font-bold uppercase opacity-70">
+      {label}
+    </p>
+
+    <p className="mt-1 font-mono text-sm font-bold">
+      {value}
+    </p>
+  </div>
+);
 
 export default AccountsPayableView;

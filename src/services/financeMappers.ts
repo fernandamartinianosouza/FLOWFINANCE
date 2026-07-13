@@ -235,6 +235,18 @@ export const mapProcessoFromDb = (
     pixBanco: item.pix_banco || null,
     pixObservacao: item.pix_observacao || null,
 
+    valorPago: numero(item.valor_pago),
+    saldoPagar:
+      item.saldo_pagar == null
+        ? Math.max(
+            numero(item.valor) -
+              numero(item.valor_pago),
+            0
+          )
+        : numero(item.saldo_pagar),
+    pagamentoParcial:
+      Boolean(item.pagamento_parcial),
+
     historico: Array.isArray(
       item.historico_processos
     )
@@ -312,6 +324,17 @@ export const mapProcessoToDb = (item: any) => {
     pix_banco: textoOuNull(item.pixBanco),
     pix_observacao:
       textoOuNull(item.pixObservacao),
+
+    valor_pago: numero(item.valorPago),
+    saldo_pagar: Math.max(
+      numero(item.valor) -
+        numero(item.valorPago),
+      0
+    ),
+    pagamento_parcial:
+      numero(item.valorPago) > 0 &&
+      numero(item.valorPago) <
+        numero(item.valor),
   };
 };
 

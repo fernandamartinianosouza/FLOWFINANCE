@@ -92,7 +92,9 @@ interface FinanceContextType {
   registrarPagamento: (
     id: string,
     metodo: 'pix' | 'ted' | 'boleto' | 'dinheiro' | 'cartao',
-    comprovante?: string
+    valorPagamento: number,
+    comprovante?: string,
+    observacao?: string
   ) => Promise<void>;
 
   conciliarPagamento: (id: string) => Promise<void>;
@@ -518,70 +520,242 @@ const anexarDocumentoProcesso = async (params: {
   const registrarPagamento = async (
     id: string,
     metodo: 'pix' | 'ted' | 'boleto' | 'dinheiro' | 'cartao',
-    comprovante?: string
+    valorPagamento: number,
+    comprovante?: string,
+    observacao?: string
   ) => {
     try {
-      const processoAtual = processos.find(p => p.id === id);
-      if (!processoAtual) return;
+      const processoAtual = processos.find(
+        processo => processo.id === id
+      );
+
+      if (!processoAtual) {
+        throw new Error('Processo não encontrado.');
+      }
+
+      const valorTotal = Number(
+        processoAtual.valor || 0
+      );
+
+      const valorJaPago = Number(
+        (processoAtual as any).valorPago || 0
+      );
+
+      const saldoAtual = Math.max(
+        valorTotal - valorJaPago,
+        0
+      );
+
+      const valorDestePagamento = Number(
+        valorPagamento
+      );
+
+      if (
+        !Number.isFinite(valorDestePagamento) ||
+        valorDestePagamento <= 0
+      ) {
+        throw new Error(
+          'Informe um valor de pagamento válido.'
+        );
+      }
+
+      if (saldoAtual <= 0) {
+        throw new Error(
+          'Esta conta já está totalmente quitada.'
+        );
+      }
+
+      if (
+        valorDestePagamento >
+        saldoAtual + 0.001
+      ) {
+        throw new Error(
+          `O valor informado é maior que o saldo restante de ${saldoAtual.toLocaleString(
+            'pt-BR',
+            {
+              style: 'currency',
+              currency: 'BRL',
+            }
+          )}.`
+        );
+      }
+
+      const novoValorPago =
+        valorJaPago + valorDestePagamento;
+
+      const novoSaldo = Math.max(
+        valorTotal - novoValorPago,
+        0
+      );
+
+      const quitado = novoSaldo <= 0.001;
+      const dataHoje = new Date()
+        .toISOString()
+        .split('T')[0];
+
+      const textoValor =
+        valorDestePagamento.toLocaleString(
+          'pt-BR',
+          {
+            style: 'currency',
+            currency: 'BRL',
+          }
+        );
+
+      const textoSaldo =
+        novoSaldo.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        });
 
       const novoHistorico: HistoricoStatus = {
-        data: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        data: new Date()
+          .toISOString()
+          .replace('T', ' ')
+          .substring(0, 16),
         usuario: usuarioLogado,
         deStatus: processoAtual.status,
-        paraStatus: 'conciliacao',
-        observacao: `Pagamento registrado via ${metodo.toUpperCase()}. Comprovante anexado.`,
+        paraStatus: quitado
+          ? 'conciliacao'
+          : 'pagamento',
+        observacao: quitado
+          ? `Pagamento final de ${textoValor} registrado via ${metodo.toUpperCase()}. Conta quitada e enviada para conciliação.${
+              observacao
+                ? ` Observação: ${observacao}`
+                : ''
+            }`
+          : `Pagamento parcial de ${textoValor} registrado via ${metodo.toUpperCase()}. Saldo restante: ${textoSaldo}.${
+              observacao
+                ? ` Observação: ${observacao}`
+                : ''
+            }`,
       };
 
       const atualizado: ProcessoCompra = {
         ...processoAtual,
-        status: 'conciliacao',
+        status: quitado
+          ? 'conciliacao'
+          : 'pagamento',
         metodoPagamento: metodo,
-        dataPagamento: new Date().toISOString().split('T')[0],
-        comprovanteNome: comprovante || `comprovante_${metodo}_${id.toLowerCase()}.pdf`,
-        historico: [...(processoAtual.historico || []), novoHistorico],
-      };
+        valorPago: novoValorPago,
+        saldoPagar: novoSaldo,
+        pagamentoParcial:
+          novoValorPago > 0 && !quitado,
+        dataPagamento: quitado
+          ? dataHoje
+          : processoAtual.dataPagamento,
+        comprovanteNome:
+          comprovante ||
+          processoAtual.comprovanteNome ||
+          null,
+        historico: [
+          ...(processoAtual.historico || []),
+          novoHistorico,
+        ],
+      } as any;
 
-      await financeService.editarProcesso(id, atualizado);
+      const salvo =
+        await financeService.editarProcesso(
+          id,
+          atualizado
+        );
 
-      if ((processoAtual as any).dbId) {
+      const processoDbId =
+        (processoAtual as any).dbId ||
+        (salvo as any).dbId;
+
+      if (processoDbId) {
+        await financeService.criarPagamentoProcesso({
+          processoId: processoDbId,
+          valorPago: valorDestePagamento,
+          metodoPagamento: metodo,
+          dataPagamento: dataHoje,
+          comprovante: comprovante || null,
+          observacao: observacao || null,
+        });
+
         await financeService.criarHistoricoProcesso({
-          dbId: (processoAtual as any).dbId,
+          dbId: processoDbId,
           usuario: usuarioLogado,
           deStatus: processoAtual.status,
-          paraStatus: 'conciliacao',
-          observacao: novoHistorico.observacao,
+          paraStatus: quitado
+            ? 'conciliacao'
+            : 'pagamento',
+          observacao:
+            novoHistorico.observacao,
         });
       }
 
-      setProcessos(prev => prev.map(p => (p.id === id ? atualizado : p)));
+      setProcessos(prev =>
+        prev.map(processo =>
+          processo.id === id
+            ? {
+                ...processo,
+                ...atualizado,
+                ...salvo,
+              }
+            : processo
+        )
+      );
 
-      const fornecedor = fornecedores.find(f => f.id === processoAtual.fornecedorId);
-
-      if (fornecedor) {
-        const atualizadoFornecedor = {
-          ...fornecedor,
-          historicoCompras:
-            Number(fornecedor.historicoCompras || 0) + Number(processoAtual.valor || 0),
-          ultimaCompra: new Date().toISOString().split('T')[0],
-        };
-
-        setFornecedores(prev =>
-          prev.map(f => (f.id === fornecedor.id ? atualizadoFornecedor : f))
+      if (quitado) {
+        const fornecedor = fornecedores.find(
+          fornecedorItem =>
+            fornecedorItem.id ===
+            processoAtual.fornecedorId
         );
+
+        if (fornecedor) {
+          const atualizadoFornecedor = {
+            ...fornecedor,
+            historicoCompras:
+              Number(
+                fornecedor.historicoCompras || 0
+              ) + valorTotal,
+            ultimaCompra: dataHoje,
+          };
+
+          setFornecedores(prev =>
+            prev.map(item =>
+              item.id === fornecedor.id
+                ? atualizadoFornecedor
+                : item
+            )
+          );
+        }
       }
 
-      const alerta = await financeService.criarAlerta({
-        tipo: 'sucesso',
-        titulo: 'Pagamento Efetuado',
-        mensagem: `${id} pago via ${metodo.toUpperCase()}. Pronto para Conciliação.`,
-        lido: false,
-        processoId: (processoAtual as any).dbId || null,
-      });
+      const alerta =
+        await financeService.criarAlerta({
+          tipo: quitado
+            ? 'sucesso'
+            : 'info',
+          titulo: quitado
+            ? 'Conta Quitada'
+            : 'Pagamento Parcial Registrado',
+          mensagem: quitado
+            ? `${id} foi totalmente pago e enviado para conciliação.`
+            : `${id} recebeu pagamento parcial de ${textoValor}. Saldo restante: ${textoSaldo}.`,
+          lido: false,
+          processoId: processoDbId || null,
+        });
 
-      setAlertas(prev => [alerta, ...prev]);
+      setAlertas(prev => [
+        alerta,
+        ...prev,
+      ]);
     } catch (error: any) {
-      console.error('Erro ao registrar pagamento:', error);
-      alert(error.message || 'Erro ao registrar pagamento.');
+      console.error(
+        'Erro ao registrar pagamento:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Erro ao registrar pagamento.'
+      );
+
+      throw error;
     }
   };
 

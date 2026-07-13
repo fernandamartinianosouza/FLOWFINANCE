@@ -30,6 +30,7 @@ const limparNomeArquivo = (nome: string) => {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9.\-_]/g, '_');
+
 };
 
 export const financeService = {
@@ -467,5 +468,58 @@ export const financeService = {
 
     if (error) throw error;
     return mapAlertaFromDb(data);
+  },
+
+  async criarPagamentoProcesso(params: {
+    processoId: string;
+    valorPago: number;
+    metodoPagamento: string;
+    dataPagamento?: string;
+    comprovante?: string | null;
+    observacao?: string | null;
+  }) {
+    const userId = await getUserId();
+
+    const { data, error } = await supabase
+      .from('pagamentos_processos')
+      .insert({
+        user_id: userId,
+        processo_id: params.processoId,
+        valor_pago: Number(params.valorPago),
+        metodo_pagamento: params.metodoPagamento,
+        data_pagamento:
+          params.dataPagamento ||
+          new Date().toISOString().split('T')[0],
+        comprovante: params.comprovante || null,
+        observacao: params.observacao || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return data;
+  },
+
+  async getPagamentosProcesso(processoId: string) {
+    const { data, error } = await supabase
+      .from('pagamentos_processos')
+      .select('*')
+      .eq('processo_id', processoId)
+      .order('data_pagamento', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return data || [];
+  },
+
+  async excluirPagamentoProcesso(pagamentoId: string) {
+    const { error } = await supabase
+      .from('pagamentos_processos')
+      .delete()
+      .eq('id', pagamentoId);
+
+    if (error) throw error;
   },
 };
