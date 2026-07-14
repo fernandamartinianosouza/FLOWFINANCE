@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { formatarReal } from '../utils';
 import {
@@ -12,6 +12,8 @@ import {
   Wallet,
   X,
   Download,
+  RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
 
 import { gerarRelatorioContasPagar } from '../services/relatorioContasPagarService';
@@ -26,24 +28,6 @@ type FiltroSituacao =
 
 const hojeISO = () =>
   new Date().toISOString().split('T')[0];
-
-const inicioMesISO = () => {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${String(
-    hoje.getMonth() + 1
-  ).padStart(2, '0')}-01`;
-};
-
-const fimMesISO = () => {
-  const hoje = new Date();
-  const ultimoDia = new Date(
-    hoje.getFullYear(),
-    hoje.getMonth() + 1,
-    0
-  );
-
-  return ultimoDia.toISOString().split('T')[0];
-};
 
 const diferencaDias = (data: string) => {
   const hoje = new Date(`${hojeISO()}T00:00:00`);
@@ -64,6 +48,8 @@ export const AccountsPayableView: React.FC = () => {
     registrarPagamento,
     setActiveProcessId,
     setActiveView,
+    recarregarDados,
+    loadingFinanceiro,
   } = useFinance() as any;
 
   const hoje = hojeISO();
@@ -76,9 +62,9 @@ export const AccountsPayableView: React.FC = () => {
   const [formaFiltro, setFormaFiltro] =
     useState('');
   const [dataInicio, setDataInicio] =
-    useState(inicioMesISO());
+    useState('');
   const [dataFim, setDataFim] =
-    useState(fimMesISO());
+    useState('');
   const [pixCopiadoId, setPixCopiadoId] =
     useState<string | null>(null);
   const [processoPagando, setProcessoPagando] =
@@ -93,6 +79,12 @@ export const AccountsPayableView: React.FC = () => {
     useState('');
   const [salvandoPagamento, setSalvandoPagamento] =
     useState(false);
+  const [atualizando, setAtualizando] =
+    useState(false);
+
+  useEffect(() => {
+    recarregarDados?.();
+  }, [recarregarDados]);
 
   const todasContas = useMemo(
     () =>
@@ -387,6 +379,31 @@ export const AccountsPayableView: React.FC = () => {
     }
   };
 
+  const atualizarDados = async () => {
+    if (
+      atualizando ||
+      loadingFinanceiro
+    ) {
+      return;
+    }
+
+    try {
+      setAtualizando(true);
+      await recarregarDados();
+    } finally {
+      setAtualizando(false);
+    }
+  };
+
+  const limparFiltros = () => {
+    setBusca('');
+    setSituacao('todas');
+    setEmpresaFiltro('');
+    setFormaFiltro('');
+    setDataInicio('');
+    setDataFim('');
+  };
+
   const copiarPix = async (
     processoId: string,
     chave?: string | null
@@ -533,15 +550,39 @@ export const AccountsPayableView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={gerarRelatorioPDF}
-          disabled={contasFiltradas.length === 0}
-          className="flex items-center justify-center gap-2 rounded-[12px] bg-[#0F172A] px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Download className="h-4 w-4" />
-          Baixar relatório PDF
-        </button>
+        <div className="flex w-full gap-2 md:w-auto">
+          <button
+            type="button"
+            onClick={atualizarDados}
+            disabled={
+              atualizando ||
+              loadingFinanceiro
+            }
+            className="flex flex-1 items-center justify-center gap-2 rounded-[12px] bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 md:flex-none"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${
+                atualizando ||
+                loadingFinanceiro
+                  ? 'animate-spin'
+                  : ''
+              }`}
+            />
+            Atualizar
+          </button>
+
+          <button
+            type="button"
+            onClick={gerarRelatorioPDF}
+            disabled={
+              contasFiltradas.length === 0
+            }
+            className="flex flex-1 items-center justify-center gap-2 rounded-[12px] bg-[#0F172A] px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-50 md:flex-none"
+          >
+            <Download className="h-4 w-4" />
+            PDF
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -576,7 +617,7 @@ export const AccountsPayableView: React.FC = () => {
       </div>
 
       <div className="rounded-[18px] border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
           <div className="flex items-center gap-2 rounded-[12px] bg-slate-50 px-3.5">
             <Search className="h-4 w-4 text-slate-400" />
 
@@ -688,6 +729,15 @@ export const AccountsPayableView: React.FC = () => {
             className="rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
             title="Data final"
           />
+
+          <button
+            type="button"
+            onClick={limparFiltros}
+            className="flex items-center justify-center gap-2 rounded-[12px] bg-slate-100 px-3.5 py-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-200"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Limpar
+          </button>
         </div>
       </div>
 
@@ -1463,26 +1513,4 @@ const ResumoValor = ({
   </div>
 );
 
-
-const ResumoMobile = ({
-  label,
-  value,
-  classe = 'bg-slate-50 text-[#0F172A]',
-}: {
-  label: string;
-  value: string;
-  classe?: string;
-}) => (
-  <div
-    className={`min-w-0 rounded-xl p-2.5 ${classe}`}
-  >
-    <p className="text-[8px] font-bold uppercase opacity-70">
-      {label}
-    </p>
-
-    <p className="mt-1 truncate font-mono text-[10px] font-bold">
-      {value}
-    </p>
-  </div>
-); 
 export default AccountsPayableView;

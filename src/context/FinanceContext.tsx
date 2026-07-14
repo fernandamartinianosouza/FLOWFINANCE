@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import {
   Empresa,
   Fornecedor,
@@ -23,6 +23,7 @@ interface FinanceContextType {
   alertas: AlertaSistema[];
   loadingFinanceiro: boolean;
   erroFinanceiro: string | null;
+  recarregarDados: () => Promise<void>;
 
   empresaAtivaId: string;
   setEmpresaAtivaId: (id: string) => void;
@@ -177,6 +178,56 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [loadingFinanceiro, setLoadingFinanceiro] = useState(false);
   const [erroFinanceiro, setErroFinanceiro] = useState<string | null>(null);
 
+  const recarregarDados = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+
+    try {
+      setLoadingFinanceiro(true);
+      setErroFinanceiro(null);
+
+      const dados =
+        await financeService.carregarDados();
+
+      setEmpresas(dados.empresas);
+      setFornecedores(dados.fornecedores);
+      setPlanosFinanceiros(
+        dados.planosFinanceiros
+      );
+      setCentrosCustos(
+        dados.centrosCustos
+      );
+      setProcessos(dados.processos);
+      setAlertas(dados.alertas);
+
+      setEmpresaAtivaId(atual => {
+        const empresaAtualAindaExiste =
+          dados.empresas.some(
+            empresa => empresa.id === atual
+          );
+
+        if (empresaAtualAindaExiste) {
+          return atual;
+        }
+
+        return dados.empresas[0]?.id || '';
+      });
+    } catch (error: any) {
+      console.error(
+        'Erro ao recarregar dados financeiros:',
+        error
+      );
+
+      setErroFinanceiro(
+        error?.message ||
+          'Erro ao recarregar dados financeiros.'
+      );
+    } finally {
+      setLoadingFinanceiro(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) {
       setEmpresas([]);
@@ -187,36 +238,65 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setAlertas([]);
       setEmpresaAtivaId('');
       setLoadingFinanceiro(false);
+      setErroFinanceiro(null);
       return;
     }
 
-    const carregarDados = async () => {
-      try {
-        setLoadingFinanceiro(true);
-        setErroFinanceiro(null);
+    recarregarDados();
+  }, [user, recarregarDados]);
 
-        const dados = await financeService.carregarDados();
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
 
-        setEmpresas(dados.empresas);
-        setFornecedores(dados.fornecedores);
-        setPlanosFinanceiros(dados.planosFinanceiros);
-        setCentrosCustos(dados.centrosCustos);
-        setProcessos(dados.processos);
-        setAlertas(dados.alertas);
-
-        if (dados.empresas.length > 0) {
-          setEmpresaAtivaId(dados.empresas[0].id);
-        }
-      } catch (error: any) {
-        console.error('Erro ao carregar dados financeiros:', error);
-        setErroFinanceiro(error.message || 'Erro ao carregar dados financeiros.');
-      } finally {
-        setLoadingFinanceiro(false);
+    const atualizarAoVoltar = () => {
+      if (
+        document.visibilityState === 'visible'
+      ) {
+        recarregarDados();
       }
     };
 
-    carregarDados();
-  }, [user]);
+    const atualizarAoFocar = () => {
+      recarregarDados();
+    };
+
+    document.addEventListener(
+      'visibilitychange',
+      atualizarAoVoltar
+    );
+
+    window.addEventListener(
+      'focus',
+      atualizarAoFocar
+    );
+
+    const intervalo = window.setInterval(
+      () => {
+        if (
+          document.visibilityState === 'visible'
+        ) {
+          recarregarDados();
+        }
+      },
+      30000
+    );
+
+    return () => {
+      document.removeEventListener(
+        'visibilitychange',
+        atualizarAoVoltar
+      );
+
+      window.removeEventListener(
+        'focus',
+        atualizarAoFocar
+      );
+
+      window.clearInterval(intervalo);
+    };
+  }, [user, recarregarDados]);
 
   const uploadAnexoProcesso = async (file: File) => {
     return financeService.uploadAnexoProcesso(file);
@@ -1038,6 +1118,7 @@ const anexarDocumentoProcesso = async (params: {
 
         loadingFinanceiro,
         erroFinanceiro,
+        recarregarDados,
 
         empresaAtivaId,
         setEmpresaAtivaId,
