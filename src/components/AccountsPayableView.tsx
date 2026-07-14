@@ -1513,4 +1513,27 @@ const ResumoValor = ({
   </div>
 );
 
+
+const ResumoMobile = ({
+  label,
+  value,
+  classe = 'bg-slate-50 text-[#0F172A]',
+}: {
+  label: string;
+  value: string;
+  classe?: string;
+}) => (
+  <div
+    className={`min-w-0 rounded-xl p-2.5 ${classe}`}
+  >
+    <p className="text-[8px] font-bold uppercase opacity-70">
+      {label}
+    </p>
+
+    <p className="mt-1 truncate font-mono text-[10px] font-bold">
+      {value}
+    </p>
+  </div>
+);
+
 export default AccountsPayableView;
