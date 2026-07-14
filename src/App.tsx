@@ -1,5 +1,8 @@
-import React from 'react';
-import { FinanceProvider, useFinance } from './context/FinanceContext';
+import React, { useEffect } from 'react';
+import {
+  FinanceProvider,
+  useFinance,
+} from './context/FinanceContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
@@ -19,12 +22,35 @@ import { PaymentScheduleView } from './components/PaymentScheduleView';
 import { podeAcessar } from './config/permissions';
 import { UsersAdminView } from './components/UsersAdminView';
 import { QuotationsView } from './components/QuotationsView';
+import { MobileNavigation } from './components/MobileNavigation';
+import { MobileTopBar } from './components/MobileTopBar';
 
-
-// Subcomponente interno para consumir o context useFinance
 const AppContent: React.FC = () => {
-  const { activeView, setActiveView } = useFinance();
-const { user, loading, perfil } = useAuth();
+  const {
+    activeView,
+    setActiveView,
+  } = useFinance();
+
+  const {
+    user,
+    loading,
+    perfil,
+  } = useAuth();
+
+  useEffect(() => {
+    if (
+      user &&
+      perfil &&
+      !podeAcessar(perfil, activeView)
+    ) {
+      setActiveView('dashboard');
+    }
+  }, [
+    user,
+    perfil,
+    activeView,
+    setActiveView,
+  ]);
 
   const renderView = () => {
     switch (activeView) {
@@ -40,8 +66,8 @@ const { user, loading, perfil } = useAuth();
         return <AccountsPayableView />;
       case 'conciliacao':
         return <ReconciliationView />;
-       case 'cotacoes':
-         return <QuotationsView />;
+      case 'cotacoes':
+        return <QuotationsView />;
       case 'centro-financeiro':
         return <FinancialCenterView />;
       case 'calendario':
@@ -54,7 +80,7 @@ const { user, loading, perfil } = useAuth();
         return <SuppliersView />;
       case 'programacao':
       case 'pagamentos-programados':
-      return <PaymentScheduleView />;
+        return <PaymentScheduleView />;
       case 'usuarios':
         return <UsersAdminView />;
       default:
@@ -62,45 +88,53 @@ const { user, loading, perfil } = useAuth();
     }
   };
 
-if (loading) {
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F6F8FC] text-sm font-bold text-slate-500">
+        Carregando FlowFinance...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthView />;
+  }
+
+  if (
+    perfil &&
+    !podeAcessar(perfil, activeView)
+  ) {
+    return null;
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F6F8FC] text-sm font-bold text-slate-500">
-      Carregando FlowFinance...
-    </div>
-  );
-}
+    <div
+      className="ff-app-shell relative flex min-h-[100dvh] w-full overflow-hidden bg-[#F6F8FC] font-sans text-slate-800"
+      id="flow_app_layout"
+    >
+      <div className="pointer-events-none absolute left-[-12%] top-[-12%] z-0 h-[52%] w-[52%] rounded-full bg-[#3557FF]/12 blur-[130px]" />
+      <div className="pointer-events-none absolute bottom-[-14%] right-[-10%] z-0 h-[62%] w-[62%] rounded-full bg-[#D4AF37]/14 blur-[140px]" />
+      <div className="pointer-events-none absolute left-[28%] top-[32%] z-0 h-[38%] w-[38%] rounded-full bg-sky-200/22 blur-[150px]" />
 
-if (!user) {
-  return <AuthView />;
-}
+      <div className="relative z-20 hidden h-screen shrink-0 lg:block">
+        <Sidebar />
+      </div>
 
-if (user && perfil && !podeAcessar(perfil, activeView)) {
-  setActiveView('dashboard');
-  return null;
-}
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
+        <div className="hidden lg:block">
+          <Header />
+        </div>
 
-  return (
-    <div className="ff-app-shell flex h-screen w-screen overflow-hidden text-slate-800 font-sans relative" id="flow_app_layout">
-      {/* Decorative ambient blobs for glassmorphism */}
-      <div className="absolute top-[-12%] left-[-12%] w-[52%] h-[52%] rounded-full bg-[#3557FF]/12 blur-[130px] pointer-events-none z-0" />
-      <div className="absolute bottom-[-14%] right-[-10%] w-[62%] h-[62%] rounded-full bg-[#D4AF37]/14 blur-[140px] pointer-events-none z-0" />
-      <div className="absolute top-[32%] left-[28%] w-[38%] h-[38%] rounded-full bg-sky-200/22 blur-[150px] pointer-events-none z-0" />
+        <MobileTopBar />
 
-      {/* Sidebar - Fixado à esquerda */}
-      <Sidebar />
-
-      {/* Workspace Principal - Flex Column */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
-        {/* Header Superior */}
-        <Header />
-
-        {/* Painel de Conteúdo de Trabalho (Scrollable) */}
-        <main className="flex-1 overflow-y-auto px-8 py-8 lg:px-10 relative scrollbar-none">
-          <div className="ff-page-container ff-fade-up relative z-10">
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-28 sm:px-5 lg:h-screen lg:px-10 lg:py-8 lg:pb-8">
+          <div className="ff-page-container ff-fade-up relative z-10 mx-auto w-full max-w-[1600px]">
             {renderView()}
           </div>
         </main>
       </div>
+
+      <MobileNavigation />
     </div>
   );
 };

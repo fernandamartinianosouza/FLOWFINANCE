@@ -181,11 +181,11 @@ export const ApprovalsView: React.FC = () => {
 
   return (
     <div
-      className="space-y-8"
+      className="space-y-5 lg:space-y-8"
       id="approvals-view-container"
     >
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-[#0F172A]">
+        <h1 className="text-xl font-bold tracking-tight text-[#0F172A] sm:text-2xl">
           Central de Autorizações
         </h1>
 
@@ -195,7 +195,7 @@ export const ApprovalsView: React.FC = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-2">
         <ResumoEtapa
           titulo="Aguardando Diretoria"
           quantidade={
@@ -224,7 +224,7 @@ export const ApprovalsView: React.FC = () => {
       </div>
 
       {aprovacoesPendentes.length === 0 ? (
-        <div className="rounded-[18px] border border-slate-100 bg-white p-16 text-center shadow-sm">
+        <div className="rounded-[18px] border border-slate-100 bg-white p-8 text-center shadow-sm sm:p-16">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
             <Check className="h-5 w-5" />
           </div>
@@ -239,7 +239,7 @@ export const ApprovalsView: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          <div className="max-h-[680px] space-y-3 overflow-y-auto pr-1 lg:col-span-5">
+          <div className="space-y-3 pr-0 lg:col-span-5 lg:max-h-[680px] lg:overflow-y-auto lg:pr-1">
             {aprovacoesPendentes.map(item => {
               const selecionado =
                 item.id === selectedId;
@@ -325,7 +325,7 @@ export const ApprovalsView: React.FC = () => {
 
           <div className="lg:col-span-7">
             {processo && (
-              <div className="space-y-6 rounded-[18px] border border-slate-100 bg-white p-8 shadow-sm">
+              <div className="space-y-5 rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm sm:p-6 lg:p-8">
                 <div
                   className={`flex items-center gap-4 rounded-[14px] border p-5 ${
                     isDiretoria
@@ -496,7 +496,7 @@ export const ApprovalsView: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <button
                     type="button"
                     onClick={() =>

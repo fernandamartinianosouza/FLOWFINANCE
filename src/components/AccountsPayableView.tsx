@@ -518,12 +518,12 @@ export const AccountsPayableView: React.FC = () => {
 
   return (
     <div
-      className="space-y-8"
+      className="space-y-5 lg:space-y-8"
       id="accounts-payable-view-container"
     >
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#0F172A]">
+          <h1 className="text-xl font-bold text-[#0F172A] sm:text-2xl">
             Contas a Pagar
           </h1>
 
@@ -544,7 +544,7 @@ export const AccountsPayableView: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Card
           titulo="Em aberto"
           valor={formatarReal(totalEmAberto)}
@@ -691,7 +691,7 @@ export const AccountsPayableView: React.FC = () => {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[18px] border border-slate-100 bg-white shadow-sm">
+      <div className="hidden overflow-hidden rounded-[18px] border border-slate-100 bg-white shadow-sm lg:block">
         {contasFiltradas.length === 0 ? (
           <div className="p-12 text-center">
             <p className="text-xs text-slate-400">
@@ -1000,6 +1000,206 @@ export const AccountsPayableView: React.FC = () => {
         )}
       </div>
 
+
+      <div className="space-y-3 lg:hidden">
+        {contasFiltradas.length === 0 ? (
+          <div className="rounded-[18px] border border-slate-100 bg-white p-8 text-center shadow-sm">
+            <p className="text-xs text-slate-400">
+              Nenhuma conta encontrada.
+            </p>
+          </div>
+        ) : (
+          contasFiltradas.map((processo: any) => {
+            const fornecedor = fornecedores.find(
+              (item: any) =>
+                item.id === processo.fornecedorId
+            );
+
+            const empresa = empresas.find(
+              (item: any) =>
+                item.id === processo.empresaId
+            );
+
+            const pago = contaPaga(processo);
+
+            const vencida =
+              !pago &&
+              dataBase(processo) &&
+              dataBase(processo) < hoje;
+
+            const favorecido =
+              processo.tipoPagamento === 'interno'
+                ? processo.beneficiarioInterno ||
+                  'Pagamento interno'
+                : fornecedor?.nome || '-';
+
+            return (
+              <article
+                key={processo.id}
+                className="rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[10px] font-bold text-slate-400">
+                      {processo.id}
+                    </p>
+
+                    <h3 className="mt-1 truncate text-sm font-bold text-[#0F172A]">
+                      {favorecido}
+                    </h3>
+
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-500">
+                      {processo.descricao || '-'}
+                    </p>
+                  </div>
+
+                  <Situacao
+                    pago={pago}
+                    vencida={Boolean(vencida)}
+                    programada={
+                      processo.statusProgramacao ===
+                      'programado'
+                    }
+                  />
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2">
+                  <span className="truncate text-[10px] text-slate-500">
+                    {empresa?.nome || '-'}
+                  </span>
+
+                  <span className="shrink-0 font-mono text-[10px] text-slate-500">
+                    Venc.: {processo.prazo || '-'}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <ResumoMobile
+                    label="Total"
+                    value={formatarReal(
+                      processo.valor
+                    )}
+                  />
+
+                  <ResumoMobile
+                    label="Pago"
+                    value={formatarReal(
+                      obterValorPago(processo)
+                    )}
+                    classe="bg-emerald-50 text-emerald-700"
+                  />
+
+                  <ResumoMobile
+                    label="Saldo"
+                    value={formatarReal(
+                      obterSaldoPagar(processo)
+                    )}
+                    classe="bg-amber-50 text-amber-700"
+                  />
+                </div>
+
+                {processo.pixChave && (
+                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[9px] font-bold uppercase text-emerald-600">
+                        Chave PIX
+                      </p>
+
+                      <p className="mt-1 truncate font-mono text-[10px] text-slate-700">
+                        {processo.pixChave}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copiarPix(
+                          processo.id,
+                          processo.pixChave
+                        )
+                      }
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                        pixCopiadoId === processo.id
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-white text-emerald-600'
+                      }`}
+                    >
+                      {pixCopiadoId === processo.id ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {!pago && (
+                  <div className="mt-3 rounded-xl bg-slate-50 p-3">
+                    <label className="text-[9px] font-bold uppercase text-slate-400">
+                      Programar pagamento
+                    </label>
+
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        id={`data-programacao-${processo.id}`}
+                        type="date"
+                        defaultValue={
+                          processo.dataProgramadaPagamento ||
+                          ''
+                        }
+                        className="min-w-0 flex-1 rounded-xl border-0 bg-white px-3 py-2.5 font-mono text-[10px]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          programar(processo.id)
+                        }
+                        className="rounded-xl bg-slate-200 px-3 text-[10px] font-bold text-slate-700"
+                      >
+                        Salvar
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      abrirProcesso(processo.id)
+                    }
+                    className="rounded-xl bg-slate-100 py-3 text-[10px] font-bold text-slate-700"
+                  >
+                    Ver detalhes
+                  </button>
+
+                  {!pago ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        abrirModalPagamento(
+                          processo
+                        )
+                      }
+                      className="rounded-xl bg-emerald-600 py-3 text-[10px] font-bold text-white"
+                    >
+                      {obterValorPago(processo) > 0
+                        ? 'Novo pagamento'
+                        : 'Registrar pagamento'}
+                    </button>
+                  ) : (
+                    <span className="flex items-center justify-center rounded-xl bg-emerald-50 py-3 text-[10px] font-bold text-emerald-600">
+                      Conta paga
+                    </span>
+                  )}
+                </div>
+              </article>
+            );
+          })
+        )}
+      </div>
+
       {processoPagando && (
         <>
           <div
@@ -1007,7 +1207,7 @@ export const AccountsPayableView: React.FC = () => {
             onClick={fecharModalPagamento}
           />
 
-          <div className="fixed inset-y-0 right-0 z-50 flex h-screen w-full max-w-md flex-col bg-white shadow-2xl">
+          <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] w-full flex-col rounded-t-[24px] bg-white shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-screen sm:max-h-none sm:max-w-md sm:rounded-none">
             <div className="flex items-center justify-between border-b border-slate-100 p-6">
               <div>
                 <h2 className="text-sm font-bold text-[#0F172A]">
