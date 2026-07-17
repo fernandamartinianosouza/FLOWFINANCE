@@ -24,6 +24,7 @@ import { UsersAdminView } from './components/UsersAdminView';
 import { QuotationsView } from './components/QuotationsView';
 import { MobileNavigation } from './components/MobileNavigation';
 import { MobileTopBar } from './components/MobileTopBar';
+import { UsersAdminView } from './views/UsersAdminView';
 
 const AppContent: React.FC = () => {
   const {
@@ -54,6 +55,8 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
+      case 'usuarios':
+        return <UsersAdminView />;
       case 'dashboard':
         return <DashboardView />;
       case 'processos':
