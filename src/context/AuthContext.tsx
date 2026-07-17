@@ -5,9 +5,10 @@ import React, {
   useState,
 } from 'react';
 import {
-  Session,
   User,
+  Session,
 } from '@supabase/supabase-js';
+
 import { supabase } from '../lib/supabase';
 import { PerfilUsuario } from '../config/permissions';
 
@@ -27,17 +28,11 @@ interface AuthContextType {
     nome: string,
     email: string,
     password: string
-  ) => Promise<{
-    precisaConfirmarEmail: boolean;
-  }>;
-
-  solicitarRedefinicaoSenha: (
-    email: string
   ) => Promise<void>;
 
-  atualizarSenha: (
-    novaSenha: string
-  ) => Promise<void>;
+  criarOrganizacaoInicial: (
+    nomeOrganizacao: string
+  ) => Promise<string>;
 
   signOut: () => Promise<void>;
 }
@@ -86,11 +81,17 @@ export const AuthProvider: React.FC<{
       return;
     }
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('nome, perfil')
-      .eq('id', usuario.id)
-      .maybeSingle();
+    const { data, error } =
+      await supabase
+        .from('profiles')
+        .select(
+          `
+          nome,
+          perfil
+          `
+        )
+        .eq('id', usuario.id)
+        .maybeSingle();
 
     if (error) {
       console.error(
@@ -114,12 +115,13 @@ export const AuthProvider: React.FC<{
   };
 
   useEffect(() => {
-    let ativo = true;
-
     const carregarSessao = async () => {
       setLoading(true);
 
-      const { data, error } =
+      const {
+        data,
+        error,
+      } =
         await supabase.auth.getSession();
 
       if (error) {
@@ -129,66 +131,55 @@ export const AuthProvider: React.FC<{
         );
       }
 
-      if (!ativo) return;
+      const currentSession =
+        data.session;
 
-      const currentSession = data.session;
       const currentUser =
         currentSession?.user || null;
 
       setSession(currentSession);
       setUser(currentUser);
 
-      await carregarPerfil(currentUser);
+      await carregarPerfil(
+        currentUser
+      );
 
-      if (ativo) {
-        setLoading(false);
-      }
+      setLoading(false);
     };
 
     carregarSessao();
 
     const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      async (
-        event,
-        currentSession
-      ) => {
-        const currentUser =
-          currentSession?.user || null;
+      data: {
+        subscription,
+      },
+    } =
+      supabase.auth.onAuthStateChange(
+        async (
+          _event,
+          currentSession
+        ) => {
+          const currentUser =
+            currentSession?.user ||
+            null;
 
-        setSession(currentSession);
-        setUser(currentUser);
-
-        if (
-          event ===
-          'PASSWORD_RECOVERY'
-        ) {
-          const url =
-            new URL(window.location.href);
-
-          url.searchParams.set(
-            'definir-senha',
-            '1'
+          setSession(
+            currentSession
           );
 
-          window.history.replaceState(
-            {},
-            '',
-            url.toString()
+          setUser(
+            currentUser
           );
-        }
 
-        await carregarPerfil(currentUser);
+          await carregarPerfil(
+            currentUser
+          );
 
-        if (ativo) {
           setLoading(false);
         }
-      }
-    );
+      );
 
     return () => {
-      ativo = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -198,13 +189,17 @@ export const AuthProvider: React.FC<{
     password: string
   ) => {
     const { error } =
-      await supabase.auth.signInWithPassword({
-        email:
-          email.trim().toLowerCase(),
-        password,
-      });
+      await supabase.auth.signInWithPassword(
+        {
+          email:
+            email.trim().toLowerCase(),
+          password,
+        }
+      );
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
   };
 
   const signUp = async (
@@ -212,125 +207,124 @@ export const AuthProvider: React.FC<{
     email: string,
     password: string
   ) => {
-    const nomeLimpo = nome.trim();
-    const emailLimpo =
-      email.trim().toLowerCase();
-
-    if (!nomeLimpo) {
-      throw new Error(
-        'Informe o nome completo.'
-      );
-    }
-
-    if (!emailLimpo) {
-      throw new Error(
-        'Informe o e-mail.'
-      );
-    }
-
-    if (password.length < 6) {
-      throw new Error(
-        'A senha deve possuir pelo menos 6 caracteres.'
-      );
-    }
-
-    const { data, error } =
+    const {
+      data,
+      error,
+    } =
       await supabase.auth.signUp({
-        email: emailLimpo,
+        email:
+          email
+            .trim()
+            .toLowerCase(),
+
         password,
+
         options: {
           data: {
-            nome: nomeLimpo,
+            nome:
+              nome.trim(),
           },
         },
       });
 
-    if (error) throw error;
-
-    if (!data.user) {
-      throw new Error(
-        'Não foi possível criar o usuário.'
-      );
+    if (error) {
+      throw error;
     }
 
-    return {
-      precisaConfirmarEmail:
-        !data.session,
-    };
-  };
+    /*
+      IMPORTANTE:
 
-  const solicitarRedefinicaoSenha =
-    async (email: string) => {
-      const emailLimpo =
-        email.trim().toLowerCase();
+      Não criamos organização aqui.
 
-      if (!emailLimpo) {
-        throw new Error(
-          'Informe o e-mail.'
-        );
-      }
+      Primeiro criamos o usuário.
+      Depois a tela de onboarding
+      chama criarOrganizacaoInicial().
+    */
 
-      const redirectTo =
-        `${window.location.origin}` +
-        '/?definir-senha=1';
-
-      const { error } =
-        await supabase.auth
-          .resetPasswordForEmail(
-            emailLimpo,
+    if (
+      data.user &&
+      data.session
+    ) {
+      const {
+        error: profileError,
+      } =
+        await supabase
+          .from('profiles')
+          .upsert(
             {
-              redirectTo,
+              id:
+                data.user.id,
+
+              nome:
+                nome.trim(),
+
+              role:
+                'user',
+
+              perfil:
+                'admin',
+            },
+            {
+              onConflict:
+                'id',
             }
           );
 
-      if (error) throw error;
+      if (profileError) {
+        console.error(
+          'Erro ao criar perfil:',
+          profileError.message
+        );
+      }
+    }
+  };
+
+  const criarOrganizacaoInicial =
+    async (
+      nomeOrganizacao: string
+    ) => {
+      const {
+        data,
+        error,
+      } =
+        await supabase.rpc(
+          'criar_organizacao_inicial',
+          {
+            p_nome_organizacao:
+              nomeOrganizacao.trim(),
+          }
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        throw new Error(
+          'Não foi possível criar a organização.'
+        );
+      }
+
+      return String(data);
     };
 
-  const atualizarSenha = async (
-    novaSenha: string
-  ) => {
-    if (novaSenha.length < 8) {
-      throw new Error(
-        'A nova senha deve possuir pelo menos 8 caracteres.'
+  const signOut =
+    async () => {
+      const { error } =
+        await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      setUser(null);
+      setSession(null);
+      setPerfil(null);
+
+      setNomeUsuario(
+        'Usuário logado'
       );
-    }
-
-    const { error } =
-      await supabase.auth.updateUser({
-        password: novaSenha,
-      });
-
-    if (error) throw error;
-
-    const url =
-      new URL(window.location.href);
-
-    url.searchParams.delete(
-      'definir-senha'
-    );
-
-    window.history.replaceState(
-      {},
-      '',
-      url.pathname
-    );
-  };
-
-  const signOut = async () => {
-    const { error } =
-      await supabase.auth.signOut();
-
-    if (error) throw error;
-
-    localStorage.removeItem(
-      'flowfinance_organizacao_ativa_id'
-    );
-
-    setUser(null);
-    setSession(null);
-    setPerfil(null);
-    setNomeUsuario('Usuário logado');
-  };
+    };
 
   return (
     <AuthContext.Provider
@@ -342,8 +336,7 @@ export const AuthProvider: React.FC<{
         nomeUsuario,
         signIn,
         signUp,
-        solicitarRedefinicaoSenha,
-        atualizarSenha,
+        criarOrganizacaoInicial,
         signOut,
       }}
     >
