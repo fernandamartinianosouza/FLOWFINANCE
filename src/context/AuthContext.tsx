@@ -4,7 +4,10 @@ import React, {
   useEffect,
   useState,
 } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import {
+  Session,
+  User,
+} from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { PerfilUsuario } from '../config/permissions';
 
@@ -14,7 +17,12 @@ interface AuthContextType {
   loading: boolean;
   perfil: PerfilUsuario | null;
   nomeUsuario: string;
-  signIn: (email: string, password: string) => Promise<void>;
+
+  signIn: (
+    email: string,
+    password: string
+  ) => Promise<void>;
+
   signUp: (
     nome: string,
     email: string,
@@ -22,12 +30,22 @@ interface AuthContextType {
   ) => Promise<{
     precisaConfirmarEmail: boolean;
   }>;
+
+  solicitarRedefinicaoSenha: (
+    email: string
+  ) => Promise<void>;
+
+  atualizarSenha: (
+    novaSenha: string
+  ) => Promise<void>;
+
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
-);
+const AuthContext =
+  createContext<AuthContextType | undefined>(
+    undefined
+  );
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -44,14 +62,20 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] =
+    useState<User | null>(null);
+
   const [session, setSession] =
     useState<Session | null>(null);
+
   const [perfil, setPerfil] =
     useState<PerfilUsuario | null>(null);
+
   const [nomeUsuario, setNomeUsuario] =
     useState('Usuário logado');
-  const [loading, setLoading] = useState(true);
+
+  const [loading, setLoading] =
+    useState(true);
 
   const carregarPerfil = async (
     usuario: User | null
@@ -76,7 +100,8 @@ export const AuthProvider: React.FC<{
     }
 
     setPerfil(
-      (data?.perfil || 'compras') as PerfilUsuario
+      (data?.perfil ||
+        'compras') as PerfilUsuario
     );
 
     setNomeUsuario(
@@ -125,12 +150,34 @@ export const AuthProvider: React.FC<{
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
-      async (_event, currentSession) => {
+      async (
+        event,
+        currentSession
+      ) => {
         const currentUser =
           currentSession?.user || null;
 
         setSession(currentSession);
         setUser(currentUser);
+
+        if (
+          event ===
+          'PASSWORD_RECOVERY'
+        ) {
+          const url =
+            new URL(window.location.href);
+
+          url.searchParams.set(
+            'definir-senha',
+            '1'
+          );
+
+          window.history.replaceState(
+            {},
+            '',
+            url.toString()
+          );
+        }
 
         await carregarPerfil(currentUser);
 
@@ -152,13 +199,12 @@ export const AuthProvider: React.FC<{
   ) => {
     const { error } =
       await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email:
+          email.trim().toLowerCase(),
         password,
       });
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
   };
 
   const signUp = async (
@@ -188,15 +234,6 @@ export const AuthProvider: React.FC<{
       );
     }
 
-    /*
-     * O trigger criado no Supabase é responsável por:
-     * 1. criar o profile;
-     * 2. criar uma organização exclusiva;
-     * 3. vincular o novo usuário como admin.
-     *
-     * Não insira profiles ou usuarios_organizacoes
-     * diretamente pelo frontend.
-     */
     const { data, error } =
       await supabase.auth.signUp({
         email: emailLimpo,
@@ -208,9 +245,7 @@ export const AuthProvider: React.FC<{
         },
       });
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
 
     if (!data.user) {
       throw new Error(
@@ -219,17 +254,73 @@ export const AuthProvider: React.FC<{
     }
 
     return {
-      precisaConfirmarEmail: !data.session,
+      precisaConfirmarEmail:
+        !data.session,
     };
+  };
+
+  const solicitarRedefinicaoSenha =
+    async (email: string) => {
+      const emailLimpo =
+        email.trim().toLowerCase();
+
+      if (!emailLimpo) {
+        throw new Error(
+          'Informe o e-mail.'
+        );
+      }
+
+      const redirectTo =
+        `${window.location.origin}` +
+        '/?definir-senha=1';
+
+      const { error } =
+        await supabase.auth
+          .resetPasswordForEmail(
+            emailLimpo,
+            {
+              redirectTo,
+            }
+          );
+
+      if (error) throw error;
+    };
+
+  const atualizarSenha = async (
+    novaSenha: string
+  ) => {
+    if (novaSenha.length < 8) {
+      throw new Error(
+        'A nova senha deve possuir pelo menos 8 caracteres.'
+      );
+    }
+
+    const { error } =
+      await supabase.auth.updateUser({
+        password: novaSenha,
+      });
+
+    if (error) throw error;
+
+    const url =
+      new URL(window.location.href);
+
+    url.searchParams.delete(
+      'definir-senha'
+    );
+
+    window.history.replaceState(
+      {},
+      '',
+      url.pathname
+    );
   };
 
   const signOut = async () => {
     const { error } =
       await supabase.auth.signOut();
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
 
     localStorage.removeItem(
       'flowfinance_organizacao_ativa_id'
@@ -251,6 +342,8 @@ export const AuthProvider: React.FC<{
         nomeUsuario,
         signIn,
         signUp,
+        solicitarRedefinicaoSenha,
+        atualizarSenha,
         signOut,
       }}
     >
