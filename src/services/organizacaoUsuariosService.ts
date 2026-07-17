@@ -47,7 +47,7 @@ export const organizacaoUsuariosService = {
           body: {
             ...params,
             redirectTo:
-              `${window.location.origin}/`,
+  `${window.location.origin}/?definir-senha=1`,
           },
         }
       );
