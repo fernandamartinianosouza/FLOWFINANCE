@@ -1,4 +1,7 @@
-import React, { useEffect } from 'react';
+import React, {
+  useEffect,
+  useState,
+} from 'react';
 import {
   FinanceProvider,
   useFinance,
@@ -16,15 +19,40 @@ import { CalendarView } from './components/CalendarView';
 import { CashFlowView } from './components/CashFlowView';
 import { CompaniesView } from './components/CompaniesView';
 import { SuppliersView } from './components/SuppliersView';
-import { useAuth } from './context/AuthContext';
-import { AuthView } from './views/AuthView';
 import { PaymentScheduleView } from './components/PaymentScheduleView';
-import { podeAcessar } from './config/permissions';
-import { UsersAdminView } from './components/UsersAdminView';
 import { QuotationsView } from './components/QuotationsView';
 import { MobileNavigation } from './components/MobileNavigation';
 import { MobileTopBar } from './components/MobileTopBar';
 import { UsersAdminView } from './views/UsersAdminView';
+import { PasswordAccessView } from './components/auth/PasswordAccessView';
+import { useAuth } from './context/AuthContext';
+import { AuthView } from './views/AuthView';
+import { podeAcessar } from './config/permissions';
+
+const verificarDefinicaoSenhaNaUrl = () => {
+  const params = new URLSearchParams(
+    window.location.search
+  );
+
+  return params.get('definir-senha') === '1';
+};
+
+const limparParametroDefinirSenha = () => {
+  const url = new URL(window.location.href);
+
+  url.searchParams.delete('definir-senha');
+
+  const novaUrl =
+    `${url.pathname}` +
+    `${url.search}` +
+    `${url.hash}`;
+
+  window.history.replaceState(
+    {},
+    '',
+    novaUrl || '/'
+  );
+};
 
 const AppContent: React.FC = () => {
   const {
@@ -37,6 +65,33 @@ const AppContent: React.FC = () => {
     loading,
     perfil,
   } = useAuth();
+
+  const [
+    deveDefinirSenha,
+    setDeveDefinirSenha,
+  ] = useState<boolean>(
+    verificarDefinicaoSenhaNaUrl
+  );
+
+  useEffect(() => {
+    const atualizarPelaUrl = () => {
+      setDeveDefinirSenha(
+        verificarDefinicaoSenhaNaUrl()
+      );
+    };
+
+    window.addEventListener(
+      'popstate',
+      atualizarPelaUrl
+    );
+
+    return () => {
+      window.removeEventListener(
+        'popstate',
+        atualizarPelaUrl
+      );
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -53,39 +108,56 @@ const AppContent: React.FC = () => {
     setActiveView,
   ]);
 
+  const concluirDefinicaoSenha = () => {
+    limparParametroDefinirSenha();
+    setDeveDefinirSenha(false);
+  };
+
   const renderView = () => {
     switch (activeView) {
       case 'usuarios':
         return <UsersAdminView />;
+
       case 'dashboard':
         return <DashboardView />;
+
       case 'processos':
         return <ProcessesView />;
+
       case 'solicitacao':
         return <NewRequestView />;
+
       case 'autorizacoes':
         return <ApprovalsView />;
+
       case 'contas-pagar':
         return <AccountsPayableView />;
+
       case 'conciliacao':
         return <ReconciliationView />;
+
       case 'cotacoes':
         return <QuotationsView />;
+
       case 'centro-financeiro':
         return <FinancialCenterView />;
+
       case 'calendario':
         return <CalendarView />;
+
       case 'fluxo-caixa':
         return <CashFlowView />;
+
       case 'empresas':
         return <CompaniesView />;
+
       case 'fornecedores':
         return <SuppliersView />;
+
       case 'programacao':
       case 'pagamentos-programados':
         return <PaymentScheduleView />;
-      case 'usuarios':
-        return <UsersAdminView />;
+
       default:
         return <DashboardView />;
     }
@@ -96,6 +168,22 @@ const AppContent: React.FC = () => {
       <div className="flex min-h-screen items-center justify-center bg-[#F6F8FC] text-sm font-bold text-slate-500">
         Carregando FlowFinance...
       </div>
+    );
+  }
+
+  /*
+   * Esta verificação precisa vir antes de `if (!user)`.
+   * O link do convite cria uma sessão automaticamente,
+   * então o usuário pode estar autenticado e ainda assim
+   * precisar definir a senha.
+   */
+  if (deveDefinirSenha) {
+    return (
+      <PasswordAccessView
+        modo="definir-senha"
+        onVoltar={concluirDefinicaoSenha}
+        onConcluido={concluirDefinicaoSenha}
+      />
     );
   }
 
