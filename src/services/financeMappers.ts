@@ -8,22 +8,30 @@ import {
   HistoricoStatus,
 } from '../types';
 
-const numero = (valor: any) => {
+const numero = (valor: unknown) => {
   const n = Number(valor ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
 
-const textoOuNull = (valor: any) => {
+const textoOuNull = (valor: unknown) => {
   const texto = String(valor ?? '').trim();
   return texto ? texto : null;
 };
 
-export const mapEmpresaFromDb = (item: any): Empresa => ({
+const textoOuVazio = (valor: unknown) =>
+  String(valor ?? '').trim();
+
+export const mapEmpresaFromDb = (
+  item: any
+): Empresa => ({
   id: item.id,
-  nome: item.nome,
-  cnpj: item.cnpj,
-  banco: item.banco,
-  contaBancaria: item.conta_bancaria,
+  organizacaoId: item.organizacao_id,
+  nome: textoOuVazio(item.nome),
+  cnpj: textoOuVazio(item.cnpj),
+  banco: textoOuVazio(item.banco),
+  contaBancaria: textoOuVazio(
+    item.conta_bancaria
+  ),
   saldoInicial: numero(item.saldo_inicial),
   saldoAtual: numero(item.saldo_atual),
 });
@@ -31,10 +39,13 @@ export const mapEmpresaFromDb = (item: any): Empresa => ({
 export const mapEmpresaToDb = (
   item: Omit<Empresa, 'id'>
 ) => ({
-  nome: item.nome,
-  cnpj: item.cnpj,
-  banco: item.banco,
-  conta_bancaria: item.contaBancaria,
+  organizacao_id: item.organizacaoId,
+  nome: textoOuVazio(item.nome),
+  cnpj: textoOuNull(item.cnpj),
+  banco: textoOuNull(item.banco),
+  conta_bancaria: textoOuNull(
+    item.contaBancaria
+  ),
   saldo_inicial: numero(item.saldoInicial),
   saldo_atual: numero(item.saldoAtual),
 });
@@ -43,27 +54,35 @@ export const mapFornecedorFromDb = (
   item: any
 ): Fornecedor => ({
   id: item.id,
-  nome: item.nome,
-  cnpj: item.cnpj,
-  email: item.email,
-  telefone: item.telefone,
-  historicoCompras: numero(item.historico_compras),
-  ultimaCompra: item.ultima_compra || '-',
+  organizacaoId: item.organizacao_id,
+  nome: textoOuVazio(item.nome),
+  cnpj: textoOuVazio(item.cnpj),
+  email: textoOuVazio(item.email),
+  telefone: textoOuVazio(item.telefone),
+  historicoCompras: numero(
+    item.historico_compras
+  ),
+  ultimaCompra:
+    item.ultima_compra || '-',
   tempoMedioPagamento: numero(
-    item.tempo_medio_pagamento || 30
+    item.tempo_medio_pagamento ?? 30
   ),
 });
 
 export const mapFornecedorToDb = (
   item: Omit<
     Fornecedor,
-    'id' | 'historicoCompras' | 'tempoMedioPagamento'
+    | 'id'
+    | 'historicoCompras'
+    | 'ultimaCompra'
+    | 'tempoMedioPagamento'
   >
 ) => ({
-  nome: item.nome,
-  cnpj: item.cnpj,
-  email: item.email,
-  telefone: item.telefone,
+  organizacao_id: item.organizacaoId,
+  nome: textoOuVazio(item.nome),
+  cnpj: textoOuNull(item.cnpj),
+  email: textoOuNull(item.email),
+  telefone: textoOuNull(item.telefone),
 });
 
 export const mapPlanoFromDb = (
@@ -90,45 +109,56 @@ export const mapPlanoFromDb = (
 
   return {
     id: item.id,
-    empresaId: item.empresa_id,
-    nome: item.nome,
-    descricao: item.descricao,
-
+    organizacaoId: item.organizacao_id,
+    empresaId: item.empresa_id || undefined,
+    nome: textoOuVazio(item.nome),
+    descricao:
+      item.descricao || undefined,
     tetoMensal,
     tetoAnual,
-
     orcamentoMensal: tetoMensal,
     orcamentoAnual: tetoAnual,
-
     utilizado: numero(item.utilizado),
-    comprometido: numero(item.comprometido),
-  } as any;
+    comprometido: numero(
+      item.comprometido
+    ),
+    centrosCustoIds: Array.isArray(
+      item.centros_custo_ids
+    )
+      ? item.centros_custo_ids
+      : undefined,
+  };
 };
 
-export const mapPlanoToDb = (item: any) => {
+export const mapPlanoToDb = (
+  item: Omit<PlanoFinanceiro, 'id'>
+) => {
   const tetoAnual = numero(
     item.tetoAnual ??
-      item.orcamentoAnual ??
-      item.limiteAnual
+      item.orcamentoAnual
   );
 
   const tetoMensal = numero(
     item.tetoMensal ??
       item.orcamentoMensal ??
-      item.limiteMensal ??
       tetoAnual / 12
   );
 
   return {
-    empresa_id: item.empresaId,
-    nome: item.nome,
-    descricao: item.descricao,
+    organizacao_id: item.organizacaoId,
+    empresa_id: item.empresaId || null,
+    nome: textoOuVazio(item.nome),
+    descricao: textoOuNull(
+      item.descricao
+    ),
     orcamento_anual: tetoAnual,
     orcamento_mensal: tetoMensal,
     teto_anual: tetoAnual,
     teto_mensal: tetoMensal,
     utilizado: numero(item.utilizado),
-    comprometido: numero(item.comprometido),
+    comprometido: numero(
+      item.comprometido
+    ),
   };
 };
 
@@ -146,30 +176,35 @@ export const mapCentroFromDb = (
 
   return {
     id: item.id,
-    empresaId: item.empresa_id,
-    nome: item.nome,
-    descricao: item.descricao,
-    planoFinanceiroId: item.plano_financeiro_id,
-
+    empresaId:
+      item.empresa_id || undefined,
+    nome: textoOuVazio(item.nome),
+    descricao:
+      item.descricao || undefined,
+    planoFinanceiroId:
+      item.plano_financeiro_id,
     tetoMensal,
     orcamentoMensal: tetoMensal,
-
     utilizado: numero(item.utilizado),
-  } as any;
+  };
 };
 
-export const mapCentroToDb = (item: any) => {
+export const mapCentroToDb = (
+  item: Omit<CentroCusto, 'id'>
+) => {
   const tetoMensal = numero(
     item.tetoMensal ??
-      item.orcamentoMensal ??
-      item.limiteMensal
+      item.orcamentoMensal
   );
 
   return {
-    empresa_id: item.empresaId,
-    nome: item.nome,
-    descricao: item.descricao,
-    plano_financeiro_id: item.planoFinanceiroId,
+    empresa_id: item.empresaId || null,
+    nome: textoOuVazio(item.nome),
+    descricao: textoOuNull(
+      item.descricao
+    ),
+    plano_financeiro_id:
+      item.planoFinanceiroId,
     orcamento_mensal: tetoMensal,
     teto_mensal: tetoMensal,
     utilizado: numero(item.utilizado),
@@ -179,73 +214,142 @@ export const mapCentroToDb = (item: any) => {
 export const mapHistoricoFromDb = (
   item: any
 ): HistoricoStatus => ({
-  data: item.data,
-  usuario: item.usuario,
-  deStatus: item.de_status,
+  data: item.data || item.created_at,
+  usuario:
+    item.usuario || 'Usuário',
+  deStatus:
+    item.de_status || 'criacao',
   paraStatus: item.para_status,
-  observacao: item.observacao,
+  observacao:
+    item.observacao || undefined,
 });
 
 export const mapProcessoFromDb = (
   item: any
-): ProcessoCompra =>
-  ({
+): ProcessoCompra => {
+  const valor = numero(item.valor);
+  const valorPago = numero(
+    item.valor_pago
+  );
+
+  const saldoPagar =
+    item.saldo_pagar == null
+      ? Math.max(
+          valor - valorPago,
+          0
+        )
+      : numero(item.saldo_pagar);
+
+  return {
     id: item.codigo || item.id,
     dbId: item.id,
 
-    tipoPagamento:
-      item.tipo_pagamento || 'fornecedor',
-
-    fornecedorId: item.fornecedor_id || null,
-    beneficiarioInterno:
-      item.beneficiario_interno || null,
-
+    organizacaoId:
+      item.organizacao_id,
     empresaId: item.empresa_id,
-    planoFinanceiroId: item.plano_financeiro_id,
-    centroCustoId: item.centro_custo_id,
 
-    descricao: item.descricao,
-    valor: numero(item.valor),
-    urgencia: item.urgencia,
-    responsavel: item.responsavel,
-    dataCriacao: item.data_criacao,
-    status: item.status,
-    prazo: item.prazo,
+    tipoPagamento:
+      item.tipo_pagamento ||
+      'fornecedor',
 
-    anexoNome: item.anexo_nome,
-    anexoUrl: item.anexo_url,
+    fornecedorId:
+      item.fornecedor_id || null,
 
-    comprovanteNome: item.comprovante_nome,
-    comprovanteUrl: item.comprovante_url,
+    beneficiarioInterno:
+      item.beneficiario_interno ||
+      null,
 
-    metodoPagamento: item.metodo_pagamento,
-    dataPagamento: item.data_pagamento,
+    planoFinanceiroId:
+      item.plano_financeiro_id ||
+      null,
+
+    centroCustoId:
+      item.centro_custo_id || null,
+
+    descricao:
+      textoOuVazio(item.descricao),
+
+    valor,
+
+    urgencia:
+      item.urgencia || 'media',
+
+    responsavel:
+      item.responsavel || '',
+
+    dataCriacao:
+      item.data_criacao ||
+      item.created_at ||
+      '',
+
+    status:
+      item.status || 'solicitacao',
+
+    prazo: item.prazo || null,
+
+    anexoNome:
+      item.anexo_nome || null,
+
+    anexoUrl:
+      item.anexo_url || null,
+
+    comprovanteNome:
+      item.comprovante_nome ||
+      null,
+
+    comprovanteUrl:
+      item.comprovante_url ||
+      null,
+
+    metodoPagamento:
+      item.metodo_pagamento ||
+      null,
+
+    dataPagamento:
+      item.data_pagamento || null,
 
     dataProgramadaPagamento:
-      item.data_programada_pagamento,
+      item.data_programada_pagamento ||
+      null,
+
     statusProgramacao:
-      item.status_programacao || 'nao_programado',
-    programadoPor: item.programado_por,
-    dataProgramacao: item.data_programacao,
+      item.status_programacao ||
+      'nao_programado',
 
-    formaPagamento: item.forma_pagamento || null,
-    pixTipoChave: item.pix_tipo_chave || null,
-    pixChave: item.pix_chave || null,
-    pixFavorecido: item.pix_favorecido || null,
-    pixBanco: item.pix_banco || null,
-    pixObservacao: item.pix_observacao || null,
+    programadoPor:
+      item.programado_por || null,
 
-    valorPago: numero(item.valor_pago),
-    saldoPagar:
-      item.saldo_pagar == null
-        ? Math.max(
-            numero(item.valor) -
-              numero(item.valor_pago),
-            0
-          )
-        : numero(item.saldo_pagar),
+    dataProgramacao:
+      item.data_programacao || null,
+
+    formaPagamento:
+      item.forma_pagamento || null,
+
+    pixTipoChave:
+      item.pix_tipo_chave || null,
+
+    pixChave:
+      item.pix_chave || null,
+
+    pixFavorecido:
+      item.pix_favorecido || null,
+
+    pixBanco:
+      item.pix_banco || null,
+
+    pixObservacao:
+      item.pix_observacao || null,
+
+    valorPago,
+    saldoPagar,
+
     pagamentoParcial:
-      Boolean(item.pagamento_parcial),
+      item.pagamento_parcial == null
+        ? valorPago > 0 &&
+          saldoPagar > 0
+        : Boolean(
+            item.pagamento_parcial
+          ),
 
     historico: Array.isArray(
       item.historico_processos
@@ -254,9 +358,72 @@ export const mapProcessoFromDb = (
           mapHistoricoFromDb
         )
       : [],
-  }) as any;
 
-export const mapProcessoToDb = (item: any) => {
+    documentos: Array.isArray(
+      item.processo_documentos
+    )
+      ? item.processo_documentos.map(
+          (documento: any) => ({
+            id: documento.id,
+            processoId:
+              documento.processo_id,
+            tipo:
+              documento.tipo ||
+              'documento',
+            nome: documento.nome,
+            url: documento.url,
+            caminho:
+              documento.caminho || null,
+            enviadoPor:
+              documento.enviado_por ||
+              null,
+            createdAt:
+              documento.created_at,
+          })
+        )
+      : [],
+
+    pagamentos: Array.isArray(
+      item.pagamentos_processos
+    )
+      ? item.pagamentos_processos.map(
+          (pagamento: any) => ({
+            id: pagamento.id,
+            processoId:
+              pagamento.processo_id,
+            userId:
+              pagamento.user_id ||
+              null,
+            valorPago: numero(
+              pagamento.valor_pago
+            ),
+            metodoPagamento:
+              pagamento.metodo_pagamento,
+            dataPagamento:
+              pagamento.data_pagamento,
+            comprovante:
+              pagamento.comprovante ||
+              null,
+            observacao:
+              pagamento.observacao ||
+              null,
+            createdAt:
+              pagamento.created_at,
+          })
+        )
+      : [],
+  };
+};
+
+export const mapProcessoToDb = (
+  item: Omit<
+    ProcessoCompra,
+    | 'dbId'
+    | 'historico'
+    | 'documentos'
+    | 'pagamentos'
+  >
+) => {
   const tipoPagamento =
     item.tipoPagamento === 'interno'
       ? 'interno'
@@ -269,72 +436,136 @@ export const mapProcessoToDb = (item: any) => {
 
   const beneficiarioInterno =
     tipoPagamento === 'interno'
-      ? textoOuNull(item.beneficiarioInterno)
+      ? textoOuNull(
+          item.beneficiarioInterno
+        )
       : null;
 
   const pixChave = item.pixChave
-    ? String(item.pixChave).trim().toLowerCase()
+    ? String(item.pixChave)
+        .trim()
+        .toLowerCase()
     : null;
+
+  const valor = numero(item.valor);
+  const valorPago = numero(
+    item.valorPago
+  );
+
+  const saldoPagar = Math.max(
+    valor - valorPago,
+    0
+  );
 
   return {
     codigo: item.id,
 
-    tipo_pagamento: tipoPagamento,
-    fornecedor_id: fornecedorId,
-    beneficiario_interno: beneficiarioInterno,
+    organizacao_id:
+      item.organizacaoId,
 
     empresa_id: item.empresaId,
-    plano_financeiro_id: item.planoFinanceiroId,
-    centro_custo_id: item.centroCustoId,
 
-    descricao: item.descricao,
-    valor: numero(item.valor),
-    urgencia: item.urgencia,
-    responsavel: item.responsavel,
-    data_criacao: item.dataCriacao,
-    status: item.status,
-    prazo: item.prazo,
+    tipo_pagamento:
+      tipoPagamento,
 
-    anexo_nome: item.anexoNome || null,
-    anexo_url: item.anexoUrl || null,
+    fornecedor_id:
+      fornecedorId,
+
+    beneficiario_interno:
+      beneficiarioInterno,
+
+    plano_financeiro_id:
+      item.planoFinanceiroId ||
+      null,
+
+    centro_custo_id:
+      item.centroCustoId || null,
+
+    descricao:
+      textoOuVazio(item.descricao),
+
+    valor,
+
+    urgencia:
+      item.urgencia || 'media',
+
+    responsavel:
+      item.responsavel || '',
+
+    data_criacao:
+      item.dataCriacao,
+
+    status:
+      item.status ||
+      'solicitacao',
+
+    prazo: item.prazo || null,
+
+    anexo_nome:
+      item.anexoNome || null,
+
+    anexo_url:
+      item.anexoUrl || null,
 
     comprovante_nome:
-      item.comprovanteNome || null,
+      item.comprovanteNome ||
+      null,
+
     comprovante_url:
-      item.comprovanteUrl || null,
+      item.comprovanteUrl ||
+      null,
 
     metodo_pagamento:
-      item.metodoPagamento || null,
-    data_pagamento: item.dataPagamento || null,
+      item.metodoPagamento ||
+      null,
+
+    data_pagamento:
+      item.dataPagamento ||
+      null,
 
     data_programada_pagamento:
-      item.dataProgramadaPagamento || null,
+      item.dataProgramadaPagamento ||
+      null,
+
     status_programacao:
-      item.statusProgramacao || 'nao_programado',
-    programado_por: item.programadoPor || null,
-    data_programacao: item.dataProgramacao || null,
+      item.statusProgramacao ||
+      'nao_programado',
+
+    programado_por:
+      item.programadoPor || null,
+
+    data_programacao:
+      item.dataProgramacao ||
+      null,
 
     forma_pagamento:
       item.formaPagamento || null,
+
     pix_tipo_chave:
       item.pixTipoChave || null,
-    pix_chave: pixChave,
-    pix_favorecido:
-      textoOuNull(item.pixFavorecido),
-    pix_banco: textoOuNull(item.pixBanco),
-    pix_observacao:
-      textoOuNull(item.pixObservacao),
 
-    valor_pago: numero(item.valorPago),
-    saldo_pagar: Math.max(
-      numero(item.valor) -
-        numero(item.valorPago),
-      0
-    ),
+    pix_chave: pixChave,
+
+    pix_favorecido:
+      textoOuNull(
+        item.pixFavorecido
+      ),
+
+    pix_banco:
+      textoOuNull(item.pixBanco),
+
+    pix_observacao:
+      textoOuNull(
+        item.pixObservacao
+      ),
+
+    valor_pago: valorPago,
+
+    saldo_pagar: saldoPagar,
+
     pagamento_parcial:
-      numero(item.valorPago) > 0 &&
-      numero(item.valorPago) <
-        numero(item.valor),
+      valorPago > 0 &&
+      saldoPagar > 0,
   };
 };
 
@@ -342,10 +573,36 @@ export const mapAlertaFromDb = (
   item: any
 ): AlertaSistema => ({
   id: item.id,
+  organizacaoId:
+    item.organizacao_id,
   tipo: item.tipo,
   titulo: item.titulo,
-  mensagem: item.mensagem,
-  data: item.created_at,
-  lido: item.lido,
-  processoId: item.processo_id,
+  mensagem:
+    item.mensagem || '',
+  data:
+    item.created_at ||
+    new Date().toISOString(),
+  lido: Boolean(item.lido),
+  processoId:
+    item.processo_id || undefined,
+});
+
+export const mapAlertaToDb = (
+  item: Omit<
+    AlertaSistema,
+    'id' | 'data'
+  >,
+  userId: string
+) => ({
+  organizacao_id:
+    item.organizacaoId,
+  user_id: userId,
+  processo_id:
+    item.processoId || null,
+  tipo: item.tipo,
+  titulo:
+    textoOuVazio(item.titulo),
+  mensagem:
+    textoOuNull(item.mensagem),
+  lido: Boolean(item.lido),
 });

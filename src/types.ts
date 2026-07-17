@@ -1,4 +1,7 @@
-export type Urgencia = 'baixa' | 'media' | 'alta';
+export type Urgencia =
+  | 'baixa'
+  | 'media'
+  | 'alta';
 
 export type StatusProcesso =
   | 'solicitacao'
@@ -10,15 +13,55 @@ export type StatusProcesso =
   | 'conciliacao'
   | 'finalizado';
 
-export type MetodoPagamento = 'pix' | 'ted' | 'boleto' | 'dinheiro' | 'cartao';
+export type MetodoPagamento =
+  | 'pix'
+  | 'ted'
+  | 'boleto'
+  | 'deposito'
+  | 'dinheiro'
+  | 'cartao';
 
 export type StatusProgramacaoPagamento =
   | 'nao_programado'
   | 'programado'
   | 'pago';
 
+export type TipoPagamento =
+  | 'fornecedor'
+  | 'interno';
+
+export type PerfilOrganizacao =
+  | 'super_admin'
+  | 'admin'
+  | 'diretoria'
+  | 'compras'
+  | 'contas_pagar'
+  | 'visualizador';
+
+export interface Organizacao {
+  id: string;
+  nome: string;
+  slug: string;
+  documento?: string | null;
+  plano: string;
+  ativo: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface UsuarioOrganizacao {
+  id: string;
+  userId: string;
+  organizacaoId: string;
+  perfil: PerfilOrganizacao;
+  ativo: boolean;
+  createdAt?: string;
+  organizacao?: Organizacao;
+}
+
 export interface Empresa {
   id: string;
+  organizacaoId: string;
   nome: string;
   cnpj: string;
   contaBancaria: string;
@@ -29,6 +72,7 @@ export interface Empresa {
 
 export interface Fornecedor {
   id: string;
+  organizacaoId: string;
   nome: string;
   cnpj: string;
   email: string;
@@ -51,6 +95,7 @@ export interface CentroCusto {
 
 export interface PlanoFinanceiro {
   id: string;
+  organizacaoId: string;
   empresaId?: string;
   nome: string;
   descricao?: string;
@@ -61,6 +106,20 @@ export interface PlanoFinanceiro {
   utilizado: number;
   comprometido: number;
   centrosCustoIds?: string[];
+}
+
+export interface OrcamentoMensal {
+  id: string;
+  organizacaoId: string;
+  empresaId: string;
+  planoFinanceiroId?: string | null;
+  centroCustoId?: string | null;
+  competencia: string;
+  valorOrcado: number;
+  utilizado?: number;
+  comprometido?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface DespesaDetalhe {
@@ -92,33 +151,79 @@ export interface ProcessoDocumento {
   createdAt?: string;
 }
 
+export interface PagamentoProcesso {
+  id: string;
+  processoId: string;
+  userId?: string | null;
+  valorPago: number;
+  metodoPagamento: MetodoPagamento | string;
+  dataPagamento: string;
+  comprovante?: string | null;
+  observacao?: string | null;
+  createdAt?: string;
+}
+
 export interface ProcessoCompra {
-tipoPagamento?: 'fornecedor' | 'interno';
-fornecedorId?: string | null;
-beneficiarioInterno?: string | null;
+  id: string;
+  dbId?: string;
 
-formaPagamento?: string | null;
-pixTipoChave?: string | null;
-pixChave?: string | null;
-pixFavorecido?: string | null;
-pixBanco?: string | null;
-pixObservacao?: string | null;
+  organizacaoId: string;
+  empresaId: string;
 
-dataProgramadaPagamento?: string | null;
-statusProgramacao?: string;
-programadoPor?: string | null;
-dataProgramacao?: string | null;
+  fornecedorId?: string | null;
+  planoFinanceiroId?: string | null;
+  centroCustoId?: string | null;
 
-metodoPagamento?: string | null;
-dataPagamento?: string | null;
-comprovanteNome?: string | null;
-comprovanteUrl?: string | null;
+  descricao: string;
+  valor: number;
+  urgencia: Urgencia;
+  responsavel: string;
+  dataCriacao: string;
+  status: StatusProcesso;
+  prazo?: string | null;
 
+  tipoPagamento?: TipoPagamento;
+  beneficiarioInterno?: string | null;
+
+  formaPagamento?: MetodoPagamento | string | null;
+
+  pixTipoChave?: string | null;
+  pixChave?: string | null;
+  pixFavorecido?: string | null;
+  pixBanco?: string | null;
+  pixObservacao?: string | null;
+
+  anexoNome?: string | null;
+  anexoUrl?: string | null;
+
+  dataProgramadaPagamento?: string | null;
+  statusProgramacao?: StatusProgramacaoPagamento;
+  programadoPor?: string | null;
+  dataProgramacao?: string | null;
+
+  metodoPagamento?: MetodoPagamento | string | null;
+  dataPagamento?: string | null;
+
+  comprovanteNome?: string | null;
+  comprovanteUrl?: string | null;
+
+  valorPago?: number;
+  saldoPagar?: number;
+  pagamentoParcial?: boolean;
+
+  historico?: HistoricoStatus[];
+  documentos?: ProcessoDocumento[];
+  pagamentos?: PagamentoProcesso[];
 }
 
 export interface AlertaSistema {
   id: string;
-  tipo: 'urgente' | 'alerta' | 'sucesso' | 'info';
+  organizacaoId: string;
+  tipo:
+    | 'urgente'
+    | 'alerta'
+    | 'sucesso'
+    | 'info';
   titulo: string;
   mensagem: string;
   data: string;

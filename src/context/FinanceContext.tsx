@@ -9,12 +9,20 @@ import {
   StatusProcesso,
   Urgencia,
   HistoricoStatus,
+  Organizacao,
+  UsuarioOrganizacao,
 } from '../types';
 import { STATUS_LABELS } from '../utils';
 import { financeService } from '../services/financeService';
 import { useAuth } from './AuthContext';
 
 interface FinanceContextType {
+  organizacoesUsuario: UsuarioOrganizacao[];
+  organizacoes: Organizacao[];
+  organizacaoAtivaId: string;
+  setOrganizacaoAtivaId: (id: string) => void;
+  perfilOrganizacaoAtiva: UsuarioOrganizacao['perfil'] | null;
+
   empresas: Empresa[];
   fornecedores: Fornecedor[];
   planosFinanceiros: PlanoFinanceiro[];
@@ -100,28 +108,28 @@ interface FinanceContextType {
 
   conciliarPagamento: (id: string) => Promise<void>;
 
-  cadastrarEmpresa: (empresa: Omit<Empresa, 'id' | 'saldoAtual'>) => Promise<void>;
-  editarEmpresa: (id: string, empresa: Omit<Empresa, 'id' | 'saldoAtual'>) => Promise<void>;
+  cadastrarEmpresa: (empresa: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>) => Promise<void>;
+  editarEmpresa: (id: string, empresa: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>) => Promise<void>;
   excluirEmpresa: (id: string) => Promise<boolean>;
 
   cadastrarFornecedor: (
-    fornecedor: Omit<Fornecedor, 'id' | 'historicoCompras' | 'tempoMedioPagamento'>
+    fornecedor: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
   ) => Promise<void>;
 
   editarFornecedor: (
     id: string,
-    fornecedor: Omit<Fornecedor, 'id' | 'historicoCompras' | 'tempoMedioPagamento'>
+    fornecedor: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
   ) => Promise<void>;
 
   excluirFornecedor: (id: string) => Promise<boolean>;
 
   cadastrarPlanoFinanceiro: (
-    plano: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido'>
+    plano: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
   ) => Promise<void>;
 
   editarPlanoFinanceiro: (
     id: string,
-    plano: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido'>
+    plano: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
   ) => Promise<void>;
 
   excluirPlanoFinanceiro: (id: string) => Promise<boolean>;
@@ -164,6 +172,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   user?.email ||
   'Usuário logado';
 
+  const [organizacoesUsuario, setOrganizacoesUsuario] =
+    useState<UsuarioOrganizacao[]>([]);
+  const [organizacaoAtivaIdState, setOrganizacaoAtivaIdState] =
+    useState<string>('');
+
+  const organizacoes = organizacoesUsuario
+    .map(vinculo => vinculo.organizacao)
+    .filter((organizacao): organizacao is Organizacao => Boolean(organizacao));
+
+  const perfilOrganizacaoAtiva =
+    organizacoesUsuario.find(
+      vinculo => vinculo.organizacaoId === organizacaoAtivaIdState
+    )?.perfil || null;
+
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [planosFinanceiros, setPlanosFinanceiros] = useState<PlanoFinanceiro[]>([]);
@@ -172,6 +194,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [alertas, setAlertas] = useState<AlertaSistema[]>([]);
 
   const [empresaAtivaId, setEmpresaAtivaId] = useState<string>('');
+
+  const setOrganizacaoAtivaId = useCallback((id: string) => {
+    setOrganizacaoAtivaIdState(id);
+
+    if (id) {
+      localStorage.setItem('flowfinance_organizacao_ativa_id', id);
+    } else {
+      localStorage.removeItem('flowfinance_organizacao_ativa_id');
+    }
+
+    setEmpresaAtivaId('');
+  }, []);
   const [activeView, setActiveView] = useState<string>('dashboard');
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
 
@@ -179,7 +213,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [erroFinanceiro, setErroFinanceiro] = useState<string | null>(null);
 
   const recarregarDados = useCallback(async () => {
-    if (!user) {
+    if (!user || !organizacaoAtivaIdState) {
       return;
     }
 
@@ -187,25 +221,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setLoadingFinanceiro(true);
       setErroFinanceiro(null);
 
-      const dados =
-        await financeService.carregarDados();
+      const dados = await financeService.carregarDados(
+        organizacaoAtivaIdState
+      );
 
       setEmpresas(dados.empresas);
       setFornecedores(dados.fornecedores);
-      setPlanosFinanceiros(
-        dados.planosFinanceiros
-      );
-      setCentrosCustos(
-        dados.centrosCustos
-      );
+      setPlanosFinanceiros(dados.planosFinanceiros);
+      setCentrosCustos(dados.centrosCustos);
       setProcessos(dados.processos);
       setAlertas(dados.alertas);
 
       setEmpresaAtivaId(atual => {
-        const empresaAtualAindaExiste =
-          dados.empresas.some(
-            empresa => empresa.id === atual
-          );
+        const empresaAtualAindaExiste = dados.empresas.some(
+          empresa => empresa.id === atual
+        );
 
         if (empresaAtualAindaExiste) {
           return atual;
@@ -226,24 +256,97 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setLoadingFinanceiro(false);
     }
+  }, [user, organizacaoAtivaIdState]);
+
+  useEffect(() => {
+    let cancelado = false;
+
+    const inicializarOrganizacoes = async () => {
+      if (!user) {
+        setOrganizacoesUsuario([]);
+        setOrganizacaoAtivaIdState('');
+        setEmpresas([]);
+        setFornecedores([]);
+        setPlanosFinanceiros([]);
+        setCentrosCustos([]);
+        setProcessos([]);
+        setAlertas([]);
+        setEmpresaAtivaId('');
+        setLoadingFinanceiro(false);
+        setErroFinanceiro(null);
+        return;
+      }
+
+      try {
+        setLoadingFinanceiro(true);
+        setErroFinanceiro(null);
+
+        const vinculos =
+          await financeService.getOrganizacoesUsuario();
+
+        if (cancelado) return;
+
+        setOrganizacoesUsuario(vinculos);
+
+        const salva = localStorage.getItem(
+          'flowfinance_organizacao_ativa_id'
+        );
+
+        const organizacaoValida = vinculos.some(
+          vinculo => vinculo.organizacaoId === salva
+        );
+
+        const proximaOrganizacaoId = organizacaoValida
+          ? salva || ''
+          : vinculos[0]?.organizacaoId || '';
+
+        setOrganizacaoAtivaIdState(proximaOrganizacaoId);
+
+        if (proximaOrganizacaoId) {
+          localStorage.setItem(
+            'flowfinance_organizacao_ativa_id',
+            proximaOrganizacaoId
+          );
+        }
+
+        if (!proximaOrganizacaoId) {
+          setErroFinanceiro(
+            'Seu usuário não possui uma organização ativa vinculada.'
+          );
+        }
+      } catch (error: any) {
+        if (cancelado) return;
+
+        console.error(
+          'Erro ao carregar organizações do usuário:',
+          error
+        );
+
+        setErroFinanceiro(
+          error?.message ||
+            'Erro ao carregar organizações do usuário.'
+        );
+      } finally {
+        if (!cancelado) {
+          setLoadingFinanceiro(false);
+        }
+      }
+    };
+
+    inicializarOrganizacoes();
+
+    return () => {
+      cancelado = true;
+    };
   }, [user]);
 
   useEffect(() => {
-    if (!user) {
-      setEmpresas([]);
-      setFornecedores([]);
-      setPlanosFinanceiros([]);
-      setCentrosCustos([]);
-      setProcessos([]);
-      setAlertas([]);
-      setEmpresaAtivaId('');
-      setLoadingFinanceiro(false);
-      setErroFinanceiro(null);
+    if (!user || !organizacaoAtivaIdState) {
       return;
     }
 
     recarregarDados();
-  }, [user, recarregarDados]);
+  }, [user, organizacaoAtivaIdState, recarregarDados]);
 
   useEffect(() => {
     if (!user) {
@@ -299,7 +402,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [user, recarregarDados]);
 
   const uploadAnexoProcesso = async (file: File) => {
-    return financeService.uploadAnexoProcesso(file);
+    return financeService.uploadAnexoProcesso(file, organizacaoAtivaIdState);
   };
 
   const getDocumentosProcesso = async (processoDbId: string) => {
@@ -312,7 +415,10 @@ const anexarDocumentoProcesso = async (params: {
   tipo?: string;
   enviadoPor?: string;
 }) => {
-  return financeService.anexarDocumentoProcesso(params);
+  return financeService.anexarDocumentoProcesso({
+    ...params,
+    organizacaoId: organizacaoAtivaIdState,
+  });
 };
 
   const criarSolicitacao = async (dados: {
@@ -337,6 +443,10 @@ const anexarDocumentoProcesso = async (params: {
     pixObservacao?: string | null;
   }) => {
     try {
+      if (!organizacaoAtivaIdState) {
+        throw new Error('Nenhuma organização ativa selecionada.');
+      }
+
       const novoCodigo = `FF-${new Date().getFullYear()}-${String(
         processos.length + 101
       ).padStart(3, '0')}`;
@@ -345,6 +455,7 @@ const anexarDocumentoProcesso = async (params: {
 
       const novoProcesso: ProcessoCompra = {
         id: novoCodigo,
+        organizacaoId: organizacaoAtivaIdState,
         tipoPagamento: dados.tipoPagamento,
         fornecedorId:
           dados.tipoPagamento === 'fornecedor'
@@ -401,6 +512,7 @@ const anexarDocumentoProcesso = async (params: {
       setProcessos(prev => [criado, ...prev]);
 
       const novoAlerta = await financeService.criarAlerta({
+        organizacaoId: organizacaoAtivaIdState,
         tipo: dados.urgencia === 'alta' ? 'urgente' : 'info',
         titulo: 'Nova Solicitação para Aprovação da Diretoria',
         mensagem: `${novoCodigo} (${
@@ -433,6 +545,7 @@ const anexarDocumentoProcesso = async (params: {
       const atualizado = {
         ...atual,
         ...dados,
+        organizacaoId: organizacaoAtivaIdState,
       };
 
       const salvo = await financeService.editarProcesso(id, atualizado);
@@ -448,7 +561,7 @@ const anexarDocumentoProcesso = async (params: {
 
   const excluirProcesso = async (id: string) => {
     try {
-      await financeService.excluirProcesso(id);
+      await financeService.excluirProcesso(id, organizacaoAtivaIdState);
 
       setProcessos(prev => prev.filter(processo => processo.id !== id));
       setAlertas(prev => prev.filter(alerta => alerta.processoId !== id));
@@ -529,6 +642,7 @@ const anexarDocumentoProcesso = async (params: {
 
       if (titulo) {
         const alerta = await financeService.criarAlerta({
+          organizacaoId: organizacaoAtivaIdState,
           tipo: alertaTipo,
           titulo,
           mensagem,
@@ -807,6 +921,7 @@ const anexarDocumentoProcesso = async (params: {
 
       const alerta =
         await financeService.criarAlerta({
+          organizacaoId: organizacaoAtivaIdState,
           tipo: quitado
             ? 'sucesso'
             : 'info',
@@ -848,9 +963,9 @@ const anexarDocumentoProcesso = async (params: {
     );
   };
 
-  const cadastrarEmpresa = async (dados: Omit<Empresa, 'id' | 'saldoAtual'>) => {
+  const cadastrarEmpresa = async (dados: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>) => {
     try {
-      const nova = await financeService.criarEmpresa(dados);
+      const nova = await financeService.criarEmpresa({ ...dados, organizacaoId: organizacaoAtivaIdState });
       setEmpresas(prev => [...prev, nova]);
 
       if (!empresaAtivaId) {
@@ -862,9 +977,9 @@ const anexarDocumentoProcesso = async (params: {
     }
   };
 
-  const editarEmpresa = async (id: string, dados: Omit<Empresa, 'id' | 'saldoAtual'>) => {
+  const editarEmpresa = async (id: string, dados: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>) => {
     try {
-      const atualizada = await financeService.editarEmpresa(id, dados);
+      const atualizada = await financeService.editarEmpresa(id, { ...dados, organizacaoId: organizacaoAtivaIdState });
       setEmpresas(prev => prev.map(emp => (emp.id === id ? atualizada : emp)));
     } catch (error: any) {
       console.error('Erro ao editar empresa:', error);
@@ -879,7 +994,7 @@ const anexarDocumentoProcesso = async (params: {
     }
 
     try {
-      await financeService.excluirEmpresa(id);
+      await financeService.excluirEmpresa(id, organizacaoAtivaIdState);
 
       const novasEmpresas = empresas.filter(emp => emp.id !== id);
       setEmpresas(novasEmpresas);
@@ -897,10 +1012,10 @@ const anexarDocumentoProcesso = async (params: {
   };
 
   const cadastrarFornecedor = async (
-    dados: Omit<Fornecedor, 'id' | 'historicoCompras' | 'tempoMedioPagamento'>
+    dados: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
   ) => {
     try {
-      const novo = await financeService.criarFornecedor(dados);
+      const novo = await financeService.criarFornecedor({ ...dados, organizacaoId: organizacaoAtivaIdState });
       setFornecedores(prev => [...prev, novo]);
     } catch (error: any) {
       console.error('Erro ao cadastrar fornecedor:', error);
@@ -910,10 +1025,10 @@ const anexarDocumentoProcesso = async (params: {
 
   const editarFornecedor = async (
     id: string,
-    dados: Omit<Fornecedor, 'id' | 'historicoCompras' | 'tempoMedioPagamento'>
+    dados: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
   ) => {
     try {
-      const atualizado = await financeService.editarFornecedor(id, dados);
+      const atualizado = await financeService.editarFornecedor(id, { ...dados, organizacaoId: organizacaoAtivaIdState });
       setFornecedores(prev => prev.map(f => (f.id === id ? atualizado : f)));
     } catch (error: any) {
       console.error('Erro ao editar fornecedor:', error);
@@ -928,7 +1043,7 @@ const anexarDocumentoProcesso = async (params: {
     }
 
     try {
-      await financeService.excluirFornecedor(id);
+      await financeService.excluirFornecedor(id, organizacaoAtivaIdState);
       setFornecedores(prev => prev.filter(f => f.id !== id));
       return true;
     } catch (error: any) {
@@ -939,10 +1054,10 @@ const anexarDocumentoProcesso = async (params: {
   };
 
   const cadastrarPlanoFinanceiro = async (
-    dados: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido'>
+    dados: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
   ) => {
     try {
-      const novo = await financeService.criarPlanoFinanceiro(dados);
+      const novo = await financeService.criarPlanoFinanceiro({ ...dados, organizacaoId: organizacaoAtivaIdState });
       setPlanosFinanceiros(prev => [...prev, novo]);
     } catch (error: any) {
       console.error('Erro ao cadastrar plano:', error);
@@ -952,10 +1067,10 @@ const anexarDocumentoProcesso = async (params: {
 
   const editarPlanoFinanceiro = async (
     id: string,
-    dados: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido'>
+    dados: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
   ) => {
     try {
-      const atualizado = await financeService.editarPlanoFinanceiro(id, dados);
+      const atualizado = await financeService.editarPlanoFinanceiro(id, { ...dados, organizacaoId: organizacaoAtivaIdState });
       setPlanosFinanceiros(prev => prev.map(p => (p.id === id ? atualizado : p)));
     } catch (error: any) {
       console.error('Erro ao editar plano:', error);
@@ -975,7 +1090,7 @@ const anexarDocumentoProcesso = async (params: {
     }
 
     try {
-      await financeService.excluirPlanoFinanceiro(id);
+      await financeService.excluirPlanoFinanceiro(id, organizacaoAtivaIdState);
       setPlanosFinanceiros(prev => prev.filter(p => p.id !== id));
       return true;
     } catch (error: any) {
@@ -1027,7 +1142,7 @@ const anexarDocumentoProcesso = async (params: {
 
   const marcarAlertaLido = async (id: string) => {
     try {
-      const alertaAtualizado = await financeService.marcarAlertaLido(id);
+      const alertaAtualizado = await financeService.marcarAlertaLido(id, organizacaoAtivaIdState);
       setAlertas(prev => prev.map(a => (a.id === id ? alertaAtualizado : a)));
     } catch {
       setAlertas(prev => prev.map(a => (a.id === id ? { ...a, lido: true } : a)));
@@ -1109,6 +1224,12 @@ const anexarDocumentoProcesso = async (params: {
   return (
     <FinanceContext.Provider
       value={{
+        organizacoesUsuario,
+        organizacoes,
+        organizacaoAtivaId: organizacaoAtivaIdState,
+        setOrganizacaoAtivaId,
+        perfilOrganizacaoAtiva,
+
         empresas,
         fornecedores,
         planosFinanceiros,
