@@ -13,6 +13,21 @@ export type StatusProcesso =
   | 'conciliacao'
   | 'finalizado';
 
+export type OrigemProcesso =
+  | 'solicitacao_compra'
+  | 'conta_pagar';
+
+export type TipoConta =
+  | 'boleto'
+  | 'pix'
+  | 'transferencia'
+  | 'tributo'
+  | 'salario'
+  | 'aluguel'
+  | 'contrato'
+  | 'servico'
+  | 'outra';
+
 export type MetodoPagamento =
   | 'pix'
   | 'ted'
@@ -174,6 +189,15 @@ export interface ProcessoCompra {
   planoFinanceiroId?: string | null;
   centroCustoId?: string | null;
 
+  origem: OrigemProcesso;
+
+  tipoConta?: TipoConta | string | null;
+  dataEmissao?: string | null;
+  dataVencimento?: string | null;
+  numeroDocumento?: string | null;
+  codigoBarras?: string | null;
+  recorrente?: boolean;
+
   descricao: string;
   valor: number;
   urgencia: Urgencia;
@@ -216,6 +240,43 @@ export interface ProcessoCompra {
   pagamentos?: PagamentoProcesso[];
 }
 
+export interface NovaContaInput {
+  empresaId: string;
+
+  fornecedorId?: string | null;
+  planoFinanceiroId?: string | null;
+  centroCustoId?: string | null;
+
+  tipoConta: TipoConta | string;
+  tipoPagamento: TipoPagamento;
+
+  beneficiarioInterno?: string | null;
+
+  descricao: string;
+  valor: number;
+
+  dataEmissao?: string | null;
+  dataVencimento: string;
+
+  numeroDocumento?: string | null;
+  codigoBarras?: string | null;
+
+  formaPagamento?: MetodoPagamento | string | null;
+
+  pixTipoChave?: string | null;
+  pixChave?: string | null;
+  pixFavorecido?: string | null;
+  pixBanco?: string | null;
+  pixObservacao?: string | null;
+
+  recorrente?: boolean;
+
+  anexoNome?: string | null;
+  anexoUrl?: string | null;
+
+  observacao?: string | null;
+}
+
 export interface AlertaSistema {
   id: string;
   organizacaoId: string;
@@ -229,4 +290,123 @@ export interface AlertaSistema {
   data: string;
   lido: boolean;
   processoId?: string;
+}
+export interface SegmentoItem {
+  id: string;
+  organizacaoId: string;
+
+  nome: string;
+  descricao?: string | null;
+  ativo: boolean;
+
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ItemCatalogo {
+  id: string;
+  organizacaoId: string;
+  segmentoId: string;
+
+  nome: string;
+  descricao?: string | null;
+  unidadeMedida: string;
+  codigoInterno?: string | null;
+  marcaReferencia?: string | null;
+  especificacao?: string | null;
+
+  ativo: boolean;
+
+  segmento?: SegmentoItem;
+  fornecedores?: ItemFornecedor[];
+
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ItemFornecedor {
+  id: string;
+  organizacaoId: string;
+  itemId: string;
+  fornecedorId: string;
+
+  codigoFornecedor?: string | null;
+  marcaFornecida?: string | null;
+  ultimoPreco?: number | null;
+  prazoEntregaDias?: number | null;
+  quantidadeMinima?: number | null;
+  observacoes?: string | null;
+
+  fornecedorPreferencial: boolean;
+  ativo: boolean;
+
+  fornecedor?: Fornecedor;
+
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface NovoSegmentoItemInput {
+  nome: string;
+  descricao?: string | null;
+  ativo?: boolean;
+}
+
+export interface AtualizarSegmentoItemInput {
+  nome?: string;
+  descricao?: string | null;
+  ativo?: boolean;
+}
+
+export interface NovoItemCatalogoInput {
+  segmentoId: string;
+
+  nome: string;
+  descricao?: string | null;
+  unidadeMedida: string;
+  codigoInterno?: string | null;
+  marcaReferencia?: string | null;
+  especificacao?: string | null;
+
+  ativo?: boolean;
+}
+
+export interface AtualizarItemCatalogoInput {
+  segmentoId?: string;
+
+  nome?: string;
+  descricao?: string | null;
+  unidadeMedida?: string;
+  codigoInterno?: string | null;
+  marcaReferencia?: string | null;
+  especificacao?: string | null;
+
+  ativo?: boolean;
+}
+
+export interface VincularFornecedorItemInput {
+  itemId: string;
+  fornecedorId: string;
+
+  codigoFornecedor?: string | null;
+  marcaFornecida?: string | null;
+  ultimoPreco?: number | null;
+  prazoEntregaDias?: number | null;
+  quantidadeMinima?: number | null;
+  observacoes?: string | null;
+
+  fornecedorPreferencial?: boolean;
+  ativo?: boolean;
+}
+
+export interface AtualizarFornecedorItemInput {
+  codigoFornecedor?: string | null;
+  marcaFornecida?: string | null;
+  ultimoPreco?: number | null;
+  prazoEntregaDias?: number | null;
+  quantidadeMinima?: number | null;
+  observacoes?: string | null;
+
+  fornecedorPreferencial?: boolean;
+  ativo?: boolean;
 }

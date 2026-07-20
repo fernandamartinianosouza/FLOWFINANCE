@@ -228,6 +228,7 @@ export const mapProcessoFromDb = (
   item: any
 ): ProcessoCompra => {
   const valor = numero(item.valor);
+
   const valorPago = numero(
     item.valor_pago
   );
@@ -246,7 +247,31 @@ export const mapProcessoFromDb = (
 
     organizacaoId:
       item.organizacao_id,
-    empresaId: item.empresa_id,
+
+    empresaId:
+      item.empresa_id,
+
+    origem:
+      item.origem ||
+      'solicitacao_compra',
+
+    tipoConta:
+      item.tipo_conta || null,
+
+    dataEmissao:
+      item.data_emissao || null,
+
+    dataVencimento:
+      item.data_vencimento || null,
+
+    numeroDocumento:
+      item.numero_documento || null,
+
+    codigoBarras:
+      item.codigo_barras || null,
+
+    recorrente:
+      Boolean(item.recorrente),
 
     tipoPagamento:
       item.tipo_pagamento ||
@@ -285,7 +310,8 @@ export const mapProcessoFromDb = (
     status:
       item.status || 'solicitacao',
 
-    prazo: item.prazo || null,
+    prazo:
+      item.prazo || null,
 
     anexoNome:
       item.anexo_nome || null,
@@ -341,6 +367,7 @@ export const mapProcessoFromDb = (
       item.pix_observacao || null,
 
     valorPago,
+
     saldoPagar,
 
     pagamentoParcial:
@@ -365,18 +392,27 @@ export const mapProcessoFromDb = (
       ? item.processo_documentos.map(
           (documento: any) => ({
             id: documento.id,
+
             processoId:
               documento.processo_id,
+
             tipo:
               documento.tipo ||
               'documento',
-            nome: documento.nome,
-            url: documento.url,
+
+            nome:
+              documento.nome,
+
+            url:
+              documento.url,
+
             caminho:
               documento.caminho || null,
+
             enviadoPor:
               documento.enviado_por ||
               null,
+
             createdAt:
               documento.created_at,
           })
@@ -388,25 +424,35 @@ export const mapProcessoFromDb = (
     )
       ? item.pagamentos_processos.map(
           (pagamento: any) => ({
-            id: pagamento.id,
+            id:
+              pagamento.id,
+
             processoId:
               pagamento.processo_id,
+
             userId:
               pagamento.user_id ||
               null,
-            valorPago: numero(
-              pagamento.valor_pago
-            ),
+
+            valorPago:
+              numero(
+                pagamento.valor_pago
+              ),
+
             metodoPagamento:
               pagamento.metodo_pagamento,
+
             dataPagamento:
               pagamento.data_pagamento,
+
             comprovante:
               pagamento.comprovante ||
               null,
+
             observacao:
               pagamento.observacao ||
               null,
+
             createdAt:
               pagamento.created_at,
           })
@@ -441,29 +487,64 @@ export const mapProcessoToDb = (
         )
       : null;
 
-  const pixChave = item.pixChave
-    ? String(item.pixChave)
-        .trim()
-        .toLowerCase()
-    : null;
+  const pixChave =
+    item.pixChave
+      ? String(item.pixChave)
+          .trim()
+          .toLowerCase()
+      : null;
 
-  const valor = numero(item.valor);
-  const valorPago = numero(
-    item.valorPago
-  );
+  const valor =
+    numero(item.valor);
 
-  const saldoPagar = Math.max(
-    valor - valorPago,
-    0
-  );
+  const valorPago =
+    numero(item.valorPago);
+
+  const saldoPagar =
+    Math.max(
+      valor - valorPago,
+      0
+    );
 
   return {
-    codigo: item.id,
+    codigo:
+      item.id,
 
     organizacao_id:
       item.organizacaoId,
 
-    empresa_id: item.empresaId,
+    empresa_id:
+      item.empresaId,
+
+    origem:
+      item.origem ||
+      'solicitacao_compra',
+
+    tipo_conta:
+      textoOuNull(
+        item.tipoConta
+      ),
+
+    data_emissao:
+      item.dataEmissao ||
+      null,
+
+    data_vencimento:
+      item.dataVencimento ||
+      null,
+
+    numero_documento:
+      textoOuNull(
+        item.numeroDocumento
+      ),
+
+    codigo_barras:
+      textoOuNull(
+        item.codigoBarras
+      ),
+
+    recorrente:
+      Boolean(item.recorrente),
 
     tipo_pagamento:
       tipoPagamento,
@@ -479,10 +560,13 @@ export const mapProcessoToDb = (
       null,
 
     centro_custo_id:
-      item.centroCustoId || null,
+      item.centroCustoId ||
+      null,
 
     descricao:
-      textoOuVazio(item.descricao),
+      textoOuVazio(
+        item.descricao
+      ),
 
     valor,
 
@@ -499,7 +583,8 @@ export const mapProcessoToDb = (
       item.status ||
       'solicitacao',
 
-    prazo: item.prazo || null,
+    prazo:
+      item.prazo || null,
 
     anexo_nome:
       item.anexoNome || null,
@@ -539,12 +624,15 @@ export const mapProcessoToDb = (
       null,
 
     forma_pagamento:
-      item.formaPagamento || null,
+      item.formaPagamento ||
+      null,
 
     pix_tipo_chave:
-      item.pixTipoChave || null,
+      item.pixTipoChave ||
+      null,
 
-    pix_chave: pixChave,
+    pix_chave:
+      pixChave,
 
     pix_favorecido:
       textoOuNull(
@@ -552,16 +640,20 @@ export const mapProcessoToDb = (
       ),
 
     pix_banco:
-      textoOuNull(item.pixBanco),
+      textoOuNull(
+        item.pixBanco
+      ),
 
     pix_observacao:
       textoOuNull(
         item.pixObservacao
       ),
 
-    valor_pago: valorPago,
+    valor_pago:
+      valorPago,
 
-    saldo_pagar: saldoPagar,
+    saldo_pagar:
+      saldoPagar,
 
     pagamento_parcial:
       valorPago > 0 &&
@@ -572,19 +664,31 @@ export const mapProcessoToDb = (
 export const mapAlertaFromDb = (
   item: any
 ): AlertaSistema => ({
-  id: item.id,
+  id:
+    item.id,
+
   organizacaoId:
     item.organizacao_id,
-  tipo: item.tipo,
-  titulo: item.titulo,
+
+  tipo:
+    item.tipo,
+
+  titulo:
+    item.titulo,
+
   mensagem:
     item.mensagem || '',
+
   data:
     item.created_at ||
     new Date().toISOString(),
-  lido: Boolean(item.lido),
+
+  lido:
+    Boolean(item.lido),
+
   processoId:
-    item.processo_id || undefined,
+    item.processo_id ||
+    undefined,
 });
 
 export const mapAlertaToDb = (
@@ -596,13 +700,27 @@ export const mapAlertaToDb = (
 ) => ({
   organizacao_id:
     item.organizacaoId,
-  user_id: userId,
+
+  user_id:
+    userId,
+
   processo_id:
-    item.processoId || null,
-  tipo: item.tipo,
+    item.processoId ||
+    null,
+
+  tipo:
+    item.tipo,
+
   titulo:
-    textoOuVazio(item.titulo),
+    textoOuVazio(
+      item.titulo
+    ),
+
   mensagem:
-    textoOuNull(item.mensagem),
-  lido: Boolean(item.lido),
+    textoOuNull(
+      item.mensagem
+    ),
+
+  lido:
+    Boolean(item.lido),
 });

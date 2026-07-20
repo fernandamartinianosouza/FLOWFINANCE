@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
+
 import { useFinance } from '../context/FinanceContext';
 import { useAuth } from '../context/AuthContext';
 import { podeAcessar } from '../config/permissions';
+
 import {
   LayoutDashboard,
   GitBranch,
@@ -16,54 +18,113 @@ import {
   Users,
   Sparkles,
   ShieldCheck,
-  Usercog,
   UserCog,
   ClipboardList,
   CalendarDays,
+  ReceiptText,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { activeView, setActiveView, processos } = useFinance();
-  const { perfil, nomeUsuario } = useAuth();
+  const {
+    activeView,
+    setActiveView,
+    processos,
+  } = useFinance();
 
-  const aguardandoAprovacao = processos.filter(
-    p => p.status === 'autorizacao_cp' || p.status === 'autorizacao_diretoria'
-  ).length;
+  const {
+    perfil,
+    nomeUsuario,
+  } = useAuth();
 
-  const contasAPagar = processos.filter(p => p.status === 'pagamento').length;
+  const aguardandoAprovacao =
+    processos.filter(
+      processo =>
+        processo.origem !== 'conta_pagar' &&
+        (
+          processo.status === 'autorizacao_cp' ||
+          processo.status === 'autorizacao_diretoria' ||
+          processo.status === 'autorizacao_contas'
+        )
+    ).length;
 
-  const pagamentosProgramados = processos.filter(
-    p => p.status === 'pagamento' && p.statusProgramacao === 'programado'
-  ).length;
+  const contasAPagar =
+    processos.filter(
+      processo =>
+        processo.status === 'pagamento' &&
+        processo.statusProgramacao !== 'pago'
+    ).length;
 
-  const conciliacoesPendentes = processos.filter(
-    p => p.status === 'conciliacao'
-  ).length;
+  const pagamentosProgramados =
+    processos.filter(
+      processo =>
+        processo.status === 'pagamento' &&
+        processo.statusProgramacao === 'programado'
+    ).length;
+
+  const conciliacoesPendentes =
+    processos.filter(
+      processo =>
+        processo.status === 'conciliacao'
+    ).length;
 
   const menuGroups = [
     {
       title: 'Principal',
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: LayoutDashboard,
+        },
+        {
+          id: 'processos',
+          label: 'Central de Processos',
+          icon: GitBranch,
+        },
       ],
     },
+
     {
-      title: 'Operações',
+      title: 'Compras',
       items: [
-        { id: 'processos', label: 'Central de Processos', icon: GitBranch },
-        { id: 'solicitacao', label: 'Nova Solicitação', icon: PlusCircle },
+        {
+          id: 'solicitacao',
+          label: 'Nova Solicitação',
+          icon: PlusCircle,
+        },
+        {
+          id: 'cotacoes',
+          label: 'Cotações',
+          icon: ClipboardList,
+        },
         {
           id: 'autorizacoes',
           label: 'Autorizações',
           icon: CheckSquare,
           badge: aguardandoAprovacao,
         },
-        { id: 'cotacoes', label: 'Cotações', icon: ClipboardList },
       ],
     },
+
     {
-      title: 'Financeiro',
+      title: 'Contas a Pagar',
       items: [
+        {
+          id: 'nova-conta',
+          label: 'Nova Conta',
+          icon: ReceiptText,
+        },
+        {
+          id: 'calendario',
+          label: 'Calendário Financeiro',
+          icon: Calendar,
+        },
+        {
+          id: 'fluxo-caixa',
+          label: 'Fluxo de Caixa',
+          icon: TrendingUp,
+        },
+        
         {
           id: 'contas-pagar',
           label: 'Contas a Pagar',
@@ -74,6 +135,7 @@ export const Sidebar: React.FC = () => {
           id: 'pagamentos-programados',
           label: 'Programação',
           icon: CalendarDays,
+          badge: pagamentosProgramados,
         },
         {
           id: 'conciliacao',
@@ -81,158 +143,268 @@ export const Sidebar: React.FC = () => {
           icon: RefreshCw,
           badge: conciliacoesPendentes,
         },
-        { id: 'centro-financeiro', label: 'Plano Financeiro', icon: Sliders },
-        { id: 'calendario', label: 'Calendário Financeiro', icon: Calendar },
-        { id: 'fluxo-caixa', label: 'Fluxo de Caixa', icon: TrendingUp },
       ],
     },
     {
       title: 'Cadastros',
       items: [
-        { id: 'empresas', label: 'Empresas', icon: Building2 },
-        { id: 'fornecedores', label: 'Fornecedores', icon: Users },
+        {
+          id: 'centro-financeiro',
+          label: 'Plano Financeiro',
+          icon: Sliders,
+        },
+        {
+          id: 'empresas',
+          label: 'Empresas',
+          icon: Building2,
+        },
+        {
+          id: 'fornecedores',
+          label: 'Fornecedores',
+          icon: Users,
+        },
       ],
     },
+
     {
-  title: 'Administração',
-  items: [
-    { id: 'usuarios', label: 'Gestão de Usuários', icon: UserCog },
-  ],
-},
+      title: 'Administração',
+      items: [
+        {
+          id: 'usuarios',
+          label: 'Gestão de Usuários',
+          icon: UserCog,
+        },
+      ],
+    },
   ];
 
-  const menuGroupsPermitidos = menuGroups
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item => podeAcessar(perfil, item.id)),
-    }))
-    .filter(group => group.items.length > 0);
+  const menuGroupsPermitidos =
+    menuGroups
+      .map(group => ({
+        ...group,
+        items: group.items.filter(
+          item =>
+            podeAcessar(
+              perfil,
+              item.id
+            )
+        ),
+      }))
+      .filter(
+        group =>
+          group.items.length > 0
+      );
 
   useEffect(() => {
-    if (!perfil) return;
-
-    if (!podeAcessar(perfil, activeView)) {
-      const primeiraViewPermitida =
-        menuGroupsPermitidos[0]?.items[0]?.id || 'dashboard';
-
-      setActiveView(primeiraViewPermitida);
+    if (!perfil) {
+      return;
     }
-  }, [perfil, activeView]);
 
-  const podeCriarSolicitacao = podeAcessar(perfil, 'solicitacao');
+    if (
+      !podeAcessar(
+        perfil,
+        activeView
+      )
+    ) {
+      const primeiraViewPermitida =
+        menuGroupsPermitidos[0]
+          ?.items[0]?.id ||
+        'dashboard';
+
+      setActiveView(
+        primeiraViewPermitida
+      );
+    }
+  }, [
+    perfil,
+    activeView,
+    setActiveView,
+  ]);
+
+  const podeCriarSolicitacao =
+    podeAcessar(
+      perfil,
+      'solicitacao'
+    );
+
+  const podeCriarConta =
+    podeAcessar(
+      perfil,
+      'nova-conta'
+    );
 
   return (
-    <aside className="ff-sidebar w-72 flex flex-col h-screen sticky top-0" id="flow_sidebar">
+    <aside
+      className="ff-sidebar sticky top-0 flex h-screen w-72 flex-col"
+      id="flow_sidebar"
+    >
       <div className="p-7 pb-5">
         <div className="flex items-center gap-3.5">
-          <div className="relative w-11 h-11 rounded-2xl bg-slate-950 flex items-center justify-center shadow-lg overflow-hidden">
+          <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 shadow-lg">
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent" />
-            <Sparkles className="w-5 h-5 text-[#D4AF37] relative z-10" />
+
+            <Sparkles className="relative z-10 h-5 w-5 text-[#D4AF37]" />
           </div>
 
           <div>
-            <span className="font-black tracking-tight text-slate-950 text-[15px] block leading-none">
-              FLOW<span className="text-[#3557FF]">FINANCE</span>
+            <span className="block text-[15px] font-black leading-none tracking-tight text-slate-950">
+              FLOW
+              <span className="text-[#3557FF]">
+                FINANCE
+              </span>
             </span>
-            <span className="text-[10px] text-slate-400 tracking-[0.16em] font-bold block mt-1.5 uppercase">
+
+            <span className="mt-1.5 block text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
               Sistema Financeiro
             </span>
           </div>
         </div>
 
-        {podeCriarSolicitacao && (
-          <button
-            onClick={() => setActiveView('solicitacao')}
-            className="ff-button-primary w-full mt-7 h-11 flex items-center justify-center gap-2 text-xs font-bold"
-          >
-            <PlusCircle className="w-4 h-4" />
-            Nova solicitação
-          </button>
+        <div className="mt-7 space-y-2">
+          {podeCriarSolicitacao && (
+            <button
+              type="button"
+              onClick={() =>
+                setActiveView(
+                  'solicitacao'
+                )
+              }
+              className="ff-button-primary flex h-11 w-full items-center justify-center gap-2 text-xs font-bold"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Nova solicitação
+            </button>
+          )}
+
+          {podeCriarConta && (
+            <button
+              type="button"
+              onClick={() =>
+                setActiveView(
+                  'nova-conta'
+                )
+              }
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#3557FF]/20 bg-[#EEF2FF] text-xs font-bold text-[#3557FF] transition hover:bg-[#E4E9FF]"
+            >
+              <ReceiptText className="h-4 w-4" />
+              Nova conta
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="scrollbar-none flex-1 space-y-6 overflow-y-auto px-4 py-3">
+        {menuGroupsPermitidos.map(
+          group => (
+            <div
+              key={group.title}
+              className="space-y-2"
+            >
+              <h3 className="px-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+                {group.title}
+              </h3>
+
+              <ul className="space-y-1.5">
+                {group.items.map(
+                  item => {
+                    const Icon =
+                      item.icon;
+
+                    const isActive =
+                      activeView ===
+                      item.id;
+
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveView(
+                              item.id
+                            )
+                          }
+                          className={`group relative flex w-full items-center justify-between rounded-2xl px-3.5 py-3 text-[13px] font-semibold transition-all duration-200 ${
+                            isActive
+                              ? 'bg-slate-950 text-white shadow-[0_14px_35px_rgba(15,23,42,.18)]'
+                              : 'text-slate-500 hover:bg-white/80 hover:text-slate-950'
+                          }`}
+                          id={`sidebar-item-${item.id}`}
+                        >
+                          {isActive && (
+                            <span className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-[#D4AF37]" />
+                          )}
+
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span
+                              className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+                                isActive
+                                  ? 'bg-white/10'
+                                  : 'bg-slate-100/70 group-hover:bg-[#EEF2FF]'
+                              }`}
+                            >
+                              <Icon
+                                className={`h-4 w-4 transition-colors ${
+                                  isActive
+                                    ? 'text-[#D4AF37]'
+                                    : 'text-slate-400 group-hover:text-[#3557FF]'
+                                }`}
+                              />
+                            </span>
+
+                            <span className="truncate">
+                              {item.label}
+                            </span>
+                          </div>
+
+                          {item.badge !==
+                            undefined &&
+                            item.badge >
+                              0 && (
+                              <span
+                                className={`flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[10px] font-black ${
+                                  isActive
+                                    ? 'bg-[#D4AF37] text-slate-950'
+                                    : 'bg-[#EEF2FF] text-[#3557FF]'
+                                }`}
+                              >
+                                {
+                                  item.badge
+                                }
+                              </span>
+                            )}
+                        </button>
+                      </li>
+                    );
+                  }
+                )}
+              </ul>
+            </div>
+          )
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-6 scrollbar-none">
-        {menuGroupsPermitidos.map((group, index) => (
-          <div key={index} className="space-y-2">
-            <h3 className="text-[10px] font-black text-slate-400 tracking-[0.14em] uppercase px-3">
-              {group.title}
-            </h3>
+      <div className="mt-auto p-5">
+        <div className="relative overflow-hidden rounded-[22px] bg-slate-950 p-4 text-white shadow-lg">
+          <div className="absolute right-[-20px] top-[-20px] h-20 w-20 rounded-full bg-[#3557FF]/30 blur-2xl" />
 
-            <ul className="space-y-1.5">
-              {group.items.map(item => {
-                const Icon = item.icon;
-                const isActive = activeView === item.id;
-
-                return (
-                  <li key={item.id}>
-                    <button
-                      onClick={() => setActiveView(item.id)}
-                      className={`relative w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-[13px] font-semibold transition-all duration-200 group ${
-                        isActive
-                          ? 'bg-slate-950 text-white shadow-[0_14px_35px_rgba(15,23,42,.18)]'
-                          : 'text-slate-500 hover:text-slate-950 hover:bg-white/80'
-                      }`}
-                      id={`sidebar-item-${item.id}`}
-                    >
-                      {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-7 rounded-r-full bg-[#D4AF37]" />
-                      )}
-
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
-                            isActive
-                              ? 'bg-white/10'
-                              : 'bg-slate-100/70 group-hover:bg-[#EEF2FF]'
-                          }`}
-                        >
-                          <Icon
-                            className={`w-4 h-4 transition-colors ${
-                              isActive
-                                ? 'text-[#D4AF37]'
-                                : 'text-slate-400 group-hover:text-[#3557FF]'
-                            }`}
-                          />
-                        </span>
-
-                        <span className="truncate">{item.label}</span>
-                      </div>
-
-                      {item.badge !== undefined && item.badge > 0 && (
-                        <span
-                          className={`min-w-6 h-6 px-2 rounded-full text-[10px] font-black flex items-center justify-center ${
-                            isActive
-                              ? 'bg-[#D4AF37] text-slate-950'
-                              : 'bg-[#EEF2FF] text-[#3557FF]'
-                          }`}
-                        >
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-      </div>
-
-      <div className="p-5 mt-auto">
-        <div className="rounded-[22px] bg-slate-950 text-white p-4 shadow-lg relative overflow-hidden">
-          <div className="absolute right-[-20px] top-[-20px] w-20 h-20 rounded-full bg-[#3557FF]/30 blur-2xl" />
-
-          <div className="flex items-center gap-3 relative z-10">
-            <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5 text-[#D4AF37]" />
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
+              <ShieldCheck className="h-5 w-5 text-[#D4AF37]" />
             </div>
 
             <div className="min-w-0">
-              <span className="text-xs font-bold block truncate">
-                {nomeUsuario || 'FlowFinance'}
+              <span className="block truncate text-xs font-bold">
+                {nomeUsuario ||
+                  'FlowFinance'}
               </span>
-              <span className="text-[10px] text-white/45 block tracking-wider uppercase">
-                {perfil || 'sem perfil'}
+
+              <span className="block text-[10px] uppercase tracking-wider text-white/45">
+                {perfil
+                  ?.replace(
+                    '_',
+                    ' '
+                  ) ||
+                  'sem perfil'}
               </span>
             </div>
           </div>

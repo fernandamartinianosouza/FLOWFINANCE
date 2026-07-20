@@ -2,10 +2,12 @@ import React, {
   useEffect,
   useState,
 } from 'react';
+
 import {
   FinanceProvider,
   useFinance,
 } from './context/FinanceContext';
+
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
@@ -23,10 +25,12 @@ import { PaymentScheduleView } from './components/PaymentScheduleView';
 import { QuotationsView } from './components/QuotationsView';
 import { MobileNavigation } from './components/MobileNavigation';
 import { MobileTopBar } from './components/MobileTopBar';
-import { UsersAdminView } from './views/UsersAdminView';
 import { PasswordAccessView } from './components/auth/PasswordAccessView';
-import { useAuth } from './context/AuthContext';
+
+import { UsersAdminView } from './views/UsersAdminView';
 import { AuthView } from './views/AuthView';
+import { NewAccountView } from './components/NewAccountView';
+import { useAuth } from './context/AuthContext';
 import { podeAcessar } from './config/permissions';
 
 const verificarDefinicaoSenhaNaUrl = () => {
@@ -38,9 +42,13 @@ const verificarDefinicaoSenhaNaUrl = () => {
 };
 
 const limparParametroDefinirSenha = () => {
-  const url = new URL(window.location.href);
+  const url = new URL(
+    window.location.href
+  );
 
-  url.searchParams.delete('definir-senha');
+  url.searchParams.delete(
+    'definir-senha'
+  );
 
   const novaUrl =
     `${url.pathname}` +
@@ -97,7 +105,10 @@ const AppContent: React.FC = () => {
     if (
       user &&
       perfil &&
-      !podeAcessar(perfil, activeView)
+      !podeAcessar(
+        perfil,
+        activeView
+      )
     ) {
       setActiveView('dashboard');
     }
@@ -108,10 +119,11 @@ const AppContent: React.FC = () => {
     setActiveView,
   ]);
 
-  const concluirDefinicaoSenha = () => {
-    limparParametroDefinirSenha();
-    setDeveDefinirSenha(false);
-  };
+  const concluirDefinicaoSenha =
+    () => {
+      limparParametroDefinirSenha();
+      setDeveDefinirSenha(false);
+    };
 
   const renderView = () => {
     switch (activeView) {
@@ -121,26 +133,60 @@ const AppContent: React.FC = () => {
       case 'dashboard':
         return <DashboardView />;
 
+      /*
+       * Central de processos de compras.
+       */
       case 'processos':
         return <ProcessesView />;
 
+      /*
+       * Nova solicitação de compra.
+       * Continua seguindo o fluxo:
+       *
+       * solicitação
+       * → cotação
+       * → conferência
+       * → autorizações
+       * → pagamento
+       */
       case 'solicitacao':
         return <NewRequestView />;
-
-      case 'autorizacoes':
-        return <ApprovalsView />;
-
-      case 'contas-pagar':
-        return <AccountsPayableView />;
-
-      case 'conciliacao':
-        return <ReconciliationView />;
 
       case 'cotacoes':
         return <QuotationsView />;
 
+      case 'autorizacoes':
+        return <ApprovalsView />;
+
+      /*
+       * Novo lançamento financeiro direto.
+       *
+       * Não passa pelo fluxo de compras.
+       * Entra diretamente no Contas a Pagar.
+       */
+      case 'nova-conta':
+        return <NewAccountView />;
+
+      case 'contas-pagar':
+        return (
+          <AccountsPayableView />
+        );
+
+      case 'programacao':
+      case 'pagamentos-programados':
+        return (
+          <PaymentScheduleView />
+        );
+
+      case 'conciliacao':
+        return (
+          <ReconciliationView />
+        );
+
       case 'centro-financeiro':
-        return <FinancialCenterView />;
+        return (
+          <FinancialCenterView />
+        );
 
       case 'calendario':
         return <CalendarView />;
@@ -153,10 +199,6 @@ const AppContent: React.FC = () => {
 
       case 'fornecedores':
         return <SuppliersView />;
-
-      case 'programacao':
-      case 'pagamentos-programados':
-        return <PaymentScheduleView />;
 
       default:
         return <DashboardView />;
@@ -172,17 +214,24 @@ const AppContent: React.FC = () => {
   }
 
   /*
-   * Esta verificação precisa vir antes de `if (!user)`.
-   * O link do convite cria uma sessão automaticamente,
-   * então o usuário pode estar autenticado e ainda assim
-   * precisar definir a senha.
+   * Esta verificação precisa vir antes
+   * de `if (!user)`.
+   *
+   * O link do convite cria uma sessão
+   * automaticamente. Portanto, o usuário
+   * pode estar autenticado e ainda precisar
+   * definir a senha.
    */
   if (deveDefinirSenha) {
     return (
       <PasswordAccessView
         modo="definir-senha"
-        onVoltar={concluirDefinicaoSenha}
-        onConcluido={concluirDefinicaoSenha}
+        onVoltar={
+          concluirDefinicaoSenha
+        }
+        onConcluido={
+          concluirDefinicaoSenha
+        }
       />
     );
   }
@@ -193,7 +242,10 @@ const AppContent: React.FC = () => {
 
   if (
     perfil &&
-    !podeAcessar(perfil, activeView)
+    !podeAcessar(
+      perfil,
+      activeView
+    )
   ) {
     return null;
   }
@@ -204,7 +256,9 @@ const AppContent: React.FC = () => {
       id="flow_app_layout"
     >
       <div className="pointer-events-none absolute left-[-12%] top-[-12%] z-0 h-[52%] w-[52%] rounded-full bg-[#3557FF]/12 blur-[130px]" />
+
       <div className="pointer-events-none absolute bottom-[-14%] right-[-10%] z-0 h-[62%] w-[62%] rounded-full bg-[#D4AF37]/14 blur-[140px]" />
+
       <div className="pointer-events-none absolute left-[28%] top-[32%] z-0 h-[38%] w-[38%] rounded-full bg-sky-200/22 blur-[150px]" />
 
       <div className="relative z-20 hidden h-screen shrink-0 lg:block">

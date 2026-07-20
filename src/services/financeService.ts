@@ -1,4 +1,5 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from "../lib/supabase";
+import { NovaContaInput, ProcessoCompra } from "../types";
 import {
   mapEmpresaFromDb,
   mapEmpresaToDb,
@@ -12,29 +13,23 @@ import {
   mapProcessoToDb,
   mapAlertaFromDb,
   mapAlertaToDb,
-} from './financeMappers';
+} from "./financeMappers";
 
-const BUCKET_ANEXOS = 'flowfinance-anexos';
+const BUCKET_ANEXOS = "flowfinance-anexos";
 
 const getUser = async () => {
-  const { data, error } =
-    await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser();
 
   if (error || !data.user) {
-    throw new Error(
-      'Usuário não autenticado.'
-    );
+    throw new Error("Usuário não autenticado.");
   }
 
   return data.user;
 };
 
-const getUserId = async () =>
-  (await getUser()).id;
+const getUserId = async () => (await getUser()).id;
 
-const resolverOrganizacaoId = async (
-  organizacaoId?: string | null
-) => {
+const resolverOrganizacaoId = async (organizacaoId?: string | null) => {
   if (organizacaoId) {
     return organizacaoId;
   }
@@ -42,54 +37,41 @@ const resolverOrganizacaoId = async (
   const userId = await getUserId();
 
   const { data, error } = await supabase
-    .from('usuarios_organizacoes')
-    .select('organizacao_id')
-    .eq('user_id', userId)
-    .eq('ativo', true)
+    .from("usuarios_organizacoes")
+    .select("organizacao_id")
+    .eq("user_id", userId)
+    .eq("ativo", true)
     .limit(1)
     .maybeSingle();
 
   if (error) throw error;
 
   if (!data?.organizacao_id) {
-    throw new Error(
-      'O usuário não está vinculado a uma organização ativa.'
-    );
+    throw new Error("O usuário não está vinculado a uma organização ativa.");
   }
 
   return data.organizacao_id;
 };
 
-const limparNomeArquivo = (
-  nome: string
-) => {
+const limparNomeArquivo = (nome: string) => {
   return nome
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(
-      /[^a-zA-Z0-9.\-_]/g,
-      '_'
-    );
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9.\-_]/g, "_");
 };
 
-const obterProcessoDbId = async (
-  processoIdOuCodigo: string
-) => {
+const obterProcessoDbId = async (processoIdOuCodigo: string) => {
   const { data, error } = await supabase
-    .from('processos_compra')
-    .select('id')
-    .or(
-      `id.eq.${processoIdOuCodigo},codigo.eq.${processoIdOuCodigo}`
-    )
+    .from("processos_compra")
+    .select("id")
+    .or(`id.eq.${processoIdOuCodigo},codigo.eq.${processoIdOuCodigo}`)
     .limit(1)
     .maybeSingle();
 
   if (error) throw error;
 
   if (!data?.id) {
-    throw new Error(
-      'Processo não encontrado.'
-    );
+    throw new Error("Processo não encontrado.");
   }
 
   return data.id;
@@ -100,8 +82,9 @@ export const financeService = {
     const userId = await getUserId();
 
     const { data, error } = await supabase
-      .from('usuarios_organizacoes')
-      .select(`
+      .from("usuarios_organizacoes")
+      .select(
+        `
         id,
         user_id,
         organizacao_id,
@@ -118,83 +101,58 @@ export const financeService = {
           created_at,
           updated_at
         )
-      `)
-      .eq('user_id', userId)
-      .eq('ativo', true)
-      .order('created_at', {
+      `,
+      )
+      .eq("user_id", userId)
+      .eq("ativo", true)
+      .order("created_at", {
         ascending: true,
       });
 
     if (error) throw error;
 
-    return (data || []).map(
-      (item: any) => ({
-        id: item.id,
-        userId: item.user_id,
-        organizacaoId:
-          item.organizacao_id,
-        perfil: item.perfil,
-        ativo: item.ativo,
-        createdAt: item.created_at,
-        organizacao:
-          item.organizacoes
-            ? {
-                id:
-                  item.organizacoes.id,
-                nome:
-                  item.organizacoes.nome,
-                slug:
-                  item.organizacoes.slug,
-                documento:
-                  item.organizacoes
-                    .documento,
-                plano:
-                  item.organizacoes.plano,
-                ativo:
-                  item.organizacoes.ativo,
-                createdAt:
-                  item.organizacoes
-                    .created_at,
-                updatedAt:
-                  item.organizacoes
-                    .updated_at,
-              }
-            : undefined,
-      })
-    );
+    return (data || []).map((item: any) => ({
+      id: item.id,
+      userId: item.user_id,
+      organizacaoId: item.organizacao_id,
+      perfil: item.perfil,
+      ativo: item.ativo,
+      createdAt: item.created_at,
+      organizacao: item.organizacoes
+        ? {
+            id: item.organizacoes.id,
+            nome: item.organizacoes.nome,
+            slug: item.organizacoes.slug,
+            documento: item.organizacoes.documento,
+            plano: item.organizacoes.plano,
+            ativo: item.organizacoes.ativo,
+            createdAt: item.organizacoes.created_at,
+            updatedAt: item.organizacoes.updated_at,
+          }
+        : undefined,
+    }));
   },
 
-  async uploadAnexoProcesso(
-    file: File,
-    organizacaoId?: string
-  ) {
+  async uploadAnexoProcesso(file: File, organizacaoId?: string) {
     const userId = await getUserId();
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const nomeLimpo =
-      limparNomeArquivo(file.name);
+    const nomeLimpo = limparNomeArquivo(file.name);
 
-    const nomeArquivo =
-      `${orgId}/${userId}/` +
-      `${Date.now()}_${nomeLimpo}`;
+    const nomeArquivo = `${orgId}/${userId}/` + `${Date.now()}_${nomeLimpo}`;
 
-    const { error } =
-      await supabase.storage
-        .from(BUCKET_ANEXOS)
-        .upload(nomeArquivo, file, {
-          cacheControl: '3600',
-          upsert: false,
-        });
+    const { error } = await supabase.storage
+      .from(BUCKET_ANEXOS)
+      .upload(nomeArquivo, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
 
     if (error) throw error;
 
-    const { data } =
-      supabase.storage
-        .from(BUCKET_ANEXOS)
-        .getPublicUrl(nomeArquivo);
+    const { data } = supabase.storage
+      .from(BUCKET_ANEXOS)
+      .getPublicUrl(nomeArquivo);
 
     return {
       nome: file.name,
@@ -213,109 +171,81 @@ export const financeService = {
   }) {
     const userId = await getUserId();
 
-    const { data, error } =
-      await supabase
-        .from('processo_documentos')
-        .insert({
-          user_id: userId,
-          processo_id:
-            item.processoDbId,
-          tipo: item.tipo || 'outro',
-          nome: item.nome,
-          url: item.url,
-          caminho:
-            item.caminho || null,
-          enviado_por:
-            item.enviadoPor || null,
-        })
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("processo_documentos")
+      .insert({
+        user_id: userId,
+        processo_id: item.processoDbId,
+        tipo: item.tipo || "outro",
+        nome: item.nome,
+        url: item.url,
+        caminho: item.caminho || null,
+        enviado_por: item.enviadoPor || null,
+      })
+      .select()
+      .single();
 
     if (error) throw error;
 
     return {
       id: data.id,
-      processoId:
-        data.processo_id,
+      processoId: data.processo_id,
       tipo: data.tipo,
       nome: data.nome,
       url: data.url,
       caminho: data.caminho,
-      enviadoPor:
-        data.enviado_por,
-      createdAt:
-        data.created_at,
+      enviadoPor: data.enviado_por,
+      createdAt: data.created_at,
     };
   },
 
-  async anexarDocumentoProcesso(
-    params: {
-      processoDbId: string;
-      file: File;
-      tipo?: string;
-      enviadoPor?: string;
-      organizacaoId?: string;
-    }
-  ) {
-    const upload =
-      await this.uploadAnexoProcesso(
-        params.file,
-        params.organizacaoId
-      );
+  async anexarDocumentoProcesso(params: {
+    processoDbId: string;
+    file: File;
+    tipo?: string;
+    enviadoPor?: string;
+    organizacaoId?: string;
+  }) {
+    const upload = await this.uploadAnexoProcesso(
+      params.file,
+      params.organizacaoId,
+    );
 
     return this.criarDocumentoProcesso({
-      processoDbId:
-        params.processoDbId,
-      tipo: params.tipo || 'outro',
+      processoDbId: params.processoDbId,
+      tipo: params.tipo || "outro",
       nome: upload.nome,
       url: upload.url,
       caminho: upload.caminho,
-      enviadoPor:
-        params.enviadoPor || null,
+      enviadoPor: params.enviadoPor || null,
     });
   },
 
-  async getDocumentosProcesso(
-    processoDbId: string
-  ) {
-    const { data, error } =
-      await supabase
-        .from('processo_documentos')
-        .select('*')
-        .eq(
-          'processo_id',
-          processoDbId
-        )
-        .order('created_at', {
-          ascending: false,
-        });
+  async getDocumentosProcesso(processoDbId: string) {
+    const { data, error } = await supabase
+      .from("processo_documentos")
+      .select("*")
+      .eq("processo_id", processoDbId)
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (error) throw error;
 
-    return (data || []).map(
-      (item: any) => ({
-        id: item.id,
-        processoId:
-          item.processo_id,
-        tipo: item.tipo,
-        nome: item.nome,
-        url: item.url,
-        caminho: item.caminho,
-        enviadoPor:
-          item.enviado_por,
-        createdAt:
-          item.created_at,
-      })
-    );
+    return (data || []).map((item: any) => ({
+      id: item.id,
+      processoId: item.processo_id,
+      tipo: item.tipo,
+      nome: item.nome,
+      url: item.url,
+      caminho: item.caminho,
+      enviadoPor: item.enviado_por,
+      createdAt: item.created_at,
+    }));
   },
 
-  async carregarDados(
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async carregarDados(organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
     const [
       empresas,
@@ -327,9 +257,7 @@ export const financeService = {
     ] = await Promise.all([
       this.getEmpresas(orgId),
       this.getFornecedores(orgId),
-      this.getPlanosFinanceiros(
-        orgId
-      ),
+      this.getPlanosFinanceiros(orgId),
       this.getCentrosCustos(orgId),
       this.getProcessos(orgId),
       this.getAlertas(orgId),
@@ -346,463 +274,308 @@ export const financeService = {
     };
   },
 
-  async getEmpresas(
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async getEmpresas(organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from('empresas')
-        .select('*')
-        .eq(
-          'organizacao_id',
-          orgId
-        )
-        .order('created_at', {
-          ascending: true,
-        });
+    const { data, error } = await supabase
+      .from("empresas")
+      .select("*")
+      .eq("organizacao_id", orgId)
+      .order("created_at", {
+        ascending: true,
+      });
 
     if (error) throw error;
 
-    return (data || []).map(
-      mapEmpresaFromDb
-    );
+    return (data || []).map(mapEmpresaFromDb);
   },
 
   async criarEmpresa(item: any) {
     const userId = await getUserId();
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
     const payload = {
       ...mapEmpresaToDb({
         ...item,
         organizacaoId,
-        saldoAtual:
-          item.saldoAtual ??
-          item.saldoInicial,
+        saldoAtual: item.saldoAtual ?? item.saldoInicial,
       }),
       user_id: userId,
     };
 
-    const { data, error } =
-      await supabase
-        .from('empresas')
-        .insert(payload)
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("empresas")
+      .insert(payload)
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapEmpresaFromDb(data);
   },
 
-  async editarEmpresa(
-    id: string,
-    item: any
-  ) {
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+  async editarEmpresa(id: string, item: any) {
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
-    const payload =
-      mapEmpresaToDb({
-        ...item,
-        organizacaoId,
-        saldoAtual:
-          item.saldoAtual ??
-          item.saldoInicial,
+    const payload = mapEmpresaToDb({
+      ...item,
+      organizacaoId,
+      saldoAtual: item.saldoAtual ?? item.saldoInicial,
+    });
+
+    const { data, error } = await supabase
+      .from("empresas")
+      .update(payload)
+      .eq("id", id)
+      .eq("organizacao_id", organizacaoId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return mapEmpresaFromDb(data);
+  },
+
+  async excluirEmpresa(id: string, organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
+
+    const { error } = await supabase
+      .from("empresas")
+      .delete()
+      .eq("id", id)
+      .eq("organizacao_id", orgId);
+
+    if (error) throw error;
+  },
+
+  async getFornecedores(organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
+
+    const { data, error } = await supabase
+      .from("fornecedores")
+      .select("*")
+      .eq("organizacao_id", orgId)
+      .order("created_at", {
+        ascending: true,
       });
 
-    const { data, error } =
-      await supabase
-        .from('empresas')
-        .update(payload)
-        .eq('id', id)
-        .eq(
-          'organizacao_id',
-          organizacaoId
-        )
-        .select()
-        .single();
-
     if (error) throw error;
 
-    return mapEmpresaFromDb(data);
+    return (data || []).map(mapFornecedorFromDb);
   },
 
-  async excluirEmpresa(
-    id: string,
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
-
-    const { error } =
-      await supabase
-        .from('empresas')
-        .delete()
-        .eq('id', id)
-        .eq(
-          'organizacao_id',
-          orgId
-        );
-
-    if (error) throw error;
-  },
-
-  async getFornecedores(
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
-
-    const { data, error } =
-      await supabase
-        .from('fornecedores')
-        .select('*')
-        .eq(
-          'organizacao_id',
-          orgId
-        )
-        .order('created_at', {
-          ascending: true,
-        });
-
-    if (error) throw error;
-
-    return (data || []).map(
-      mapFornecedorFromDb
-    );
-  },
-
-  async criarFornecedor(
-    item: any
-  ) {
+  async criarFornecedor(item: any) {
     const userId = await getUserId();
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from('fornecedores')
-        .insert({
-          ...mapFornecedorToDb({
-            ...item,
-            organizacaoId,
-          }),
-          user_id: userId,
-        })
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("fornecedores")
+      .insert({
+        ...mapFornecedorToDb({
+          ...item,
+          organizacaoId,
+        }),
+        user_id: userId,
+      })
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapFornecedorFromDb(data);
   },
 
-  async editarFornecedor(
-    id: string,
-    item: any
-  ) {
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+  async editarFornecedor(id: string, item: any) {
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from('fornecedores')
-        .update(
-          mapFornecedorToDb({
-            ...item,
-            organizacaoId,
-          })
-        )
-        .eq('id', id)
-        .eq(
-          'organizacao_id',
-          organizacaoId
-        )
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("fornecedores")
+      .update(
+        mapFornecedorToDb({
+          ...item,
+          organizacaoId,
+        }),
+      )
+      .eq("id", id)
+      .eq("organizacao_id", organizacaoId)
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapFornecedorFromDb(data);
   },
 
-  async excluirFornecedor(
-    id: string,
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async excluirFornecedor(id: string, organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { error } =
-      await supabase
-        .from('fornecedores')
-        .delete()
-        .eq('id', id)
-        .eq(
-          'organizacao_id',
-          orgId
-        );
+    const { error } = await supabase
+      .from("fornecedores")
+      .delete()
+      .eq("id", id)
+      .eq("organizacao_id", orgId);
 
     if (error) throw error;
   },
 
-  async getPlanosFinanceiros(
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async getPlanosFinanceiros(organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from('planos_financeiros')
-        .select('*')
-        .eq(
-          'organizacao_id',
-          orgId
-        )
-        .order('created_at', {
-          ascending: true,
-        });
+    const { data, error } = await supabase
+      .from("planos_financeiros")
+      .select("*")
+      .eq("organizacao_id", orgId)
+      .order("created_at", {
+        ascending: true,
+      });
 
     if (error) throw error;
 
-    return (data || []).map(
-      mapPlanoFromDb
-    );
+    return (data || []).map(mapPlanoFromDb);
   },
 
-  async criarPlanoFinanceiro(
-    item: any
-  ) {
+  async criarPlanoFinanceiro(item: any) {
     const userId = await getUserId();
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from(
-          'planos_financeiros'
-        )
-        .insert({
-          ...mapPlanoToDb({
-            ...item,
-            organizacaoId,
-          }),
-          user_id: userId,
-        })
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("planos_financeiros")
+      .insert({
+        ...mapPlanoToDb({
+          ...item,
+          organizacaoId,
+        }),
+        user_id: userId,
+      })
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapPlanoFromDb(data);
   },
 
-  async editarPlanoFinanceiro(
-    id: string,
-    item: any
-  ) {
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+  async editarPlanoFinanceiro(id: string, item: any) {
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from(
-          'planos_financeiros'
-        )
-        .update(
-          mapPlanoToDb({
-            ...item,
-            organizacaoId,
-          })
-        )
-        .eq('id', id)
-        .eq(
-          'organizacao_id',
-          organizacaoId
-        )
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("planos_financeiros")
+      .update(
+        mapPlanoToDb({
+          ...item,
+          organizacaoId,
+        }),
+      )
+      .eq("id", id)
+      .eq("organizacao_id", organizacaoId)
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapPlanoFromDb(data);
   },
 
-  async excluirPlanoFinanceiro(
-    id: string,
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async excluirPlanoFinanceiro(id: string, organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { error } =
-      await supabase
-        .from(
-          'planos_financeiros'
-        )
-        .delete()
-        .eq('id', id)
-        .eq(
-          'organizacao_id',
-          orgId
-        );
+    const { error } = await supabase
+      .from("planos_financeiros")
+      .delete()
+      .eq("id", id)
+      .eq("organizacao_id", orgId);
 
     if (error) throw error;
   },
 
-  async getCentrosCustos(
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async getCentrosCustos(organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from('centros_custos')
-        .select(`
+    const { data, error } = await supabase
+      .from("centros_custos")
+      .select(
+        `
           *,
           planos_financeiros!inner (
             organizacao_id
           )
-        `)
-        .eq(
-          'planos_financeiros.organizacao_id',
-          orgId
-        )
-        .order('created_at', {
-          ascending: true,
-        });
+        `,
+      )
+      .eq("planos_financeiros.organizacao_id", orgId)
+      .order("created_at", {
+        ascending: true,
+      });
 
     if (error) throw error;
 
-    return (data || []).map(
-      mapCentroFromDb
-    );
+    return (data || []).map(mapCentroFromDb);
   },
 
-  async criarCentroCusto(
-    item: any
-  ) {
+  async criarCentroCusto(item: any) {
     const userId = await getUserId();
 
-    const { data, error } =
-      await supabase
-        .from('centros_custos')
-        .insert({
-          ...mapCentroToDb(item),
-          user_id: userId,
-        })
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("centros_custos")
+      .insert({
+        ...mapCentroToDb(item),
+        user_id: userId,
+      })
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapCentroFromDb(data);
   },
 
-  async editarCentroCusto(
-    id: string,
-    item: any
-  ) {
-    const { data, error } =
-      await supabase
-        .from('centros_custos')
-        .update(
-          mapCentroToDb(item)
-        )
-        .eq('id', id)
-        .select()
-        .single();
+  async editarCentroCusto(id: string, item: any) {
+    const { data, error } = await supabase
+      .from("centros_custos")
+      .update(mapCentroToDb(item))
+      .eq("id", id)
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapCentroFromDb(data);
   },
 
-  async excluirCentroCusto(
-    id: string
-  ) {
-    const { error } =
-      await supabase
-        .from('centros_custos')
-        .delete()
-        .eq('id', id);
+  async excluirCentroCusto(id: string) {
+    const { error } = await supabase
+      .from("centros_custos")
+      .delete()
+      .eq("id", id);
 
     if (error) throw error;
   },
 
-  async getProcessos(
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async getProcessos(organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from('processos_compra')
-        .select(`
+    const { data, error } = await supabase
+      .from("processos_compra")
+      .select(
+        `
           *,
           historico_processos (*),
           processo_documentos (*),
           pagamentos_processos (*)
-        `)
-        .eq(
-          'organizacao_id',
-          orgId
-        )
-        .order('created_at', {
-          ascending: false,
-        });
+        `,
+      )
+      .eq("organizacao_id", orgId)
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (error) throw error;
 
-    return (data || []).map(
-      mapProcessoFromDb
-    );
+    return (data || []).map(mapProcessoFromDb);
   },
 
-  async criarProcesso(
-    item: any
-  ) {
+  async criarProcesso(item: any) {
     const userId = await getUserId();
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
     const payload = {
       ...mapProcessoToDb({
@@ -812,302 +585,360 @@ export const financeService = {
       user_id: userId,
     };
 
-    const { data, error } =
-      await supabase
-        .from('processos_compra')
-        .insert(payload)
-        .select(`
+    const { data, error } = await supabase
+      .from("processos_compra")
+      .insert(payload)
+      .select(
+        `
           *,
           historico_processos (*),
           processo_documentos (*),
           pagamentos_processos (*)
-        `)
-        .single();
+        `,
+      )
+      .single();
 
     if (error) throw error;
 
     return mapProcessoFromDb(data);
   },
 
-  async editarProcesso(
-    id: string,
-    item: any
-  ) {
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+  async criarNovaConta(
+    item: NovaContaInput & {
+      organizacaoId?: string;
+    },
+  ): Promise<ProcessoCompra> {
+    const usuario = await getUser();
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
-    const payload =
-      mapProcessoToDb({
-        ...item,
-        organizacaoId,
+    const agora = new Date().toISOString();
+    const dataAtual = agora.split("T")[0];
+
+    const codigo = `CP-${Date.now()}-${Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, "0")}`;
+
+    const valor = Number(item.valor);
+
+    if (!item.empresaId) {
+      throw new Error("Selecione uma empresa.");
+    }
+
+    if (!item.descricao?.trim()) {
+      throw new Error("Informe a descrição da conta.");
+    }
+
+    if (!Number.isFinite(valor) || valor <= 0) {
+      throw new Error("Informe um valor válido.");
+    }
+
+    if (!item.dataVencimento) {
+      throw new Error("Informe a data de vencimento.");
+    }
+
+    if (item.tipoPagamento === "fornecedor" && !item.fornecedorId) {
+      throw new Error("Selecione o fornecedor.");
+    }
+
+    if (item.tipoPagamento === "interno" && !item.beneficiarioInterno?.trim()) {
+      throw new Error("Informe o beneficiário interno.");
+    }
+
+    if (item.formaPagamento === "pix" && !item.pixChave?.trim()) {
+      throw new Error("Informe a chave PIX.");
+    }
+
+    const responsavel =
+      usuario.user_metadata?.nome ||
+      usuario.user_metadata?.name ||
+      usuario.email ||
+      "Contas a pagar";
+
+    const novaConta: ProcessoCompra = {
+      id: codigo,
+      organizacaoId,
+      empresaId: item.empresaId,
+
+      origem: "conta_pagar",
+      tipoConta: item.tipoConta || "outra",
+      dataEmissao: item.dataEmissao || dataAtual,
+      dataVencimento: item.dataVencimento,
+      numeroDocumento: item.numeroDocumento?.trim() || null,
+      codigoBarras: item.codigoBarras?.trim() || null,
+      recorrente: Boolean(item.recorrente),
+
+      tipoPagamento: item.tipoPagamento,
+      fornecedorId:
+        item.tipoPagamento === "fornecedor" ? item.fornecedorId || null : null,
+      beneficiarioInterno:
+        item.tipoPagamento === "interno"
+          ? item.beneficiarioInterno?.trim() || null
+          : null,
+
+      planoFinanceiroId: item.planoFinanceiroId || null,
+      centroCustoId: item.centroCustoId || null,
+
+      descricao: item.descricao.trim(),
+      valor,
+      urgencia: "media",
+      responsavel,
+      dataCriacao: agora,
+      status: "pagamento",
+      prazo: item.dataVencimento,
+
+      formaPagamento: item.formaPagamento || null,
+      metodoPagamento: null,
+
+      pixTipoChave: item.pixTipoChave || null,
+      pixChave: item.pixChave ? item.pixChave.trim().toLowerCase() : null,
+      pixFavorecido: item.pixFavorecido?.trim() || null,
+      pixBanco: item.pixBanco?.trim() || null,
+      pixObservacao:
+        item.pixObservacao?.trim() || item.observacao?.trim() || null,
+
+      anexoNome: item.anexoNome || null,
+      anexoUrl: item.anexoUrl || null,
+
+      dataProgramadaPagamento: null,
+      statusProgramacao: "nao_programado",
+      programadoPor: null,
+      dataProgramacao: null,
+      dataPagamento: null,
+
+      comprovanteNome: null,
+      comprovanteUrl: null,
+
+      valorPago: 0,
+      saldoPagar: valor,
+      pagamentoParcial: false,
+
+      historico: [],
+      documentos: [],
+      pagamentos: [],
+    };
+
+    const payload = {
+      ...mapProcessoToDb(novaConta),
+      user_id: usuario.id,
+    };
+
+    const { data, error } = await supabase
+      .from("processos_compra")
+      .insert(payload)
+      .select(
+        `
+          *,
+          historico_processos (*),
+          processo_documentos (*),
+          pagamentos_processos (*)
+        `,
+      )
+      .single();
+
+    if (error) {
+      console.error("Erro ao cadastrar nova conta:", error);
+
+      throw new Error(error.message || "Não foi possível cadastrar a conta.");
+    }
+
+    const contaCriada = mapProcessoFromDb(data);
+
+    const { error: historicoError } = await supabase
+      .from("historico_processos")
+      .insert({
+        user_id: usuario.id,
+        processo_id: data.id,
+        usuario: responsavel,
+        de_status: "criacao",
+        para_status: "pagamento",
+        observacao:
+          "Conta cadastrada diretamente pelo setor de Contas a Pagar.",
       });
 
-    const { data, error } =
-      await supabase
-        .from('processos_compra')
-        .update(payload)
-        .eq('codigo', id)
-        .eq(
-          'organizacao_id',
-          organizacaoId
-        )
-        .select(`
+    if (historicoError) {
+      console.error(
+        "A conta foi criada, mas ocorreu um erro ao registrar o histórico:",
+        historicoError,
+      );
+    }
+
+    return contaCriada;
+  },
+
+  async editarProcesso(id: string, item: any) {
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
+
+    const payload = mapProcessoToDb({
+      ...item,
+      organizacaoId,
+    });
+
+    const { data, error } = await supabase
+      .from("processos_compra")
+      .update(payload)
+      .eq("codigo", id)
+      .eq("organizacao_id", organizacaoId)
+      .select(
+        `
           *,
           historico_processos (*),
           processo_documentos (*),
           pagamentos_processos (*)
-        `)
-        .single();
+        `,
+      )
+      .single();
 
     if (error) throw error;
 
     return mapProcessoFromDb(data);
   },
 
-  async excluirProcesso(
-    id: string,
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async excluirProcesso(id: string, organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { error } =
-      await supabase
-        .from('processos_compra')
-        .delete()
-        .eq('codigo', id)
-        .eq(
-          'organizacao_id',
-          orgId
-        );
+    const { error } = await supabase
+      .from("processos_compra")
+      .delete()
+      .eq("codigo", id)
+      .eq("organizacao_id", orgId);
 
     if (error) throw error;
   },
 
-  async criarHistoricoProcesso(
-    item: any
-  ) {
+  async criarHistoricoProcesso(item: any) {
     const userId = await getUserId();
 
     const processoDbId =
-      item.dbId ||
-      (await obterProcessoDbId(
-        item.processoId
-      ));
+      item.dbId || (await obterProcessoDbId(item.processoId));
 
-    const { error } =
-      await supabase
-        .from(
-          'historico_processos'
-        )
-        .insert({
-          user_id: userId,
-          processo_id:
-            processoDbId,
-          usuario: item.usuario,
-          de_status:
-            item.deStatus,
-          para_status:
-            item.paraStatus,
-          observacao:
-            item.observacao,
-        });
+    const { error } = await supabase.from("historico_processos").insert({
+      user_id: userId,
+      processo_id: processoDbId,
+      usuario: item.usuario,
+      de_status: item.deStatus,
+      para_status: item.paraStatus,
+      observacao: item.observacao,
+    });
 
     if (error) throw error;
   },
 
-  async getAlertas(
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async getAlertas(organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from('alertas')
-        .select('*')
-        .eq(
-          'organizacao_id',
-          orgId
-        )
-        .order('created_at', {
-          ascending: false,
-        });
+    const { data, error } = await supabase
+      .from("alertas")
+      .select("*")
+      .eq("organizacao_id", orgId)
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (error) throw error;
 
-    return (data || []).map(
-      mapAlertaFromDb
-    );
+    return (data || []).map(mapAlertaFromDb);
   },
 
   async criarAlerta(item: any) {
     const userId = await getUserId();
-    const organizacaoId =
-      await resolverOrganizacaoId(
-        item.organizacaoId
-      );
+    const organizacaoId = await resolverOrganizacaoId(item.organizacaoId);
 
-    let processoDbId =
-      item.processoDbId || null;
+    let processoDbId = item.processoDbId || null;
 
-    if (
-      !processoDbId &&
-      item.processoId
-    ) {
-      processoDbId =
-        await obterProcessoDbId(
-          item.processoId
-        );
+    if (!processoDbId && item.processoId) {
+      processoDbId = await obterProcessoDbId(item.processoId);
     }
 
-    const { data, error } =
-      await supabase
-        .from('alertas')
-        .insert(
-          mapAlertaToDb(
-            {
-              ...item,
-              organizacaoId,
-              processoId:
-                processoDbId ||
-                undefined,
-            },
-            userId
-          )
-        )
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("alertas")
+      .insert(
+        mapAlertaToDb(
+          {
+            ...item,
+            organizacaoId,
+            processoId: processoDbId || undefined,
+          },
+          userId,
+        ),
+      )
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapAlertaFromDb(data);
   },
 
-  async marcarAlertaLido(
-    id: string,
-    organizacaoId?: string
-  ) {
-    const orgId =
-      await resolverOrganizacaoId(
-        organizacaoId
-      );
+  async marcarAlertaLido(id: string, organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { data, error } =
-      await supabase
-        .from('alertas')
-        .update({ lido: true })
-        .eq('id', id)
-        .eq(
-          'organizacao_id',
-          orgId
-        )
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("alertas")
+      .update({ lido: true })
+      .eq("id", id)
+      .eq("organizacao_id", orgId)
+      .select()
+      .single();
 
     if (error) throw error;
 
     return mapAlertaFromDb(data);
   },
 
-  async criarPagamentoProcesso(
-    params: {
-      processoId: string;
-      valorPago: number;
-      metodoPagamento: string;
-      dataPagamento?: string;
-      comprovante?: string | null;
-      observacao?: string | null;
-    }
-  ) {
+  async criarPagamentoProcesso(params: {
+    processoId: string;
+    valorPago: number;
+    metodoPagamento: string;
+    dataPagamento?: string;
+    comprovante?: string | null;
+    observacao?: string | null;
+  }) {
     const userId = await getUserId();
 
-    const processoDbId =
-      await obterProcessoDbId(
-        params.processoId
-      );
+    const processoDbId = await obterProcessoDbId(params.processoId);
 
-    const { data, error } =
-      await supabase
-        .from(
-          'pagamentos_processos'
-        )
-        .insert({
-          user_id: userId,
-          processo_id:
-            processoDbId,
-          valor_pago: Number(
-            params.valorPago
-          ),
-          metodo_pagamento:
-            params.metodoPagamento,
-          data_pagamento:
-            params.dataPagamento ||
-            new Date()
-              .toISOString()
-              .split('T')[0],
-          comprovante:
-            params.comprovante ||
-            null,
-          observacao:
-            params.observacao ||
-            null,
-        })
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("pagamentos_processos")
+      .insert({
+        user_id: userId,
+        processo_id: processoDbId,
+        valor_pago: Number(params.valorPago),
+        metodo_pagamento: params.metodoPagamento,
+        data_pagamento:
+          params.dataPagamento || new Date().toISOString().split("T")[0],
+        comprovante: params.comprovante || null,
+        observacao: params.observacao || null,
+      })
+      .select()
+      .single();
 
     if (error) throw error;
 
     return data;
   },
 
-  async getPagamentosProcesso(
-    processoId: string
-  ) {
-    const processoDbId =
-      await obterProcessoDbId(
-        processoId
-      );
+  async getPagamentosProcesso(processoId: string) {
+    const processoDbId = await obterProcessoDbId(processoId);
 
-    const { data, error } =
-      await supabase
-        .from(
-          'pagamentos_processos'
-        )
-        .select('*')
-        .eq(
-          'processo_id',
-          processoDbId
-        )
-        .order(
-          'data_pagamento',
-          { ascending: false }
-        )
-        .order('created_at', {
-          ascending: false,
-        });
+    const { data, error } = await supabase
+      .from("pagamentos_processos")
+      .select("*")
+      .eq("processo_id", processoDbId)
+      .order("data_pagamento", { ascending: false })
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (error) throw error;
 
     return data || [];
   },
 
-  async excluirPagamentoProcesso(
-    pagamentoId: string
-  ) {
-    const { error } =
-      await supabase
-        .from(
-          'pagamentos_processos'
-        )
-        .delete()
-        .eq('id', pagamentoId);
+  async excluirPagamentoProcesso(pagamentoId: string) {
+    const { error } = await supabase
+      .from("pagamentos_processos")
+      .delete()
+      .eq("id", pagamentoId);
 
     if (error) throw error;
   },

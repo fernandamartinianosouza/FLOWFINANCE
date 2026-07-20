@@ -4,23 +4,27 @@ export type PerfilUsuario =
   | 'diretoria'
   | 'admin';
 
-export const PERMISSIONS: Record<PerfilUsuario, string[]> = {
+export const PERMISSIONS: Record<
+  PerfilUsuario,
+  string[]
+> = {
   compras: [
-  'dashboard',
-  'processos',
-  'solicitacao',
-  'cotacoes',
-  'fornecedores',
-],
+    'dashboard',
+    'processos',
+    'solicitacao',
+    'cotacoes',
+    'fornecedores',
+  ],
 
   contas_pagar: [
     'dashboard',
     'processos',
-    'solicitacao',
     'autorizacoes',
+    'nova-conta',
     'contas-pagar',
     'cotacoes',
-    'programacao-pagamentos',
+    'programacao',
+    'pagamentos-programados',
     'conciliacao',
     'centro-financeiro',
     'fluxo-caixa',
@@ -39,14 +43,25 @@ export const PERMISSIONS: Record<PerfilUsuario, string[]> = {
 };
 
 export const podeAcessar = (
-  perfil: PerfilUsuario | string | null | undefined,
+  perfil:
+    | PerfilUsuario
+    | string
+    | null
+    | undefined,
   view: string
 ): boolean => {
-  if (!perfil) return false;
+  if (!perfil) {
+    return false;
+  }
 
-  const permissoes = PERMISSIONS[perfil as PerfilUsuario];
+  const permissoes =
+    PERMISSIONS[
+      perfil as PerfilUsuario
+    ];
 
-  if (!permissoes) return false;
+  if (!permissoes) {
+    return false;
+  }
 
   return (
     permissoes.includes('*') ||
