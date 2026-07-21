@@ -29,6 +29,8 @@ import { PasswordAccessView } from './components/auth/PasswordAccessView';
 
 import { UsersAdminView } from './views/UsersAdminView';
 import { AuthView } from './views/AuthView';
+import CatalogItemsView from "./components/CatalogItemsView";
+
 import { NewAccountView } from './components/NewAccountView';
 import { useAuth } from './context/AuthContext';
 import { podeAcessar } from './config/permissions';
@@ -151,6 +153,13 @@ const AppContent: React.FC = () => {
        */
       case 'solicitacao':
         return <NewRequestView />;
+
+      /*
+       * Catálogo de itens utilizado
+       * nas solicitações e cotações.
+       */
+      case 'catalogo-itens':
+  return <CatalogItemsView />;
 
       case 'cotacoes':
         return <QuotationsView />;

@@ -16,6 +16,26 @@ import { STATUS_LABELS } from '../utils';
 import { financeService } from '../services/financeService';
 import { useAuth } from './AuthContext';
 
+export type ActiveView =
+  | 'dashboard'
+  | 'processos'
+  | 'solicitacao'
+  | 'catalogo-itens'
+  | 'cotacoes'
+  | 'autorizacoes'
+  | 'nova-conta'
+  | 'contas-pagar'
+  | 'programacao'
+  | 'pagamentos-programados'
+  | 'conciliacao'
+  | 'centro-financeiro'
+  | 'calendario'
+  | 'fluxo-caixa'
+  | 'empresas'
+  | 'fornecedores'
+  | 'usuarios'
+  | (string & Record<never, never>);
+
 interface FinanceContextType {
   organizacoesUsuario: UsuarioOrganizacao[];
   organizacoes: Organizacao[];
@@ -36,8 +56,8 @@ interface FinanceContextType {
   empresaAtivaId: string;
   setEmpresaAtivaId: (id: string) => void;
 
-  activeView: string;
-  setActiveView: (view: string) => void;
+  activeView: ActiveView;
+  setActiveView: (view: ActiveView) => void;
 
   activeProcessId: string | null;
   setActiveProcessId: (id: string | null) => void;
@@ -206,7 +226,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setEmpresaAtivaId('');
   }, []);
-  const [activeView, setActiveView] = useState<string>('dashboard');
+  const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
 
   const [loadingFinanceiro, setLoadingFinanceiro] = useState(false);

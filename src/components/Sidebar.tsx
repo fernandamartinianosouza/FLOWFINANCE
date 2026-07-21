@@ -22,6 +22,7 @@ import {
   ClipboardList,
   CalendarDays,
   ReceiptText,
+  Package,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -93,6 +94,11 @@ export const Sidebar: React.FC = () => {
           icon: PlusCircle,
         },
         {
+          id: 'catalogo-itens',
+          label: 'Catálogo de Itens',
+          icon: Package,
+        },
+        {
           id: 'cotacoes',
           label: 'Cotações',
           icon: ClipboardList,
@@ -124,7 +130,6 @@ export const Sidebar: React.FC = () => {
           label: 'Fluxo de Caixa',
           icon: TrendingUp,
         },
-        
         {
           id: 'contas-pagar',
           label: 'Contas a Pagar',
@@ -145,6 +150,7 @@ export const Sidebar: React.FC = () => {
         },
       ],
     },
+
     {
       title: 'Cadastros',
       items: [
