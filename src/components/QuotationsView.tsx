@@ -5,463 +5,370 @@ import { formatarReal } from '../utils';
 import {
   Cotacao,
   CotacaoProposta,
+  FornecedorCatalogoCotacao,
+  ItemCatalogoCotacao,
   quotationService,
 } from '../services/quotationService';
 import {
-  ClipboardList,
-  Plus,
-  X,
-  Search,
-  Trash2,
-  CheckCircle2,
-  Trophy,
-  Building2,
-  Package,
-  CalendarDays,
-  DollarSign,
   ArrowLeft,
+  CheckCircle2,
+  ClipboardList,
+  Download,
+  Package,
+  Plus,
   Save,
-  AlertTriangle,
+  Search,
+  ShoppingCart,
+  Trash2,
+  X,
 } from 'lucide-react';
 
-interface ItemFormulario {
+interface ItemRascunho {
   idLocal: string;
-  descricao: string;
+  itemCatalogoId: string;
   quantidade: string;
-  unidade: string;
   especificacao: string;
 }
 
-interface PrecoItemFormulario {
+interface PrecoItem {
   cotacaoItemId: string;
   valorUnitario: string;
   marca: string;
-  observacao: string;
 }
 
-const criarIdLocal = () =>
+const criarId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const numeroSeguro = (valor: unknown) => {
-  const n = Number(valor ?? 0);
-  return Number.isFinite(n) ? n : 0;
+  const numero = Number(valor ?? 0);
+  return Number.isFinite(numero) ? numero : 0;
 };
 
-const normalizarTexto = (valor: unknown) =>
+const normalizar = (valor: unknown) =>
   String(valor ?? '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase();
 
-const obterIdProcesso = (processo: any) =>
-  String(processo?.id ?? processo?.dbId ?? '');
-
-const obterDescricaoProcesso = (processo: any) =>
-  String(
-    processo?.descricao ??
-      processo?.titulo ??
-      processo?.nome ??
-      'Processo sem descrição'
-  );
+const novoItem = (): ItemRascunho => ({
+  idLocal: criarId(),
+  itemCatalogoId: '',
+  quantidade: '1',
+  especificacao: '',
+});
 
 export const QuotationsView: React.FC = () => {
-  const {
-    processos,
-    fornecedores,
-    editarProcesso,
-  } = useFinance();
-
+  const finance = useFinance() as any;
+  const { fornecedores = [] } = finance;
   const { nomeUsuario } = useAuth();
 
+  const [catalogo, setCatalogo] = useState<
+    ItemCatalogoCotacao[]
+  >([]);
   const [cotacoes, setCotacoes] = useState<Cotacao[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState('');
-
-  const [cotacaoSelecionadaId, setCotacaoSelecionadaId] =
+  const [selecionadaId, setSelecionadaId] =
     useState<string | null>(null);
 
-  const [modalNovaCotacao, setModalNovaCotacao] = useState(false);
-  const [salvandoCotacao, setSalvandoCotacao] = useState(false);
-
-  const [processoId, setProcessoId] = useState('');
+  const [modalNova, setModalNova] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [observacao, setObservacao] = useState('');
-
-  const [itensFormulario, setItensFormulario] = useState<ItemFormulario[]>([
-    {
-      idLocal: criarIdLocal(),
-      descricao: '',
-      quantidade: '1',
-      unidade: 'UN',
-      especificacao: '',
-    },
+  const [itens, setItens] = useState<ItemRascunho[]>([
+    novoItem(),
   ]);
+  const [salvando, setSalvando] = useState(false);
 
-  const [modalProposta, setModalProposta] = useState(false);
-  const [salvandoProposta, setSalvandoProposta] = useState(false);
-
-  const [fornecedorPropostaId, setFornecedorPropostaId] = useState('');
-  const [prazoEntregaDias, setPrazoEntregaDias] = useState('');
-  const [condicaoPagamento, setCondicaoPagamento] = useState('');
+  const [modalFornecedor, setModalFornecedor] =
+    useState(false);
+  const [
+    fornecedoresDisponiveis,
+    setFornecedoresDisponiveis,
+  ] = useState<FornecedorCatalogoCotacao[]>([]);
+  const [fornecedorId, setFornecedorId] = useState('');
+  const [prazo, setPrazo] = useState('');
+  const [faturamento, setFaturamento] = useState('');
+  const [tipoFrete, setTipoFrete] = useState('');
   const [frete, setFrete] = useState('');
   const [desconto, setDesconto] = useState('');
-  const [observacaoProposta, setObservacaoProposta] = useState('');
-  const [precosItens, setPrecosItens] = useState<PrecoItemFormulario[]>([]);
+  const [precos, setPrecos] = useState<PrecoItem[]>([]);
+  const [salvandoProposta, setSalvandoProposta] =
+    useState(false);
+  const [gerandoSolicitacao, setGerandoSolicitacao] =
+    useState(false);
 
-  const cotacaoSelecionada = useMemo(
+  const cotacao = useMemo(
     () =>
-      cotacoes.find(cotacao => cotacao.id === cotacaoSelecionadaId) ||
+      cotacoes.find(item => item.id === selecionadaId) ||
       null,
-    [cotacoes, cotacaoSelecionadaId]
+    [cotacoes, selecionadaId]
   );
 
-  const processosDisponiveis = useMemo(() => {
-    const statusBloqueados = new Set([
-      'finalizado',
-      'finalizada',
-      'cancelado',
-      'cancelada',
-      'reprovado',
-      'reprovada',
-    ]);
+  const melhor = cotacao
+    ? quotationService.obterMelhorPreco(
+        cotacao.propostas
+      )
+    : null;
 
-    return processos
-      .filter(processo => {
-        const id = obterIdProcesso(processo);
-        const status = normalizarTexto(processo.status);
-
-        return Boolean(id) && !statusBloqueados.has(status);
-      })
-      .sort((a, b) =>
-        obterIdProcesso(a).localeCompare(
-          obterIdProcesso(b),
-          'pt-BR',
-          { numeric: true }
-        )
-      );
-  }, [processos]);
-
-  const carregarCotacoes = async () => {
+  const carregar = async () => {
     try {
-      setLoading(true);
+      setCarregando(true);
 
-      const lista = await quotationService.listarCotacoes();
+      const [listaCatalogo, listaCotacoes] =
+        await Promise.all([
+          quotationService.listarItensCatalogo(),
+          quotationService.listarCotacoes(),
+        ]);
 
-      setCotacoes(lista);
-
-      if (
-        cotacaoSelecionadaId &&
-        !lista.some(cotacao => cotacao.id === cotacaoSelecionadaId)
-      ) {
-        setCotacaoSelecionadaId(null);
-      }
+      setCatalogo(listaCatalogo);
+      setCotacoes(listaCotacoes);
     } catch (error: any) {
-      console.error('Erro ao carregar cotações:', error);
-      alert(error.message || 'Erro ao carregar cotações.');
+      console.error(error);
+      alert(
+        error.message ||
+          'Não foi possível carregar as cotações.'
+      );
     } finally {
-      setLoading(false);
+      setCarregando(false);
     }
   };
 
   useEffect(() => {
-    carregarCotacoes();
+    carregar();
   }, []);
 
-  const cotacoesExibidas = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
-
-    if (!termo) return cotacoes;
-
-    return cotacoes.filter(cotacao => {
-      const processo = processos.find(
-        item => item.dbId === cotacao.processoId
-      );
-
-      return (
-        cotacao.titulo.toLowerCase().includes(termo) ||
-        cotacao.status.toLowerCase().includes(termo) ||
-        processo?.id.toLowerCase().includes(termo) ||
-        processo?.descricao.toLowerCase().includes(termo)
-      );
-    });
-  }, [cotacoes, busca, processos]);
-
-  const totalAbertas = cotacoes.filter(
-    cotacao =>
-      cotacao.status === 'aberta' ||
-      cotacao.status === 'em_analise'
-  ).length;
-
-  const totalFinalizadas = cotacoes.filter(
-    cotacao => cotacao.status === 'finalizada'
-  ).length;
-
-  const totalPropostas = cotacoes.reduce(
-    (total, cotacao) => total + cotacao.propostas.length,
-    0
-  );
-
-  const limparNovaCotacao = () => {
-    setProcessoId('');
-    setTitulo('');
-    setObservacao('');
-    setItensFormulario([
-      {
-        idLocal: criarIdLocal(),
-        descricao: '',
-        quantidade: '1',
-        unidade: 'UN',
-        especificacao: '',
-      },
-    ]);
-  };
-
-  const abrirNovaCotacao = () => {
-    limparNovaCotacao();
-    setModalNovaCotacao(true);
-  };
-
-  const fecharNovaCotacao = () => {
-    if (salvandoCotacao) return;
-
-    setModalNovaCotacao(false);
-    limparNovaCotacao();
-  };
-
-  const selecionarProcesso = (id: string) => {
-    setProcessoId(id);
-
-    const processo = processos.find(
-      item =>
-        String(item.id) === id ||
-        String(item.dbId ?? '') === id
-    );
-
-    if (!processo) {
-      setTitulo('');
-      return;
-    }
-
-    const codigoProcesso = obterIdProcesso(processo);
-    const descricaoProcesso =
-      obterDescricaoProcesso(processo);
-
+  const abrirNova = () => {
     setTitulo(
-      `Cotação ${codigoProcesso} — ${descricaoProcesso}`
+      `Cotação ${new Date().toLocaleDateString('pt-BR')}`
     );
-
-    setItensFormulario([
-      {
-        idLocal: criarIdLocal(),
-        descricao: descricaoProcesso,
-        quantidade: '1',
-        unidade: 'UN',
-        especificacao: '',
-      },
-    ]);
+    setObservacao('');
+    setItens([novoItem()]);
+    setModalNova(true);
   };
 
-  const adicionarItemFormulario = () => {
-    setItensFormulario(prev => [
-      ...prev,
-      {
-        idLocal: criarIdLocal(),
-        descricao: '',
-        quantidade: '1',
-        unidade: 'UN',
-        especificacao: '',
-      },
-    ]);
-  };
-
-  const atualizarItemFormulario = (
-    idLocal: string,
-    campo: keyof Omit<ItemFormulario, 'idLocal'>,
-    valor: string
+  const salvarCotacao = async (
+    event: React.FormEvent
   ) => {
-    setItensFormulario(prev =>
-      prev.map(item =>
-        item.idLocal === idLocal
-          ? {
-              ...item,
-              [campo]: valor,
-            }
-          : item
-      )
-    );
-  };
+    event.preventDefault();
 
-  const removerItemFormulario = (idLocal: string) => {
-    setItensFormulario(prev => {
-      if (prev.length === 1) {
-        return prev;
-      }
+    const itensValidos = itens
+      .map(item => {
+        const produto = catalogo.find(
+          registro =>
+            registro.id === item.itemCatalogoId
+        );
 
-      return prev.filter(item => item.idLocal !== idLocal);
-    });
-  };
-
-  const salvarNovaCotacao = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const processo = processos.find(
-      item =>
-        String(item.id) === processoId ||
-        String(item.dbId ?? '') === processoId
-    );
-
-    if (!processo) {
-      alert('Selecione um processo válido.');
-      return;
-    }
-
-    if (!processo.dbId) {
-      alert('Este processo não possui ID interno do banco.');
-      return;
-    }
-
-    if (!titulo.trim()) {
-      alert('Informe o título da cotação.');
-      return;
-    }
-
-    const itensValidos = itensFormulario
-      .filter(item => item.descricao.trim())
-      .map(item => ({
-        descricao: item.descricao.trim(),
-        quantidade: numeroSeguro(item.quantidade),
-        unidade: item.unidade.trim() || 'UN',
-        especificacao: item.especificacao.trim(),
-      }));
+        return {
+          itemCatalogoId: item.itemCatalogoId,
+          descricao:
+            produto?.descricao || produto?.nome || '',
+          quantidade: numeroSeguro(item.quantidade),
+          unidade: produto?.unidade || 'UN',
+          especificacao: item.especificacao.trim(),
+        };
+      })
+      .filter(
+        item =>
+          item.itemCatalogoId &&
+          item.descricao &&
+          item.quantidade > 0
+      );
 
     if (!itensValidos.length) {
-      alert('Adicione pelo menos um item à cotação.');
-      return;
-    }
-
-    if (
-      itensValidos.some(
-        item => !item.quantidade || item.quantidade <= 0
-      )
-    ) {
-      alert('Informe quantidades válidas para todos os itens.');
+      alert(
+        'Adicione ao menos um item do catálogo.'
+      );
       return;
     }
 
     try {
-      setSalvandoCotacao(true);
+      setSalvando(true);
 
-      const criada = await quotationService.criarCotacao({
-        processoDbId: processo.dbId,
-        titulo: titulo.trim(),
-        observacao: observacao.trim(),
-        criadoPor: nomeUsuario,
-        itens: itensValidos,
-      });
-
-      const statusAtual = normalizarTexto(processo.status);
-
-      if (
-        statusAtual === 'solicitacao' ||
-        statusAtual === 'solicitacao de compra' ||
-        statusAtual === 'central'
-      ) {
-        await editarProcesso(processo.id, {
-          status: 'cotacao',
+      const criada =
+        await quotationService.criarCotacao({
+          titulo: titulo.trim() || 'Nova cotação',
+          observacao: observacao.trim(),
+          criadoPor: nomeUsuario,
+          itens: itensValidos,
         });
-      }
 
-      setCotacoes(prev => [criada, ...prev]);
-      setCotacaoSelecionadaId(criada.id);
-
-      fecharNovaCotacao();
+      setCotacoes(atual => [criada, ...atual]);
+      setSelecionadaId(criada.id);
+      setModalNova(false);
     } catch (error: any) {
-      console.error('Erro ao criar cotação:', error);
       alert(error.message || 'Erro ao criar cotação.');
     } finally {
-      setSalvandoCotacao(false);
+      setSalvando(false);
     }
   };
 
-  const abrirNovaProposta = () => {
-    if (!cotacaoSelecionada) return;
+  const buscarFornecedores = async () => {
+    if (!cotacao) return;
 
-    setFornecedorPropostaId('');
-    setPrazoEntregaDias('');
-    setCondicaoPagamento('');
-    setFrete('');
-    setDesconto('');
-    setObservacaoProposta('');
-
-    setPrecosItens(
-      cotacaoSelecionada.itens.map(item => ({
-        cotacaoItemId: item.id,
-        valorUnitario: '',
-        marca: '',
-        observacao: '',
-      }))
-    );
-
-    setModalProposta(true);
-  };
-
-  const fecharNovaProposta = () => {
-    if (salvandoProposta) return;
-    setModalProposta(false);
-  };
-
-  const atualizarPrecoItem = (
-    cotacaoItemId: string,
-    campo: keyof Omit<PrecoItemFormulario, 'cotacaoItemId'>,
-    valor: string
-  ) => {
-    setPrecosItens(prev =>
-      prev.map(item =>
-        item.cotacaoItemId === cotacaoItemId
-          ? {
-              ...item,
-              [campo]: valor,
-            }
-          : item
-      )
-    );
-  };
-
-  const salvarProposta = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!cotacaoSelecionada) return;
-
-    if (!fornecedorPropostaId) {
-      alert('Selecione o fornecedor.');
-      return;
-    }
-
-    const fornecedorJaParticipa =
-      cotacaoSelecionada.propostas.some(
-        proposta =>
-          proposta.fornecedorId === fornecedorPropostaId
+    try {
+      const itensComCatalogo = cotacao.itens.filter(
+        item => item.itemCatalogoId
       );
 
-    if (fornecedorJaParticipa) {
+      if (!itensComCatalogo.length) {
+        alert(
+          'A cotação não possui item vinculado ao catálogo.'
+        );
+        return;
+      }
+
+      const listas = await Promise.all(
+        itensComCatalogo.map(item =>
+          quotationService.listarFornecedoresDoItem(
+            item.itemCatalogoId!
+          )
+        )
+      );
+
+      const contagem = new Map<string, number>();
+      const primeiroVinculo = new Map<
+        string,
+        FornecedorCatalogoCotacao
+      >();
+
+      listas.forEach(lista =>
+        lista.forEach(vinculo => {
+          contagem.set(
+            vinculo.fornecedorId,
+            (contagem.get(vinculo.fornecedorId) || 0) +
+              1
+          );
+
+          if (
+            !primeiroVinculo.has(
+              vinculo.fornecedorId
+            )
+          ) {
+            primeiroVinculo.set(
+              vinculo.fornecedorId,
+              vinculo
+            );
+          }
+        })
+      );
+
+      const aptos = Array.from(
+        primeiroVinculo.values()
+      ).filter(
+        vinculo =>
+          contagem.get(vinculo.fornecedorId) ===
+            listas.length &&
+          !cotacao.propostas.some(
+            proposta =>
+              proposta.fornecedorId ===
+              vinculo.fornecedorId
+          )
+      );
+
+      setFornecedoresDisponiveis(aptos);
+      setFornecedorId('');
+      setPrazo('');
+      setFaturamento('');
+      setTipoFrete('');
+      setFrete('');
+      setDesconto('');
+      setPrecos(
+        cotacao.itens.map(item => ({
+          cotacaoItemId: item.id,
+          valorUnitario: '',
+          marca: '',
+        }))
+      );
+      setModalFornecedor(true);
+    } catch (error: any) {
       alert(
-        'Este fornecedor já possui uma proposta cadastrada nesta cotação.'
+        error.message ||
+          'Erro ao buscar fornecedores do catálogo.'
       );
-      return;
     }
+  };
 
-    const itensProposta = precosItens.map(item => ({
+  const preencherFornecedor = async (id: string) => {
+    setFornecedorId(id);
+
+    if (!cotacao || !id) return;
+
+    const vinculos = (
+      await Promise.all(
+        cotacao.itens
+          .filter(item => item.itemCatalogoId)
+          .map(item =>
+            quotationService.listarFornecedoresDoItem(
+              item.itemCatalogoId!
+            )
+          )
+      )
+    )
+      .flat()
+      .filter(item => item.fornecedorId === id);
+
+    const base = vinculos[0];
+
+    setPrazo(
+      base?.prazoEntregaDias === null ||
+        base?.prazoEntregaDias === undefined
+        ? ''
+        : String(base.prazoEntregaDias)
+    );
+
+    setFaturamento(
+      base?.condicaoPagamento || ''
+    );
+    setTipoFrete(base?.tipoFrete || '');
+    setFrete(
+      base?.valorFrete
+        ? String(base.valorFrete)
+        : ''
+    );
+
+    setPrecos(
+      cotacao.itens.map(item => {
+        const vinculo = vinculos.find(
+          valor =>
+            valor.itemCatalogoId ===
+            item.itemCatalogoId
+        );
+
+        return {
+          cotacaoItemId: item.id,
+          valorUnitario: vinculo?.valorUnitario
+            ? String(vinculo.valorUnitario)
+            : '',
+          marca: vinculo?.marca || '',
+        };
+      })
+    );
+  };
+
+  const salvarFornecedor = async (
+    event: React.FormEvent
+  ) => {
+    event.preventDefault();
+
+    if (!cotacao || !fornecedorId) return;
+
+    const itensProposta = precos.map(item => ({
       cotacaoItemId: item.cotacaoItemId,
-      valorUnitario: numeroSeguro(item.valorUnitario),
-      marca: item.marca.trim(),
-      observacao: item.observacao.trim(),
+      valorUnitario: numeroSeguro(
+        item.valorUnitario
+      ),
+      marca: item.marca,
     }));
 
     if (
-      itensProposta.some(item => item.valorUnitario <= 0)
+      itensProposta.some(
+        item => item.valorUnitario <= 0
+      )
     ) {
-      alert('Informe o preço unitário de todos os itens.');
+      alert(
+        'Informe o valor de todos os itens.'
+      );
       return;
     }
 
@@ -469,586 +376,677 @@ export const QuotationsView: React.FC = () => {
       setSalvandoProposta(true);
 
       await quotationService.salvarProposta({
-        cotacaoId: cotacaoSelecionada.id,
-        fornecedorId: fornecedorPropostaId,
-        prazoEntregaDias: prazoEntregaDias
-          ? numeroSeguro(prazoEntregaDias)
+        cotacaoId: cotacao.id,
+        fornecedorId,
+        prazoEntregaDias: prazo
+          ? numeroSeguro(prazo)
           : null,
-        condicaoPagamento:
-          condicaoPagamento.trim() || null,
+        condicaoPagamento: faturamento || null,
+        tipoFrete: tipoFrete || null,
         frete: numeroSeguro(frete),
         desconto: numeroSeguro(desconto),
-        observacao: observacaoProposta.trim() || null,
         itens: itensProposta,
       });
 
       const atualizada =
         await quotationService.buscarCotacaoPorId(
-          cotacaoSelecionada.id
+          cotacao.id
         );
 
-      setCotacoes(prev =>
-        prev.map(cotacao =>
-          cotacao.id === atualizada.id
+      setCotacoes(atual =>
+        atual.map(item =>
+          item.id === atualizada.id
             ? atualizada
-            : cotacao
+            : item
         )
       );
 
-      fecharNovaProposta();
+      setModalFornecedor(false);
     } catch (error: any) {
-      console.error('Erro ao salvar proposta:', error);
-      alert(error.message || 'Erro ao salvar proposta.');
+      alert(
+        error.message ||
+          'Erro ao salvar fornecedor.'
+      );
     } finally {
       setSalvandoProposta(false);
     }
   };
 
-  const excluirCotacao = async (cotacao: Cotacao) => {
-    const confirmou = window.confirm(
-      `Deseja excluir a cotação "${cotacao.titulo}"?`
-    );
-
-    if (!confirmou) return;
-
-    try {
-      await quotationService.excluirCotacao(cotacao.id);
-
-      setCotacoes(prev =>
-        prev.filter(item => item.id !== cotacao.id)
-      );
-
-      if (cotacaoSelecionadaId === cotacao.id) {
-        setCotacaoSelecionadaId(null);
-      }
-    } catch (error: any) {
-      alert(error.message || 'Erro ao excluir cotação.');
-    }
-  };
-
-  const excluirProposta = async (
+  const selecionarMelhorOpcao = async (
     proposta: CotacaoProposta
   ) => {
-    if (!cotacaoSelecionada) return;
+    if (!cotacao) return;
 
-    const fornecedor = fornecedores.find(
-      item => item.id === proposta.fornecedorId
-    );
+    const menor = melhor?.id === proposta.id;
 
-    const confirmou = window.confirm(
-      `Deseja excluir a proposta de ${
-        fornecedor?.nome || 'este fornecedor'
-      }?`
-    );
-
-    if (!confirmou) return;
-
-    try {
-      await quotationService.excluirProposta(proposta.id);
-
-      const atualizada =
-        await quotationService.buscarCotacaoPorId(
-          cotacaoSelecionada.id
+    const justificativa = menor
+      ? 'Melhor custo total.'
+      : window.prompt(
+          'Esta não é a opção de menor custo. Informe o motivo da escolha:'
         );
 
-      setCotacoes(prev =>
-        prev.map(cotacao =>
-          cotacao.id === atualizada.id
-            ? atualizada
-            : cotacao
-        )
-      );
-    } catch (error: any) {
-      alert(error.message || 'Erro ao excluir proposta.');
+    if (!menor && !justificativa?.trim()) {
+      return;
     }
-  };
-
-  const selecionarProposta = async (
-    proposta: CotacaoProposta
-  ) => {
-    if (!cotacaoSelecionada) return;
-
-    const fornecedor = fornecedores.find(
-      item => item.id === proposta.fornecedorId
-    );
-
-    const total =
-      quotationService.calcularTotalProposta(proposta);
-
-    const confirmou = window.confirm(
-      `Selecionar a proposta de ${
-        fornecedor?.nome || 'este fornecedor'
-      } no valor de ${formatarReal(total)}?`
-    );
-
-    if (!confirmou) return;
 
     try {
       const atualizada =
         await quotationService.selecionarProposta(
-          cotacaoSelecionada.id,
+          cotacao.id,
           proposta.id,
-          proposta.fornecedorId
+          proposta.fornecedorId,
+          justificativa || undefined
         );
 
-      setCotacoes(prev =>
-        prev.map(cotacao =>
-          cotacao.id === atualizada.id
+      setCotacoes(atual =>
+        atual.map(item =>
+          item.id === atualizada.id
             ? atualizada
-            : cotacao
+            : item
         )
       );
-
-      const processo = processos.find(
-        item => item.dbId === atualizada.processoId
-      );
-
-      if (processo) {
-        await editarProcesso(processo.id, {
-          fornecedorId: proposta.fornecedorId,
-          valor: total,
-          status: 'conferencia',
-        });
-      }
-
-      alert(
-        'Proposta vencedora selecionada e processo encaminhado para conferência.'
-      );
     } catch (error: any) {
-      console.error(
-        'Erro ao selecionar proposta:',
-        error
-      );
       alert(
         error.message ||
-          'Erro ao selecionar proposta vencedora.'
+          'Erro ao escolher fornecedor.'
       );
     }
   };
 
-  const melhorProposta = cotacaoSelecionada
-    ? quotationService.obterMelhorPreco(
-        cotacaoSelecionada.propostas
-      )
-    : null;
+  const gerarSolicitacao = async () => {
+    if (
+      !cotacao?.propostaEscolhidaId ||
+      !cotacao.fornecedorEscolhidoId
+    ) {
+      alert(
+        'Selecione primeiro a melhor opção.'
+      );
+      return;
+    }
 
-  if (cotacaoSelecionada) {
-    const processo = processos.find(
-      item => item.dbId === cotacaoSelecionada.processoId
+    const proposta = cotacao.propostas.find(
+      item =>
+        item.id === cotacao.propostaEscolhidaId
+    );
+
+    if (!proposta) return;
+
+    const fornecedor = fornecedores.find(
+      (item: any) =>
+        item.id === proposta.fornecedorId
+    );
+
+    const total =
+      quotationService.calcularTotalProposta(
+        proposta
+      );
+
+    const criarProcesso =
+      finance.adicionarProcesso ||
+      finance.criarProcesso ||
+      finance.novoProcesso;
+
+    if (typeof criarProcesso !== 'function') {
+      alert(
+        'Não encontrei adicionarProcesso/criarProcesso no FinanceContext. Envie o FinanceContext para conectar este botão ao cadastro de solicitações.'
+      );
+      return;
+    }
+
+    const payload = {
+      descricao: cotacao.itens
+        .map(
+          item =>
+            `${item.quantidade} ${item.unidade} - ${item.descricao}`
+        )
+        .join(' | '),
+      titulo: `Solicitação: ${cotacao.titulo}`,
+      fornecedorId: proposta.fornecedorId,
+      valor: total,
+      status: 'solicitacao',
+      observacao: [
+        `Cotação: ${cotacao.titulo}`,
+        `Fornecedor: ${
+          fornecedor?.nome ||
+          'Fornecedor selecionado'
+        }`,
+        `Faturamento: ${
+          proposta.condicaoPagamento || '-'
+        }`,
+        `Entrega: ${
+          proposta.prazoEntregaDias
+            ? `${proposta.prazoEntregaDias} dias`
+            : '-'
+        }`,
+        `Frete: ${
+          proposta.tipoFrete || '-'
+        } - ${formatarReal(proposta.frete)}`,
+      ].join('\n'),
+      cotacaoId: cotacao.id,
+    };
+
+    try {
+      setGerandoSolicitacao(true);
+
+      const processoCriado =
+        await criarProcesso(payload);
+
+      const processoId =
+        processoCriado?.dbId ||
+        processoCriado?.id ||
+        null;
+
+      await quotationService.marcarSolicitacaoGerada(
+        cotacao.id,
+        processoId
+      );
+
+      const atualizada =
+        await quotationService.buscarCotacaoPorId(
+          cotacao.id
+        );
+
+      setCotacoes(atual =>
+        atual.map(item =>
+          item.id === atualizada.id
+            ? atualizada
+            : item
+        )
+      );
+
+      alert('Solicitação gerada com sucesso.');
+    } catch (error: any) {
+      console.error(error);
+      alert(
+        error.message ||
+          'Erro ao gerar solicitação.'
+      );
+    } finally {
+      setGerandoSolicitacao(false);
+    }
+  };
+
+  const gerarPdf = () => {
+    if (!cotacao) return;
+
+    const linhas = cotacao.propostas
+      .map(proposta => {
+        const fornecedor = fornecedores.find(
+          (item: any) =>
+            item.id === proposta.fornecedorId
+        );
+
+        return `
+          <tr class="${
+            proposta.selecionada ? 'vencedora' : ''
+          }">
+            <td>${
+              fornecedor?.nome || 'Fornecedor'
+            }</td>
+            <td>${
+              proposta.condicaoPagamento || '-'
+            }</td>
+            <td>${
+              proposta.prazoEntregaDias
+                ? `${proposta.prazoEntregaDias} dias`
+                : '-'
+            }</td>
+            <td>${proposta.tipoFrete || '-'}</td>
+            <td>${formatarReal(
+              proposta.frete
+            )}</td>
+            <td>${formatarReal(
+              quotationService.calcularTotalProposta(
+                proposta
+              )
+            )}</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    const janela = window.open(
+      '',
+      '_blank',
+      'width=1100,height=800'
+    );
+
+    if (!janela) {
+      alert(
+        'Permita pop-ups para gerar o PDF.'
+      );
+      return;
+    }
+
+    janela.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${cotacao.titulo}</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              color: #0f172a;
+              padding: 32px;
+              font-size: 12px;
+            }
+            h1 { font-size: 22px; }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 18px;
+            }
+            th, td {
+              border: 1px solid #cbd5e1;
+              padding: 9px;
+              text-align: left;
+            }
+            th { background: #f1f5f9; }
+            .vencedora {
+              background: #dcfce7;
+              font-weight: bold;
+            }
+            @media print {
+              button { display: none; }
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <button onclick="window.print()">
+            Imprimir / Salvar como PDF
+          </button>
+          <h1>Mapa comparativo de cotação</h1>
+          <p>
+            <strong>${cotacao.titulo}</strong><br>
+            Responsável: ${
+              cotacao.criadoPor || '-'
+            }
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Fornecedor</th>
+                <th>Faturamento</th>
+                <th>Entrega</th>
+                <th>Frete</th>
+                <th>Valor do frete</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                linhas ||
+                '<tr><td colspan="6">Sem fornecedores.</td></tr>'
+              }
+            </tbody>
+          </table>
+          <p>
+            <strong>Justificativa:</strong>
+            ${
+              cotacao.justificativaEscolha || '-'
+            }
+          </p>
+          <script>
+            setTimeout(() => window.print(), 400);
+          </script>
+        </body>
+      </html>
+    `);
+
+    janela.document.close();
+  };
+
+  if (cotacao) {
+    const vencedora = cotacao.propostas.find(
+      item => item.selecionada
     );
 
     return (
-      <div className="space-y-8">
+      <div className="space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <button
               type="button"
-              onClick={() => setCotacaoSelecionadaId(null)}
-              className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center hover:bg-slate-50"
+              onClick={() => setSelecionadaId(null)}
+              className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center"
             >
-              <ArrowLeft className="w-4 h-4 text-slate-500" />
+              <ArrowLeft className="w-4 h-4" />
             </button>
 
             <div>
               <h1 className="text-2xl font-bold text-[#0F172A]">
-                {cotacaoSelecionada.titulo}
+                {cotacao.titulo}
               </h1>
 
               <p className="text-xs text-slate-400 mt-1">
-                Processo {processo?.id || '-'} •{' '}
-                {cotacaoSelecionada.itens.length} item(ns) •{' '}
-                {cotacaoSelecionada.propostas.length}{' '}
-                proposta(s)
+                {cotacao.itens.length} item(ns) •{' '}
+                {cotacao.propostas.length}{' '}
+                fornecedor(es)
               </p>
             </div>
           </div>
 
-          {cotacaoSelecionada.status !== 'finalizada' && (
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={abrirNovaProposta}
-              className="px-4 py-2.5 rounded-[12px] bg-[#0F172A] text-white hover:bg-[#1E293B] font-bold text-xs flex items-center gap-2"
+              onClick={gerarPdf}
+              className="px-4 py-2.5 rounded-[12px] bg-white border border-slate-200 text-xs font-bold flex items-center gap-2"
             >
-              <Plus className="w-4 h-4" />
-              Cadastrar proposta
+              <Download className="w-4 h-4" />
+              PDF comparativo
             </button>
-          )}
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Indicador
-            titulo="Status"
-            valor={cotacaoSelecionada.status.replace(
-              '_',
-              ' '
-            )}
-            icon={ClipboardList}
-          />
-
-          <Indicador
-            titulo="Itens"
-            valor={String(
-              cotacaoSelecionada.itens.length
-            )}
-            icon={Package}
-          />
-
-          <Indicador
-            titulo="Fornecedores"
-            valor={String(
-              cotacaoSelecionada.propostas.length
-            )}
-            icon={Building2}
-          />
-
-          <Indicador
-            titulo="Melhor preço"
-            valor={
-              melhorProposta
-                ? formatarReal(
-                    quotationService.calcularTotalProposta(
-                      melhorProposta
-                    )
-                  )
-                : '-'
-            }
-            icon={Trophy}
-            destaque
-          />
-        </div>
-
-        <div className="bg-white rounded-[18px] border border-slate-100 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-100">
-            <h2 className="text-sm font-bold text-[#0F172A]">
-              Itens solicitados
-            </h2>
-
-            <p className="text-[11px] text-slate-400 mt-1">
-              Relação dos produtos e serviços considerados
-              na comparação.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50/80">
-                <tr className="text-[10px] uppercase tracking-wide text-slate-400">
-                  <th className="px-5 py-3">Descrição</th>
-                  <th className="px-5 py-3">Especificação</th>
-                  <th className="px-5 py-3">Quantidade</th>
-                  <th className="px-5 py-3">Unidade</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-50">
-                {cotacaoSelecionada.itens.map(item => (
-                  <tr key={item.id}>
-                    <td className="px-5 py-4 text-xs font-bold text-slate-800">
-                      {item.descricao}
-                    </td>
-
-                    <td className="px-5 py-4 text-xs text-slate-500">
-                      {item.especificacao || '-'}
-                    </td>
-
-                    <td className="px-5 py-4 text-xs font-mono text-slate-700">
-                      {item.quantidade}
-                    </td>
-
-                    <td className="px-5 py-4 text-xs text-slate-500">
-                      {item.unidade}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {!cotacao.solicitacaoGerada &&
+              vencedora && (
+                <button
+                  type="button"
+                  onClick={gerarSolicitacao}
+                  disabled={gerandoSolicitacao}
+                  className="px-4 py-2.5 rounded-[12px] bg-emerald-600 text-white text-xs font-bold flex items-center gap-2 disabled:opacity-60"
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  {gerandoSolicitacao
+                    ? 'Gerando...'
+                    : 'Gerar solicitação'}
+                </button>
+              )}
           </div>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-sm font-bold text-[#0F172A]">
-              Comparação de fornecedores
-            </h2>
+        <div className="bg-white rounded-[18px] border border-slate-100 p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-bold">
+                Itens
+              </h2>
 
-            <p className="text-[11px] text-slate-400 mt-1">
-              Compare preço total, prazo, frete e condição
-              de pagamento.
-            </p>
-          </div>
-
-          {cotacaoSelecionada.propostas.length === 0 ? (
-            <div className="bg-white rounded-[18px] border border-slate-100 p-10 text-center">
-              <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
-
-              <h3 className="text-sm font-bold text-slate-800 mt-3">
-                Nenhuma proposta cadastrada
-              </h3>
-
-              <p className="text-xs text-slate-400 mt-1">
-                Cadastre os preços informados pelos
-                fornecedores para iniciar a comparação.
+              <p className="text-[11px] text-slate-400 mt-1">
+                Fornecedores puxados automaticamente
+                do catálogo.
               </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-              {cotacaoSelecionada.propostas.map(
-                proposta => {
-                  const fornecedor = fornecedores.find(
-                    item =>
-                      item.id === proposta.fornecedorId
-                  );
 
-                  const total =
-                    quotationService.calcularTotalProposta(
-                      proposta
-                    );
+            {!cotacao.solicitacaoGerada && (
+              <button
+                type="button"
+                onClick={buscarFornecedores}
+                className="px-4 py-2.5 rounded-[12px] bg-[#0F172A] text-white text-xs font-bold flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Ver fornecedores
+              </button>
+            )}
+          </div>
 
-                  const menorPreco =
-                    melhorProposta?.id === proposta.id;
-
-                  return (
-                    <div
-                      key={proposta.id}
-                      className={`bg-white rounded-[18px] border p-5 shadow-sm ${
-                        proposta.selecionada
-                          ? 'border-emerald-300 ring-2 ring-emerald-100'
-                          : menorPreco
-                            ? 'border-amber-300'
-                            : 'border-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-bold text-[#0F172A]">
-                              {fornecedor?.nome ||
-                                'Fornecedor não encontrado'}
-                            </h3>
-
-                            {menorPreco && (
-                              <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-600 text-[9px] font-bold">
-                                MENOR PREÇO
-                              </span>
-                            )}
-
-                            {proposta.selecionada && (
-                              <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[9px] font-bold">
-                                VENCEDORA
-                              </span>
-                            )}
-                          </div>
-
-                          <p className="text-[10px] text-slate-400 mt-1">
-                            {fornecedor?.cnpj || '-'}
-                          </p>
-                        </div>
-
-                        {!proposta.selecionada &&
-                          cotacaoSelecionada.status !==
-                            'finalizada' && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                excluirProposta(proposta)
-                              }
-                              className="w-8 h-8 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                            </button>
-                          )}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 mt-5">
-                        <Metrica
-                          titulo="Subtotal"
-                          valor={formatarReal(
-                            proposta.itens.reduce(
-                              (sum, item) =>
-                                sum +
-                                numeroSeguro(
-                                  item.valorTotal
-                                ),
-                              0
-                            )
-                          )}
-                        />
-
-                        <Metrica
-                          titulo="Frete"
-                          valor={formatarReal(
-                            proposta.frete
-                          )}
-                        />
-
-                        <Metrica
-                          titulo="Desconto"
-                          valor={formatarReal(
-                            proposta.desconto
-                          )}
-                        />
-
-                        <Metrica
-                          titulo="Total"
-                          valor={formatarReal(total)}
-                          destaque
-                        />
-
-                        <Metrica
-                          titulo="Prazo"
-                          valor={
-                            proposta.prazoEntregaDias
-                              ? `${proposta.prazoEntregaDias} dias`
-                              : '-'
-                          }
-                        />
-
-                        <Metrica
-                          titulo="Pagamento"
-                          valor={
-                            proposta.condicaoPagamento ||
-                            '-'
-                          }
-                        />
-                      </div>
-
-                      <div className="mt-5 border-t border-slate-100 pt-4 space-y-2">
-                        {cotacaoSelecionada.itens.map(
-                          itemCotacao => {
-                            const itemProposta =
-                              proposta.itens.find(
-                                item =>
-                                  item.cotacaoItemId ===
-                                  itemCotacao.id
-                              );
-
-                            return (
-                              <div
-                                key={itemCotacao.id}
-                                className="flex items-center justify-between gap-4 text-xs"
-                              >
-                                <div>
-                                  <p className="font-semibold text-slate-700">
-                                    {
-                                      itemCotacao.descricao
-                                    }
-                                  </p>
-
-                                  <p className="text-[10px] text-slate-400">
-                                    {itemProposta?.marca ||
-                                      'Sem marca informada'}
-                                  </p>
-                                </div>
-
-                                <div className="text-right">
-                                  <p className="font-bold font-mono text-[#0F172A]">
-                                    {formatarReal(
-                                      itemProposta?.valorUnitario ||
-                                        0
-                                    )}
-                                  </p>
-
-                                  <p className="text-[10px] text-slate-400">
-                                    Total:{' '}
-                                    {formatarReal(
-                                      itemProposta?.valorTotal ||
-                                        0
-                                    )}
-                                  </p>
-                                </div>
-                              </div>
-                            );
-                          }
-                        )}
-                      </div>
-
-                      {!proposta.selecionada &&
-                        cotacaoSelecionada.status !==
-                          'finalizada' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              selecionarProposta(proposta)
-                            }
-                            className={`w-full mt-5 py-3 rounded-[12px] text-xs font-bold flex items-center justify-center gap-2 ${
-                              menorPreco
-                                ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                : 'bg-[#0F172A] text-white hover:bg-[#1E293B]'
-                            }`}
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            Selecionar proposta
-                          </button>
-                        )}
-                    </div>
-                  );
-                }
-              )}
-            </div>
-          )}
-        </div>
-
-        {modalProposta && (
-          <>
-            <div
-              className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-50"
-              onClick={fecharNovaProposta}
-            />
-
-            <div className="fixed inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl z-50 flex flex-col h-screen border-l border-slate-100">
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <div className="mt-4 divide-y divide-slate-100">
+            {cotacao.itens.map(item => (
+              <div
+                key={item.id}
+                className="py-3 flex justify-between gap-4"
+              >
                 <div>
-                  <h2 className="text-sm font-bold text-[#0F172A]">
-                    Cadastrar proposta
-                  </h2>
+                  <p className="text-xs font-bold">
+                    {item.descricao}
+                  </p>
 
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Registre os preços e condições
-                    apresentados pelo fornecedor.
+                  <p className="text-[10px] text-slate-400">
+                    {item.especificacao ||
+                      'Sem especificação'}
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={fecharNovaProposta}
-                  className="w-8 h-8 rounded-full bg-white border border-slate-100 flex items-center justify-center"
-                >
-                  <X className="w-4 h-4 text-slate-400" />
-                </button>
+                <p className="text-xs font-bold">
+                  {item.quantidade} {item.unidade}
+                </p>
               </div>
+            ))}
+          </div>
+        </div>
 
+        {cotacao.propostas.length === 0 ? (
+          <div className="bg-white rounded-[18px] border border-slate-100 p-10 text-center">
+            <Package className="w-8 h-8 text-slate-300 mx-auto" />
+
+            <p className="text-sm font-bold mt-3">
+              Clique em “Ver fornecedores”
+            </p>
+
+            <p className="text-xs text-slate-400 mt-1">
+              O sistema mostrará preço,
+              faturamento, prazo e frete.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            {cotacao.propostas.map(proposta => {
+              const fornecedor = fornecedores.find(
+                (item: any) =>
+                  item.id === proposta.fornecedorId
+              );
+
+              const total =
+                quotationService.calcularTotalProposta(
+                  proposta
+                );
+
+              const menor =
+                melhor?.id === proposta.id;
+
+              return (
+                <div
+                  key={proposta.id}
+                  className={`bg-white rounded-[18px] border p-5 ${
+                    proposta.selecionada
+                      ? 'border-emerald-300 ring-2 ring-emerald-100'
+                      : menor
+                        ? 'border-amber-300'
+                        : 'border-slate-100'
+                  }`}
+                >
+                  <div className="flex justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold">
+                        {fornecedor?.nome ||
+                          'Fornecedor'}
+                      </h3>
+
+                      <div className="flex gap-2 mt-2">
+                        {menor && (
+                          <Badge texto="MELHOR CUSTO" />
+                        )}
+
+                        {proposta.selecionada && (
+                          <Badge
+                            texto="SELECIONADA"
+                            verde
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {!proposta.selecionada &&
+                      !cotacao.solicitacaoGerada && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (
+                              !confirm(
+                                'Excluir este fornecedor da comparação?'
+                              )
+                            ) {
+                              return;
+                            }
+
+                            await quotationService.excluirProposta(
+                              proposta.id
+                            );
+
+                            const atualizada =
+                              await quotationService.buscarCotacaoPorId(
+                                cotacao.id
+                              );
+
+                            setCotacoes(atual =>
+                              atual.map(item =>
+                                item.id ===
+                                atualizada.id
+                                  ? atualizada
+                                  : item
+                              )
+                            );
+                          }}
+                          className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </button>
+                      )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mt-5">
+                    <Metrica
+                      titulo="Faturamento"
+                      valor={
+                        proposta.condicaoPagamento ||
+                        '-'
+                      }
+                    />
+
+                    <Metrica
+                      titulo="Entrega"
+                      valor={
+                        proposta.prazoEntregaDias
+                          ? `${proposta.prazoEntregaDias} dias`
+                          : '-'
+                      }
+                    />
+
+                    <Metrica
+                      titulo="Frete"
+                      valor={`${
+                        proposta.tipoFrete || '-'
+                      } • ${formatarReal(
+                        proposta.frete
+                      )}`}
+                    />
+
+                    <Metrica
+                      titulo="Total"
+                      valor={formatarReal(total)}
+                      destaque
+                    />
+                  </div>
+
+                  {!proposta.selecionada &&
+                    !cotacao.solicitacaoGerada && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          selecionarMelhorOpcao(
+                            proposta
+                          )
+                        }
+                        className="w-full mt-5 py-3 rounded-[12px] bg-[#0F172A] text-white text-xs font-bold flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Selecionar melhor opção
+                      </button>
+                    )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {cotacao.solicitacaoGerada && (
+          <div className="rounded-[16px] border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
+            Solicitação gerada com sucesso.
+          </div>
+        )}
+
+        {modalFornecedor && (
+          <Painel
+            titulo="Fornecedores do catálogo"
+            fechar={() =>
+              setModalFornecedor(false)
+            }
+          >
+            {fornecedoresDisponiveis.length ===
+            0 ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-700">
+                Nenhum fornecedor cadastrado atende
+                a todos os itens selecionados.
+              </div>
+            ) : (
               <form
-                onSubmit={salvarProposta}
-                className="flex-1 overflow-y-auto p-6 space-y-6"
+                onSubmit={salvarFornecedor}
+                className="space-y-5"
               >
                 <CampoSelect
                   label="Fornecedor"
-                  value={fornecedorPropostaId}
-                  onChange={setFornecedorPropostaId}
-                  options={fornecedores.map(fornecedor => ({
-                    value: fornecedor.id,
-                    label: fornecedor.nome,
-                  }))}
-                  placeholder="Selecione o fornecedor"
+                  value={fornecedorId}
+                  onChange={preencherFornecedor}
+                  options={fornecedoresDisponiveis.map(
+                    item => ({
+                      value: item.fornecedorId,
+                      label: `${
+                        item.fornecedorNome
+                      }${
+                        item.preferencial
+                          ? ' — Preferencial'
+                          : ''
+                      }`,
+                    })
+                  )}
+                  placeholder="Selecione"
                 />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <CampoInput
-                    label="Prazo de entrega em dias"
+                    label="Tipo de faturamento"
+                    value={faturamento}
+                    onChange={setFaturamento}
+                  />
+
+                  <CampoInput
+                    label="Prazo de entrega (dias)"
                     type="number"
-                    value={prazoEntregaDias}
-                    onChange={setPrazoEntregaDias}
+                    value={prazo}
+                    onChange={setPrazo}
                   />
 
-                  <CampoInput
-                    label="Condição de pagamento"
-                    value={condicaoPagamento}
-                    onChange={setCondicaoPagamento}
-                    placeholder="Ex.: 28 dias"
-                  />
-
-                  <CampoInput
+                  <CampoSelect
                     label="Frete"
+                    value={tipoFrete}
+                    onChange={setTipoFrete}
+                    options={[
+                      {
+                        value: 'CIF',
+                        label: 'CIF',
+                      },
+                      {
+                        value: 'FOB',
+                        label: 'FOB',
+                      },
+                      {
+                        value: 'GRATIS',
+                        label: 'Grátis',
+                      },
+                      {
+                        value: 'RETIRADA',
+                        label: 'Retirada',
+                      },
+                      {
+                        value: 'A_COMBINAR',
+                        label: 'A combinar',
+                      },
+                    ]}
+                    placeholder="Selecione"
+                  />
+
+                  <CampoInput
+                    label="Valor do frete"
                     type="number"
                     step="0.01"
                     value={frete}
@@ -1064,107 +1062,94 @@ export const QuotationsView: React.FC = () => {
                   />
                 </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                    Preços por item
-                  </h3>
+                {cotacao.itens.map(itemCotacao => {
+                  const preco = precos.find(
+                    item =>
+                      item.cotacaoItemId ===
+                      itemCotacao.id
+                  );
 
-                  {cotacaoSelecionada.itens.map(
-                    itemCotacao => {
-                      const preco = precosItens.find(
-                        item =>
-                          item.cotacaoItemId ===
-                          itemCotacao.id
-                      );
+                  return (
+                    <div
+                      key={itemCotacao.id}
+                      className="border border-slate-100 rounded-[16px] p-4"
+                    >
+                      <p className="text-xs font-bold mb-3">
+                        {itemCotacao.descricao}
+                      </p>
 
-                      return (
-                        <div
-                          key={itemCotacao.id}
-                          className="border border-slate-100 rounded-[16px] p-4 space-y-4"
-                        >
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-800">
-                              {itemCotacao.descricao}
-                            </h4>
-
-                            <p className="text-[10px] text-slate-400 mt-1">
-                              {itemCotacao.quantidade}{' '}
-                              {itemCotacao.unidade}
-                            </p>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <CampoInput
-                              label="Preço unitário"
-                              type="number"
-                              step="0.01"
-                              value={
-                                preco?.valorUnitario || ''
-                              }
-                              onChange={valor =>
-                                atualizarPrecoItem(
-                                  itemCotacao.id,
-                                  'valorUnitario',
-                                  valor
-                                )
-                              }
-                            />
-
-                            <CampoInput
-                              label="Marca"
-                              value={preco?.marca || ''}
-                              onChange={valor =>
-                                atualizarPrecoItem(
-                                  itemCotacao.id,
-                                  'marca',
-                                  valor
-                                )
-                              }
-                            />
-                          </div>
-
-                          <CampoInput
-                            label="Observação do item"
-                            value={
-                              preco?.observacao || ''
-                            }
-                            onChange={valor =>
-                              atualizarPrecoItem(
-                                itemCotacao.id,
-                                'observacao',
-                                valor
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <CampoInput
+                          label="Preço unitário"
+                          type="number"
+                          step="0.01"
+                          value={
+                            preco?.valorUnitario || ''
+                          }
+                          onChange={(valor: string) =>
+                            setPrecos(atual =>
+                              atual.map(item =>
+                                item.cotacaoItemId ===
+                                itemCotacao.id
+                                  ? {
+                                      ...item,
+                                      valorUnitario:
+                                        valor,
+                                    }
+                                  : item
                               )
-                            }
-                          />
-                        </div>
-                      );
-                    }
-                  )}
-                </div>
+                            )
+                          }
+                        />
 
-                <CampoTextarea
-                  label="Observação geral da proposta"
-                  value={observacaoProposta}
-                  onChange={setObservacaoProposta}
-                />
+                        <CampoInput
+                          label="Marca"
+                          value={preco?.marca || ''}
+                          onChange={(valor: string) =>
+                            setPrecos(atual =>
+                              atual.map(item =>
+                                item.cotacaoItemId ===
+                                itemCotacao.id
+                                  ? {
+                                      ...item,
+                                      marca: valor,
+                                    }
+                                  : item
+                              )
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
 
                 <button
                   type="submit"
-                  disabled={salvandoProposta}
-                  className="w-full py-3 rounded-[12px] bg-[#0F172A] text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-60"
+                  disabled={
+                    salvandoProposta ||
+                    !fornecedorId
+                  }
+                  className="w-full py-3 rounded-[12px] bg-[#0F172A] text-white text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-60"
                 >
                   <Save className="w-4 h-4" />
                   {salvandoProposta
                     ? 'Salvando...'
-                    : 'Salvar proposta'}
+                    : 'Adicionar à comparação'}
                 </button>
               </form>
-            </div>
-          </>
+            )}
+          </Painel>
         )}
       </div>
     );
   }
+
+  const filtradas = cotacoes.filter(item =>
+    normalizar(item.titulo).includes(
+      normalizar(busca)
+    )
+  );
 
   return (
     <div className="space-y-8">
@@ -1175,147 +1160,120 @@ export const QuotationsView: React.FC = () => {
           </h1>
 
           <p className="text-xs text-slate-400 mt-1">
-            Compare preços, prazos e condições comerciais
-            entre fornecedores.
+            Item → fornecedores → melhor opção →
+            solicitação.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={abrirNovaCotacao}
-          className="px-4 py-2.5 rounded-[12px] bg-[#0F172A] text-white hover:bg-[#1E293B] font-bold text-xs flex items-center gap-2"
+          onClick={abrirNova}
+          className="px-4 py-2.5 rounded-[12px] bg-[#0F172A] text-white text-xs font-bold flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
           Nova cotação
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Indicador
-          titulo="Total"
-          valor={String(cotacoes.length)}
-          icon={ClipboardList}
-        />
-
-        <Indicador
-          titulo="Em andamento"
-          valor={String(totalAbertas)}
-          icon={CalendarDays}
-        />
-
-        <Indicador
-          titulo="Finalizadas"
-          valor={String(totalFinalizadas)}
-          icon={CheckCircle2}
-          destaque
-        />
-
-        <Indicador
-          titulo="Propostas recebidas"
-          valor={String(totalPropostas)}
-          icon={DollarSign}
-        />
-      </div>
-
-      <div className="max-w-md bg-white border border-slate-100 rounded-[14px] px-4 py-2.5 shadow-sm flex items-center gap-2">
+      <div className="max-w-md bg-white border border-slate-100 rounded-[14px] px-4 py-2.5 flex items-center gap-2">
         <Search className="w-4 h-4 text-slate-400" />
 
         <input
           value={busca}
-          onChange={e => setBusca(e.target.value)}
-          placeholder="Pesquisar cotação ou processo..."
-          className="w-full bg-transparent border-0 focus:ring-0 text-xs text-slate-600"
+          onChange={event =>
+            setBusca(event.target.value)
+          }
+          placeholder="Pesquisar cotação..."
+          className="w-full bg-transparent border-0 focus:ring-0 text-xs"
         />
       </div>
 
-      {loading ? (
-        <div className="bg-white rounded-[18px] border border-slate-100 p-10 text-center text-xs text-slate-400">
-          Carregando cotações...
-        </div>
-      ) : cotacoesExibidas.length === 0 ? (
-        <div className="bg-white rounded-[18px] border border-slate-100 p-10 text-center">
-          <ClipboardList className="w-9 h-9 text-slate-300 mx-auto" />
-
-          <h3 className="text-sm font-bold text-slate-800 mt-3">
-            Nenhuma cotação cadastrada
-          </h3>
-
-          <p className="text-xs text-slate-400 mt-1">
-            Crie uma cotação a partir de uma solicitação
-            registrada.
-          </p>
-        </div>
+      {carregando ? (
+        <Vazio texto="Carregando..." />
+      ) : filtradas.length === 0 ? (
+        <Vazio texto="Nenhuma cotação cadastrada." />
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          {cotacoesExibidas.map(cotacao => {
-            const processo = processos.find(
-              item => item.dbId === cotacao.processoId
-            );
-
-            const melhor =
+          {filtradas.map(item => {
+            const melhorItem =
               quotationService.obterMelhorPreco(
-                cotacao.propostas
+                item.propostas
               );
 
             return (
               <div
-                key={cotacao.id}
-                className="bg-white rounded-[18px] border border-slate-100 p-5 shadow-sm"
+                key={item.id}
+                className="bg-white rounded-[18px] border border-slate-100 p-5"
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex justify-between gap-3">
                   <button
                     type="button"
                     onClick={() =>
-                      setCotacaoSelecionadaId(cotacao.id)
+                      setSelecionadaId(item.id)
                     }
-                    className="text-left flex-1"
+                    className="text-left"
                   >
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-[#0F172A]">
-                        {cotacao.titulo}
-                      </h3>
-
-                      <StatusCotacao
-                        status={cotacao.status}
-                      />
-                    </div>
+                    <h3 className="text-sm font-bold">
+                      {item.titulo}
+                    </h3>
 
                     <p className="text-[10px] text-slate-400 mt-1">
-                      Processo {processo?.id || '-'}
+                      {item.itens.length} item(ns) •{' '}
+                      {item.propostas.length}{' '}
+                      fornecedor(es)
                     </p>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() =>
-                      excluirCotacao(cotacao)
-                    }
-                    className="w-8 h-8 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center"
+                    onClick={async () => {
+                      if (
+                        !confirm(
+                          'Excluir esta cotação?'
+                        )
+                      ) {
+                        return;
+                      }
+
+                      await quotationService.excluirCotacao(
+                        item.id
+                      );
+
+                      setCotacoes(atual =>
+                        atual.filter(
+                          valor =>
+                            valor.id !== item.id
+                        )
+                      );
+                    }}
+                    className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center"
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                    <Trash2 className="w-4 h-4 text-red-500" />
                   </button>
                 </div>
 
                 <div className="grid grid-cols-3 gap-3 mt-5">
                   <Metrica
                     titulo="Itens"
-                    valor={String(cotacao.itens.length)}
-                  />
-
-                  <Metrica
-                    titulo="Propostas"
                     valor={String(
-                      cotacao.propostas.length
+                      item.itens.length
                     )}
                   />
 
                   <Metrica
-                    titulo="Melhor preço"
+                    titulo="Fornecedores"
+                    valor={String(
+                      item.propostas.length
+                    )}
+                  />
+
+                  <Metrica
+                    titulo="Melhor custo"
                     valor={
-                      melhor
+                      melhorItem
                         ? formatarReal(
                             quotationService.calcularTotalProposta(
-                              melhor
+                              melhorItem
                             )
                           )
                         : '-'
@@ -1327,11 +1285,11 @@ export const QuotationsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() =>
-                    setCotacaoSelecionadaId(cotacao.id)
+                    setSelecionadaId(item.id)
                   }
-                  className="w-full mt-5 py-2.5 rounded-[12px] bg-slate-50 hover:bg-slate-100 text-[#0F172A] font-bold text-xs"
+                  className="w-full mt-5 py-2.5 rounded-[12px] bg-slate-50 text-xs font-bold"
                 >
-                  Abrir comparação
+                  Abrir
                 </button>
               </div>
             );
@@ -1339,239 +1297,160 @@ export const QuotationsView: React.FC = () => {
         </div>
       )}
 
-      {modalNovaCotacao && (
-        <>
-          <div
-            className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-50"
-            onClick={fecharNovaCotacao}
-          />
+      {modalNova && (
+        <Painel
+          titulo="Nova cotação"
+          fechar={() => setModalNova(false)}
+        >
+          <form
+            onSubmit={salvarCotacao}
+            className="space-y-5"
+          >
+            <CampoInput
+              label="Título"
+              value={titulo}
+              onChange={setTitulo}
+            />
 
-          <div className="fixed inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl z-50 flex flex-col h-screen border-l border-slate-100">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <div>
-                <h2 className="text-sm font-bold text-[#0F172A]">
-                  Nova cotação
-                </h2>
+            <CampoTextarea
+              label="Observação"
+              value={observacao}
+              onChange={setObservacao}
+            />
 
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Vincule a cotação a um processo e informe
-                  os itens.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={fecharNovaCotacao}
-                className="w-8 h-8 rounded-full bg-white border border-slate-100 flex items-center justify-center"
+            {itens.map((item, index) => (
+              <div
+                key={item.idLocal}
+                className="border border-slate-100 rounded-[16px] p-4 space-y-4"
               >
-                <X className="w-4 h-4 text-slate-400" />
-              </button>
-            </div>
+                <div className="flex justify-between">
+                  <span className="text-xs font-bold">
+                    Item {index + 1}
+                  </span>
 
-            <form
-              onSubmit={salvarNovaCotacao}
-              className="flex-1 overflow-y-auto p-6 space-y-6"
-            >
-              <CampoSelect
-                label="Processo de compra"
-                value={processoId}
-                onChange={selecionarProcesso}
-                options={processosDisponiveis.map(
-                  processo => ({
-                    value: obterIdProcesso(processo),
-                    label: `${obterIdProcesso(
-                      processo
-                    )} — ${obterDescricaoProcesso(
-                      processo
-                    )}`,
-                  })
-                )}
-                placeholder="Selecione o processo"
-              />
-
-              {processosDisponiveis.length === 0 && (
-                <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3">
-                  <p className="text-xs font-semibold text-amber-700">
-                    Nenhum processo disponível para cotação.
-                  </p>
-                  <p className="mt-1 text-[10px] text-amber-600">
-                    Cadastre uma solicitação de compra ou verifique
-                    se os processos foram carregados no FinanceContext.
-                  </p>
-                </div>
-              )}
-
-              <CampoInput
-                label="Título da cotação"
-                value={titulo}
-                onChange={setTitulo}
-              />
-
-              <CampoTextarea
-                label="Observação"
-                value={observacao}
-                onChange={setObservacao}
-              />
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                    Itens da cotação
-                  </h3>
-
-                  <button
-                    type="button"
-                    onClick={adicionarItemFormulario}
-                    className="px-3 py-2 rounded-[10px] bg-slate-100 text-slate-700 text-[10px] font-bold flex items-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Adicionar item
-                  </button>
-                </div>
-
-                {itensFormulario.map(
-                  (item, index) => (
-                    <div
-                      key={item.idLocal}
-                      className="border border-slate-100 rounded-[16px] p-4 space-y-4"
+                  {itens.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setItens(atual =>
+                          atual.filter(
+                            valor =>
+                              valor.idLocal !==
+                              item.idLocal
+                          )
+                        )
+                      }
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-700">
-                          Item {index + 1}
-                        </span>
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </button>
+                  )}
+                </div>
 
-                        {itensFormulario.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              removerItemFormulario(
-                                item.idLocal
-                              )
+                <CampoSelect
+                  label="Item do catálogo"
+                  value={item.itemCatalogoId}
+                  onChange={(valor: string) =>
+                    setItens(atual =>
+                      atual.map(registro =>
+                        registro.idLocal ===
+                        item.idLocal
+                          ? {
+                              ...registro,
+                              itemCatalogoId:
+                                valor,
                             }
-                            className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                          </button>
-                        )}
-                      </div>
+                          : registro
+                      )
+                    )
+                  }
+                  options={catalogo.map(produto => ({
+                    value: produto.id,
+                    label: `${
+                      produto.codigo
+                        ? `${produto.codigo} — `
+                        : ''
+                    }${produto.nome}`,
+                  }))}
+                  placeholder="Selecione o item"
+                />
 
-                      <CampoInput
-                        label="Descrição"
-                        value={item.descricao}
-                        onChange={valor =>
-                          atualizarItemFormulario(
-                            item.idLocal,
-                            'descricao',
-                            valor
-                          )
-                        }
-                      />
+                <CampoInput
+                  label="Quantidade"
+                  type="number"
+                  step="0.01"
+                  value={item.quantidade}
+                  onChange={(valor: string) =>
+                    setItens(atual =>
+                      atual.map(registro =>
+                        registro.idLocal ===
+                        item.idLocal
+                          ? {
+                              ...registro,
+                              quantidade: valor,
+                            }
+                          : registro
+                      )
+                    )
+                  }
+                />
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <CampoInput
-                          label="Quantidade"
-                          type="number"
-                          step="0.01"
-                          value={item.quantidade}
-                          onChange={valor =>
-                            atualizarItemFormulario(
-                              item.idLocal,
-                              'quantidade',
-                              valor
-                            )
-                          }
-                        />
-
-                        <CampoInput
-                          label="Unidade"
-                          value={item.unidade}
-                          onChange={valor =>
-                            atualizarItemFormulario(
-                              item.idLocal,
-                              'unidade',
-                              valor
-                            )
-                          }
-                        />
-                      </div>
-
-                      <CampoInput
-                        label="Especificação"
-                        value={item.especificacao}
-                        onChange={valor =>
-                          atualizarItemFormulario(
-                            item.idLocal,
-                            'especificacao',
-                            valor
-                          )
-                        }
-                      />
-                    </div>
-                  )
-                )}
+                <CampoInput
+                  label="Especificação"
+                  value={item.especificacao}
+                  onChange={(valor: string) =>
+                    setItens(atual =>
+                      atual.map(registro =>
+                        registro.idLocal ===
+                        item.idLocal
+                          ? {
+                              ...registro,
+                              especificacao:
+                                valor,
+                            }
+                          : registro
+                      )
+                    )
+                  }
+                />
               </div>
+            ))}
 
-              <button
-                type="submit"
-                disabled={
-                  salvandoCotacao ||
-                  processosDisponiveis.length === 0
-                }
-                className="w-full py-3 rounded-[12px] bg-[#0F172A] text-white font-bold text-xs flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Save className="w-4 h-4" />
-                {salvandoCotacao
-                  ? 'Criando...'
-                  : 'Criar cotação'}
-              </button>
-            </form>
-          </div>
-        </>
+            <button
+              type="button"
+              onClick={() =>
+                setItens(atual => [
+                  ...atual,
+                  novoItem(),
+                ])
+              }
+              className="px-3 py-2 rounded-[10px] bg-slate-100 text-xs font-bold flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar item
+            </button>
+
+            <button
+              type="submit"
+              disabled={salvando}
+              className="w-full py-3 rounded-[12px] bg-[#0F172A] text-white text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              <Save className="w-4 h-4" />
+              {salvando
+                ? 'Criando...'
+                : 'Criar e ver fornecedores'}
+            </button>
+          </form>
+        </Painel>
       )}
     </div>
   );
 };
 
-const Indicador = ({
-  titulo,
-  valor,
-  icon: Icon,
-  destaque,
-}: any) => (
-  <div className="bg-white rounded-[18px] border border-slate-100 p-5 shadow-sm">
-    <div
-      className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-        destaque ? 'bg-emerald-50' : 'bg-slate-100'
-      }`}
-    >
-      <Icon
-        className={`w-5 h-5 ${
-          destaque
-            ? 'text-emerald-600'
-            : 'text-[#0F172A]'
-        }`}
-      />
-    </div>
-
-    <span className="text-[10px] uppercase font-bold text-slate-400 block mt-4">
-      {titulo}
-    </span>
-
-    <p className="text-lg font-bold text-[#0F172A] mt-1 font-mono">
-      {valor}
-    </p>
-  </div>
-);
-
 const Metrica = ({
   titulo,
   valor,
   destaque,
-}: {
-  titulo: string;
-  valor: string;
-  destaque?: boolean;
-}) => (
+}: any) => (
   <div className="bg-slate-50 rounded-[12px] p-3">
     <span className="text-[9px] text-slate-400 uppercase font-bold">
       {titulo}
@@ -1579,9 +1458,7 @@ const Metrica = ({
 
     <p
       className={`text-xs font-bold mt-1 ${
-        destaque
-          ? 'text-emerald-600'
-          : 'text-[#0F172A]'
+        destaque ? 'text-emerald-600' : ''
       }`}
     >
       {valor}
@@ -1589,26 +1466,57 @@ const Metrica = ({
   </div>
 );
 
-const StatusCotacao = ({
-  status,
-}: {
-  status: string;
-}) => {
-  const classes =
-    status === 'finalizada'
-      ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-      : status === 'cancelada'
-        ? 'bg-red-50 text-red-600 border-red-100'
-        : 'bg-amber-50 text-amber-600 border-amber-100';
+const Badge = ({ texto, verde }: any) => (
+  <span
+    className={`px-2 py-1 rounded-full text-[9px] font-bold ${
+      verde
+        ? 'bg-emerald-50 text-emerald-600'
+        : 'bg-amber-50 text-amber-600'
+    }`}
+  >
+    {texto}
+  </span>
+);
 
-  return (
-    <span
-      className={`px-2 py-1 rounded-full border text-[9px] font-bold uppercase ${classes}`}
-    >
-      {status.replace('_', ' ')}
-    </span>
-  );
-};
+const Vazio = ({
+  texto,
+}: {
+  texto: string;
+}) => (
+  <div className="bg-white rounded-[18px] border border-slate-100 p-10 text-center text-xs text-slate-400">
+    <ClipboardList className="w-8 h-8 mx-auto mb-3 text-slate-300" />
+    {texto}
+  </div>
+);
+
+const Painel = ({
+  titulo,
+  fechar,
+  children,
+}: any) => (
+  <>
+    <div
+      className="fixed inset-0 bg-slate-900/30 z-50"
+      onClick={fechar}
+    />
+
+    <div className="fixed inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl z-50 flex flex-col">
+      <div className="p-6 border-b flex justify-between">
+        <h2 className="text-sm font-bold">
+          {titulo}
+        </h2>
+
+        <button type="button" onClick={fechar}>
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {children}
+      </div>
+    </div>
+  </>
+);
 
 const CampoInput = ({
   label,
@@ -1616,15 +1524,7 @@ const CampoInput = ({
   onChange,
   type = 'text',
   step,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (valor: string) => void;
-  type?: string;
-  step?: string;
-  placeholder?: string;
-}) => (
+}: any) => (
   <div className="space-y-1.5">
     <label className="text-[10px] font-bold text-slate-400 uppercase block">
       {label}
@@ -1634,9 +1534,10 @@ const CampoInput = ({
       type={type}
       step={step}
       value={value}
-      placeholder={placeholder}
-      onChange={e => onChange(e.target.value)}
-      className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+      onChange={event =>
+        onChange(event.target.value)
+      }
+      className="w-full bg-slate-50 border-0 rounded-[12px] px-3.5 py-2.5 text-xs"
     />
   </div>
 );
@@ -1645,11 +1546,7 @@ const CampoTextarea = ({
   label,
   value,
   onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (valor: string) => void;
-}) => (
+}: any) => (
   <div className="space-y-1.5">
     <label className="text-[10px] font-bold text-slate-400 uppercase block">
       {label}
@@ -1658,8 +1555,10 @@ const CampoTextarea = ({
     <textarea
       rows={3}
       value={value}
-      onChange={e => onChange(e.target.value)}
-      className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+      onChange={event =>
+        onChange(event.target.value)
+      }
+      className="w-full bg-slate-50 border-0 rounded-[12px] px-3.5 py-2.5 text-xs"
     />
   </div>
 );
@@ -1670,16 +1569,7 @@ const CampoSelect = ({
   onChange,
   options,
   placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (valor: string) => void;
-  options: Array<{
-    value: string;
-    label: string;
-  }>;
-  placeholder: string;
-}) => (
+}: any) => (
   <div className="space-y-1.5">
     <label className="text-[10px] font-bold text-slate-400 uppercase block">
       {label}
@@ -1687,12 +1577,14 @@ const CampoSelect = ({
 
     <select
       value={value}
-      onChange={e => onChange(e.target.value)}
-      className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700"
+      onChange={event =>
+        onChange(event.target.value)
+      }
+      className="w-full bg-slate-50 border-0 rounded-[12px] px-3.5 py-2.5 text-xs"
     >
       <option value="">{placeholder}</option>
 
-      {options.map(option => (
+      {options.map((option: any) => (
         <option
           key={option.value}
           value={option.value}
