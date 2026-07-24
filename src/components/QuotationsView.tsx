@@ -98,6 +98,11 @@ export const QuotationsView: React.FC = () => {
   const [gerandoSolicitacao, setGerandoSolicitacao] =
     useState(false);
 
+  const [
+    importandoFornecedores,
+    setImportandoFornecedores,
+  ] = useState(false);
+
   const cotacao = useMemo(
     () =>
       cotacoes.find(item => item.id === selecionadaId) ||
@@ -137,6 +142,18 @@ export const QuotationsView: React.FC = () => {
   useEffect(() => {
     carregar();
   }, []);
+
+  useEffect(() => {
+    if (
+      !cotacao ||
+      cotacao.propostas.length > 0 ||
+      importandoFornecedores
+    ) {
+      return;
+    }
+
+    carregarFornecedoresAutomaticamente();
+  }, [cotacao?.id]);
 
   const abrirNova = () => {
     setTitulo(
@@ -288,6 +305,175 @@ export const QuotationsView: React.FC = () => {
       );
     }
   };
+
+
+  const carregarFornecedoresAutomaticamente =
+    async (mostrarAviso = false) => {
+      if (!cotacao || importandoFornecedores) return;
+
+      const itensComCatalogo = cotacao.itens.filter(
+        item => item.itemCatalogoId
+      );
+
+      if (!itensComCatalogo.length) {
+        if (mostrarAviso) {
+          alert(
+            'A cotação não possui item vinculado ao catálogo.'
+          );
+        }
+        return;
+      }
+
+      try {
+        setImportandoFornecedores(true);
+
+        const listasPorItem = await Promise.all(
+          itensComCatalogo.map(async item => ({
+            itemCotacao: item,
+            fornecedores:
+              await quotationService.listarFornecedoresDoItem(
+                item.itemCatalogoId!
+              ),
+          }))
+        );
+
+        const fornecedoresPorId = new Map<
+          string,
+          FornecedorCatalogoCotacao[]
+        >();
+
+        listasPorItem.forEach(({ fornecedores }) => {
+          fornecedores.forEach(vinculo => {
+            fornecedoresPorId.set(
+              vinculo.fornecedorId,
+              [
+                ...(fornecedoresPorId.get(
+                  vinculo.fornecedorId
+                ) || []),
+                vinculo,
+              ]
+            );
+          });
+        });
+
+        const fornecedoresJaAdicionados = new Set(
+          cotacao.propostas.map(
+            proposta => proposta.fornecedorId
+          )
+        );
+
+        const fornecedoresAptos = Array.from(
+          fornecedoresPorId.entries()
+        ).filter(
+          ([fornecedorSelecionadoId, vinculos]) =>
+            !fornecedoresJaAdicionados.has(
+              fornecedorSelecionadoId
+            ) &&
+            itensComCatalogo.every(item =>
+              vinculos.some(
+                vinculo =>
+                  vinculo.itemCatalogoId ===
+                  item.itemCatalogoId
+              )
+            )
+        );
+
+        let quantidadeImportada = 0;
+
+        for (const [
+          fornecedorSelecionadoId,
+          vinculos,
+        ] of fornecedoresAptos) {
+          const itensProposta =
+            itensComCatalogo.map(itemCotacao => {
+              const vinculo = vinculos.find(
+                registro =>
+                  registro.itemCatalogoId ===
+                  itemCotacao.itemCatalogoId
+              );
+
+              return {
+                cotacaoItemId: itemCotacao.id,
+                valorUnitario:
+                  vinculo?.valorUnitario || 0,
+                marca: vinculo?.marca || '',
+                observacao: vinculo?.preferencial
+                  ? 'Fornecedor preferencial no catálogo'
+                  : '',
+              };
+            });
+
+          if (
+            itensProposta.some(
+              item => item.valorUnitario <= 0
+            )
+          ) {
+            continue;
+          }
+
+          const primeiroVinculo = vinculos[0];
+
+          await quotationService.salvarProposta({
+            cotacaoId: cotacao.id,
+            fornecedorId:
+              fornecedorSelecionadoId,
+            prazoEntregaDias:
+              primeiroVinculo
+                ?.prazoEntregaDias ?? null,
+            condicaoPagamento:
+              primeiroVinculo
+                ?.condicaoPagamento || null,
+            tipoFrete:
+              primeiroVinculo?.tipoFrete ||
+              null,
+            frete:
+              primeiroVinculo?.valorFrete || 0,
+            desconto: 0,
+            observacao:
+              'Fornecedor carregado automaticamente do catálogo.',
+            itens: itensProposta,
+          });
+
+          quantidadeImportada += 1;
+        }
+
+        if (quantidadeImportada > 0) {
+          const atualizada =
+            await quotationService.buscarCotacaoPorId(
+              cotacao.id
+            );
+
+          setCotacoes(atual =>
+            atual.map(item =>
+              item.id === atualizada.id
+                ? atualizada
+                : item
+            )
+          );
+        } else if (
+          mostrarAviso &&
+          cotacao.propostas.length === 0
+        ) {
+          alert(
+            'Nenhum fornecedor com preço maior que zero foi encontrado para todos os itens.'
+          );
+        }
+      } catch (error: any) {
+        console.error(
+          'Erro ao carregar fornecedores automaticamente:',
+          error
+        );
+
+        if (mostrarAviso) {
+          alert(
+            error.message ||
+              'Não foi possível carregar os fornecedores.'
+          );
+        }
+      } finally {
+        setImportandoFornecedores(false);
+      }
+    };
 
   const preencherFornecedor = async (id: string) => {
     setFornecedorId(id);
@@ -771,11 +957,18 @@ export const QuotationsView: React.FC = () => {
             {!cotacao.solicitacaoGerada && (
               <button
                 type="button"
-                onClick={buscarFornecedores}
-                className="px-4 py-2.5 rounded-[12px] bg-[#0F172A] text-white text-xs font-bold flex items-center gap-2"
+                onClick={() =>
+                  carregarFornecedoresAutomaticamente(
+                    true
+                  )
+                }
+                disabled={importandoFornecedores}
+                className="px-4 py-2.5 rounded-[12px] bg-[#0F172A] text-white text-xs font-bold flex items-center gap-2 disabled:opacity-60"
               >
                 <Plus className="w-4 h-4" />
-                Ver fornecedores
+                {importandoFornecedores
+                  ? 'Carregando...'
+                  : 'Atualizar fornecedores'}
               </button>
             )}
           </div>
@@ -810,12 +1003,15 @@ export const QuotationsView: React.FC = () => {
             <Package className="w-8 h-8 text-slate-300 mx-auto" />
 
             <p className="text-sm font-bold mt-3">
-              Clique em “Ver fornecedores”
+              {importandoFornecedores
+                ? 'Buscando fornecedores...'
+                : 'Nenhum fornecedor disponível'}
             </p>
 
             <p className="text-xs text-slate-400 mt-1">
-              O sistema mostrará preço,
-              faturamento, prazo e frete.
+              {importandoFornecedores
+                ? 'Consultando os vínculos e preços do catálogo.'
+                : 'Cadastre preço, faturamento, prazo e frete no vínculo do catálogo.'}
             </p>
           </div>
         ) : (

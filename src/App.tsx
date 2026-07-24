@@ -34,6 +34,7 @@ import CatalogItemsView from "./components/CatalogItemsView";
 import { NewAccountView } from './components/NewAccountView';
 import { useAuth } from './context/AuthContext';
 import { podeAcessar } from './config/permissions';
+import { WeeklyPurchasingPlanView } from "./components/WeeklyPurchasingPlanView";
 
 const verificarDefinicaoSenhaNaUrl = () => {
   const params = new URLSearchParams(
@@ -166,6 +167,9 @@ const AppContent: React.FC = () => {
 
       case 'autorizacoes':
         return <ApprovalsView />;
+
+        case "planejamento-compras":
+  return <WeeklyPurchasingPlanView />;
 
       /*
        * Novo lançamento financeiro direto.

@@ -23,6 +23,7 @@ import {
   CalendarDays,
   ReceiptText,
   Package,
+  CalendarRange,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -103,6 +104,11 @@ export const Sidebar: React.FC = () => {
           label: 'Cotações',
           icon: ClipboardList,
         },
+        {
+        id: "planejamento-compras",
+       label: "Planejamento semanal",
+       icon: CalendarRange,
+    },
         {
           id: 'autorizacoes',
           label: 'Autorizações',

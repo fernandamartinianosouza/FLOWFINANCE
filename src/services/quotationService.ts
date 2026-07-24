@@ -250,9 +250,9 @@ export const quotationService = {
     itemCatalogoId: string
   ): Promise<FornecedorCatalogoCotacao[]> {
     const { data: vinculos, error } = await supabase
-  .from('itens_fornecedores')
-  .select('*')
-  .eq('item_id', itemCatalogoId);
+      .from('itens_fornecedores')
+      .select('*')
+      .eq('item_id', itemCatalogoId);
 
     if (error) throw error;
 
@@ -304,6 +304,7 @@ export const quotationService = {
             ) || null,
           valorUnitario:
             numeroSeguro(item.preco) ||
+            numeroSeguro(item.preco_unitario) ||
             numeroSeguro(item.ultimo_preco) ||
             numeroSeguro(item.valor_unitario),
           marca:

@@ -16,6 +16,7 @@ const TITULOS: Record<string, string> = {
   solicitacao: 'Nova solicitação',
   autorizacoes: 'Autorizações',
   'contas-pagar': 'Contas a pagar',
+  'planejamento-compras': 'Planejamento semanal',
   conciliacao: 'Conciliação',
   cotacoes: 'Cotações',
   'centro-financeiro': 'Plano financeiro',

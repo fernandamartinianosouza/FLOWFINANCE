@@ -20,6 +20,7 @@ export const PERMISSIONS: Record<
   contas_pagar: [
     'dashboard',
     'processos',
+    'solicitacao',
     'autorizacoes',
     'nova-conta',
     'contas-pagar',

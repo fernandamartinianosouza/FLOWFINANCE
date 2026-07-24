@@ -23,6 +23,7 @@ export type ActiveView =
   | 'catalogo-itens'
   | 'cotacoes'
   | 'autorizacoes'
+  | 'planejamento-compras'
   | 'nova-conta'
   | 'contas-pagar'
   | 'programacao'
