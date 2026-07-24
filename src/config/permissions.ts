@@ -14,6 +14,7 @@ export const PERMISSIONS: Record<
     'solicitacao',
     'catalogo-itens',
     'cotacoes',
+    'planejamento-compras',
     'fornecedores',
   ],
 
@@ -26,6 +27,7 @@ export const PERMISSIONS: Record<
     'contas-pagar',
     'catalogo-itens',
     'cotacoes',
+    'planejamento-compras',
     'programacao',
     'pagamentos-programados',
     'conciliacao',
