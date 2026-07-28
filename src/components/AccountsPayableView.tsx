@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { formatarReal } from '../utils';
 import {
@@ -14,9 +14,16 @@ import {
   Download,
   RefreshCw,
   RotateCcw,
+  Upload,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 import { gerarRelatorioContasPagar } from '../services/relatorioContasPagarService';
+import {
+  ContaPagarImportPreview,
+  contasPagarImportService,
+  normalizarNomeImportacao,
+} from '../services/contasPagarImportService';
 
 type FiltroSituacao =
   | 'todas'
@@ -41,9 +48,15 @@ const diferencaDias = (data: string) => {
 
 export const AccountsPayableView: React.FC = () => {
   const {
+    organizacaoAtivaId,
+    empresaAtivaId,
     processos,
     fornecedores,
     empresas,
+    planosFinanceiros,
+    cadastrarPlanoFinanceiro,
+    cadastrarFornecedor,
+    criarNovaConta,
     programarPagamento,
     registrarPagamento,
     setActiveProcessId,
@@ -80,6 +93,17 @@ export const AccountsPayableView: React.FC = () => {
   const [salvandoPagamento, setSalvandoPagamento] =
     useState(false);
   const [atualizando, setAtualizando] =
+    useState(false);
+
+  const inputImportacaoRef =
+    useRef<HTMLInputElement>(null);
+  const [modalImportacaoOpen, setModalImportacaoOpen] =
+    useState(false);
+  const [arquivoImportacaoNome, setArquivoImportacaoNome] =
+    useState('');
+  const [previewImportacao, setPreviewImportacao] =
+    useState<ContaPagarImportPreview[]>([]);
+  const [importandoContas, setImportandoContas] =
     useState(false);
 
   useEffect(() => {
@@ -533,11 +557,390 @@ export const AccountsPayableView: React.FC = () => {
     setActiveView('processos');
   };
 
+
+  const empresaImportacaoId =
+    empresaFiltro ||
+    empresaAtivaId ||
+    empresas?.[0]?.id ||
+    empresas?.[0]?.dbId ||
+    '';
+
+  const fecharImportacao = () => {
+    if (importandoContas) return;
+
+    setModalImportacaoOpen(false);
+    setArquivoImportacaoNome('');
+    setPreviewImportacao([]);
+
+    if (inputImportacaoRef.current) {
+      inputImportacaoRef.current.value = '';
+    }
+  };
+
+  const selecionarPlanilhaImportacao = async (
+    arquivo?: File
+  ) => {
+    if (!arquivo) return;
+
+    try {
+      const linhas =
+        await contasPagarImportService.lerArquivo(
+          arquivo
+        );
+
+      setArquivoImportacaoNome(arquivo.name);
+      setPreviewImportacao(linhas);
+      setModalImportacaoOpen(true);
+    } catch (error: any) {
+      console.error(
+        'Erro ao ler planilha de contas a pagar:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível ler a planilha.'
+      );
+    } finally {
+      if (inputImportacaoRef.current) {
+        inputImportacaoRef.current.value = '';
+      }
+    }
+  };
+
+  const obterIdCadastro = (resultado: any) =>
+    String(
+      resultado?.id ??
+        resultado?.dbId ??
+        resultado?.data?.id ??
+        resultado?.data?.dbId ??
+        ''
+    );
+
+  const confirmarImportacaoContas = async () => {
+    if (!empresaImportacaoId) {
+      alert(
+        'Selecione uma empresa antes de importar.'
+      );
+      return;
+    }
+
+    if (
+      typeof cadastrarPlanoFinanceiro !== 'function' ||
+      typeof cadastrarFornecedor !== 'function' ||
+      typeof criarNovaConta !== 'function'
+    ) {
+      alert(
+        'O FinanceContext precisa disponibilizar cadastrarPlanoFinanceiro, cadastrarFornecedor e criarNovaConta.'
+      );
+      return;
+    }
+
+    const validas = previewImportacao.filter(
+      item => item.status === 'valido'
+    );
+
+    if (validas.length === 0) {
+      alert('Não há registros válidos para importar.');
+      return;
+    }
+
+    try {
+      setImportandoContas(true);
+
+      const planosMap = new Map<string, string>();
+
+      (planosFinanceiros || []).forEach(
+        (plano: any) => {
+          const id = String(
+            plano.id ?? plano.dbId ?? ''
+          );
+
+          if (id) {
+            planosMap.set(
+              normalizarNomeImportacao(
+                plano.nome || ''
+              ),
+              id
+            );
+          }
+        }
+      );
+
+      const fornecedoresMap = new Map<string, string>();
+
+      (fornecedores || []).forEach(
+        (fornecedor: any) => {
+          const id = String(
+            fornecedor.id ??
+              fornecedor.dbId ??
+              ''
+          );
+
+          if (id) {
+            fornecedoresMap.set(
+              normalizarNomeImportacao(
+                fornecedor.nome || ''
+              ),
+              id
+            );
+          }
+        }
+      );
+
+      const chavesCriadas = new Set<string>();
+      let criadas = 0;
+      let duplicadas = 0;
+
+      for (const linha of validas) {
+        const chavePlano =
+          normalizarNomeImportacao(
+            linha.planoConta
+          );
+
+        let planoId = planosMap.get(chavePlano);
+
+        if (!planoId) {
+          const resultadoPlano =
+            await cadastrarPlanoFinanceiro({
+              nome: linha.planoConta,
+              descricao:
+                'Criado automaticamente pela importação de contas a pagar.',
+              orcamentoAnual: 0,
+              limiteAnual: 0,
+              tetoAnual: 0,
+              tetoMensal: 0,
+              utilizado: 0,
+              comprometido: 0,
+            });
+
+          planoId = obterIdCadastro(resultadoPlano);
+
+          if (!planoId) {
+            planoId =
+              await contasPagarImportService.buscarPlano({
+                organizacaoId:
+                  organizacaoAtivaId || undefined,
+                empresaId: empresaImportacaoId,
+                nome: linha.planoConta,
+              });
+          }
+
+          if (!planoId) {
+            throw new Error(
+              `O plano "${linha.planoConta}" foi criado, mas não foi possível localizar o ID no banco.`
+            );
+          }
+
+          planosMap.set(chavePlano, planoId);
+        }
+
+        const chaveFornecedor =
+          normalizarNomeImportacao(
+            linha.fornecedor
+          );
+
+        let fornecedorId =
+          fornecedoresMap.get(chaveFornecedor);
+
+        let fornecedorExistente = (fornecedores || []).find(
+          (item: any) =>
+            normalizarNomeImportacao(item.nome || '') ===
+            chaveFornecedor
+        );
+
+        if (!fornecedorId) {
+          const identificadorFornecedor =
+            `SEM-CNPJ-${Date.now()}-${linha.linha}`;
+
+          const resultadoFornecedor =
+            await cadastrarFornecedor({
+              nome: linha.fornecedor,
+              razaoSocial: linha.fornecedor,
+              cnpj: identificadorFornecedor,
+              cnpjCpf: identificadorFornecedor,
+              email: '',
+              telefone: '',
+              pix: linha.pix || '',
+              pixChave: linha.pix || '',
+              ativo: true,
+            } as any);
+
+          fornecedorId =
+            obterIdCadastro(resultadoFornecedor);
+
+          if (!fornecedorId) {
+            fornecedorId =
+              await contasPagarImportService.buscarFornecedor({
+                organizacaoId:
+                  organizacaoAtivaId || undefined,
+                empresaId: empresaImportacaoId,
+                nome: linha.fornecedor,
+              });
+          }
+
+          if (!fornecedorId) {
+            throw new Error(
+              `O fornecedor "${linha.fornecedor}" foi criado, mas não foi possível localizar o ID no banco.`
+            );
+          }
+
+          fornecedoresMap.set(
+            chaveFornecedor,
+            fornecedorId
+          );
+
+          fornecedorExistente = resultadoFornecedor || {
+            id: fornecedorId,
+            nome: linha.fornecedor,
+            pix: linha.pix || '',
+            pixChave: linha.pix || '',
+          };
+        }
+
+        const pixConta =
+          linha.pix ||
+          fornecedorExistente?.pix ||
+          fornecedorExistente?.pixChave ||
+          fornecedorExistente?.chavePix ||
+          '';
+
+        const chaveDuplicidade = [
+          empresaImportacaoId,
+          fornecedorId,
+          planoId,
+          linha.vencimento,
+          linha.parcela,
+          linha.valor.toFixed(2),
+        ].join('|');
+
+        const duplicadaCarregada = processos.some(
+          (processo: any) => {
+            const parcelaProcesso = String(
+              processo.parcela ??
+                processo.numeroParcela ??
+                ''
+            ).trim();
+
+            return (
+              String(
+                processo.empresaId ??
+                  processo.empresa_id ??
+                  ''
+              ) === String(empresaImportacaoId) &&
+              String(
+                processo.fornecedorId ??
+                  processo.fornecedor_id ??
+                  ''
+              ) === String(fornecedorId) &&
+              String(
+                processo.planoFinanceiroId ??
+                  processo.plano_financeiro_id ??
+                  processo.planoId ??
+                  ''
+              ) === String(planoId) &&
+              String(
+                processo.prazo ??
+                  processo.vencimento ??
+                  ''
+              ).slice(0, 10) ===
+                linha.vencimento &&
+              parcelaProcesso === linha.parcela &&
+              Math.abs(
+                Number(processo.valor || 0) -
+                  linha.valor
+              ) < 0.001
+            );
+          }
+        );
+
+        if (
+          duplicadaCarregada ||
+          chavesCriadas.has(chaveDuplicidade)
+        ) {
+          duplicadas += 1;
+          continue;
+        }
+
+        await criarNovaConta({
+          organizacaoId:
+            organizacaoAtivaId || undefined,
+          empresaId: empresaImportacaoId,
+          fornecedorId,
+          planoFinanceiroId: planoId,
+          planoId,
+          descricao: `${linha.fornecedor} • Parcela ${linha.parcela}`,
+          valor: linha.valor,
+          prazo: linha.vencimento,
+          vencimento: linha.vencimento,
+          parcela: linha.parcela,
+          numeroParcela: linha.parcela,
+          status: 'pagamento',
+          tipoPagamento: 'fornecedor',
+          statusProgramacao: 'nao_programado',
+          formaPagamento: pixConta ? 'pix' : 'boleto',
+          metodoPagamento: pixConta ? 'pix' : 'boleto',
+          pixChave: pixConta || null,
+          pixFavorecido: linha.fornecedor,
+          urgencia: 'media',
+          origem: 'importacao_excel',
+          observacao: `Importado do arquivo ${arquivoImportacaoNome}`,
+        });
+
+        chavesCriadas.add(chaveDuplicidade);
+        criadas += 1;
+      }
+
+      await recarregarDados?.();
+
+      setModalImportacaoOpen(false);
+      setPreviewImportacao([]);
+      setArquivoImportacaoNome('');
+
+      alert(
+        `${criadas} conta(s) criada(s). ${duplicadas} duplicada(s) ignorada(s).`
+      );
+    } catch (error: any) {
+      console.error(
+        'Erro ao importar contas a pagar:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível concluir a importação.'
+      );
+    } finally {
+      setImportandoContas(false);
+    }
+  };
+
+  const totalImportacaoValido =
+    previewImportacao.filter(
+      item => item.status === 'valido'
+    ).length;
+
+  const totalImportacaoAtencao =
+    previewImportacao.length -
+    totalImportacaoValido;
+
   return (
     <div
       className="space-y-5 lg:space-y-8"
       id="accounts-payable-view-container"
     >
+      <input
+        ref={inputImportacaoRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={event =>
+          selecionarPlanilhaImportacao(
+            event.target.files?.[0]
+          )
+        }
+      />
+
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-bold text-[#0F172A] sm:text-2xl">
@@ -551,6 +954,26 @@ export const AccountsPayableView: React.FC = () => {
         </div>
 
         <div className="flex w-full gap-2 md:w-auto">
+          <a
+            href="/modelos/modelo_importacao_contas_pagar.xlsx"
+            download
+            className="flex flex-1 items-center justify-center gap-2 rounded-[12px] border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 md:flex-none"
+          >
+            <Download className="h-4 w-4" />
+            Modelo
+          </a>
+
+          <button
+            type="button"
+            onClick={() =>
+              inputImportacaoRef.current?.click()
+            }
+            className="flex flex-1 items-center justify-center gap-2 rounded-[12px] bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-700 transition hover:bg-blue-100 md:flex-none"
+          >
+            <Upload className="h-4 w-4" />
+            Importar Excel
+          </button>
+
           <button
             type="button"
             onClick={atualizarDados}
@@ -1249,6 +1672,169 @@ export const AccountsPayableView: React.FC = () => {
           })
         )}
       </div>
+
+      {modalImportacaoOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+                  <FileSpreadsheet className="h-5 w-5 text-blue-600" />
+                </div>
+
+                <div>
+                  <h2 className="text-base font-bold text-[#0F172A]">
+                    Prévia da importação
+                  </h2>
+
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    {arquivoImportacaoNome}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={fecharImportacao}
+                disabled={importandoContas}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-100 bg-white text-slate-400 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-slate-50 p-4 sm:grid-cols-3">
+              <div className="rounded-[14px] bg-white p-4">
+                <p className="text-[9px] font-bold uppercase text-slate-400">
+                  Total
+                </p>
+                <p className="mt-1 text-xl font-black">
+                  {previewImportacao.length}
+                </p>
+              </div>
+
+              <div className="rounded-[14px] bg-emerald-50 p-4">
+                <p className="text-[9px] font-bold uppercase text-emerald-600">
+                  Válidos
+                </p>
+                <p className="mt-1 text-xl font-black text-emerald-700">
+                  {totalImportacaoValido}
+                </p>
+              </div>
+
+              <div className="rounded-[14px] bg-amber-50 p-4">
+                <p className="text-[9px] font-bold uppercase text-amber-600">
+                  Atenção
+                </p>
+                <p className="mt-1 text-xl font-black text-amber-700">
+                  {totalImportacaoAtencao}
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-auto">
+              <table className="w-full min-w-[1000px]">
+                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-[#F8FAFC]">
+                  <tr className="text-left text-[9px] uppercase text-slate-500">
+                    <th className="px-4 py-3">Linha</th>
+                    <th className="px-4 py-3">Plano de contas</th>
+                    <th className="px-4 py-3">Fornecedor</th>
+                    <th className="px-4 py-3">PIX</th>
+                    <th className="px-4 py-3">Vencimento</th>
+                    <th className="px-4 py-3">Parcela</th>
+                    <th className="px-4 py-3 text-right">Valor</th>
+                    <th className="px-4 py-3">Validação</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {previewImportacao.map(item => (
+                    <tr
+                      key={item.linha}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        {item.linha}
+                      </td>
+                      <td className="px-4 py-3 text-xs font-bold text-slate-800">
+                        {item.planoConta || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        {item.fornecedor || '—'}
+                      </td>
+                      <td className="max-w-[220px] truncate px-4 py-3 font-mono text-[10px] text-slate-600" title={item.pix}>
+                        {item.pix || 'Usar PIX cadastrado'}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                        {item.vencimento || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        {item.parcela || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs font-bold">
+                        {formatarReal(item.valor || 0)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.status === 'valido' ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[9px] font-bold text-emerald-700">
+                            <Check className="h-3 w-3" />
+                            Válido
+                          </span>
+                        ) : (
+                          <span
+                            title={item.mensagem}
+                            className="inline-flex max-w-[280px] items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[9px] font-bold text-amber-700"
+                          >
+                            <AlertTriangle className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
+                              {item.mensagem}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[10px] text-slate-400">
+                Planos e fornecedores inexistentes serão criados automaticamente.
+              </p>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={fecharImportacao}
+                  disabled={importandoContas}
+                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-600"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={confirmarImportacaoContas}
+                  disabled={
+                    importandoContas ||
+                    totalImportacaoValido === 0
+                  }
+                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#0F172A] px-5 text-xs font-bold text-white disabled:opacity-40"
+                >
+                  {importandoContas && (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  )}
+
+                  {importandoContas
+                    ? 'Importando...'
+                    : `Importar ${totalImportacaoValido} conta(s)`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {processoPagando && (
         <>

@@ -36,6 +36,7 @@ export const PERMISSIONS: Record<
     'calendario',
     'fornecedores',
     'empresas',
+    'rh-financeiro',
   ],
 
   diretoria: [

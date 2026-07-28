@@ -1,10 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { formatarReal } from '../utils';
 import {
   OrcamentoMensal,
   orcamentoService,
 } from '../services/orcamentoService';
+import {
+  normalizarNomeFinanceiro,
+  PlanoFinanceiroImportPreview,
+  planoFinanceiroImportService,
+} from '../services/planoFinanceiroImportService';
 import {
   Plus,
   X,
@@ -22,6 +27,9 @@ import {
   DollarSign,
   Clock3,
   CircleDollarSign,
+  Download,
+  Upload,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 const nomesMeses = [
@@ -77,6 +85,7 @@ const obterCentroId = (centro: any) =>
 
 export const FinancialCenterView: React.FC = () => {
   const {
+    organizacaoAtivaId,
     empresaAtivaId,
     empresas,
     planosFinanceiros,
@@ -124,6 +133,17 @@ export const FinancialCenterView: React.FC = () => {
 
   const [salvando, setSalvando] = useState(false);
   const [sucesso, setSucesso] = useState(false);
+
+  const inputImportacaoRef = useRef<HTMLInputElement>(null);
+  const [modalImportacaoOpen, setModalImportacaoOpen] =
+    useState(false);
+  const [arquivoImportacaoNome, setArquivoImportacaoNome] =
+    useState('');
+  const [previewImportacao, setPreviewImportacao] = useState<
+    PlanoFinanceiroImportPreview[]
+  >([]);
+  const [importandoPlanos, setImportandoPlanos] =
+    useState(false);
 
   const [planoNome, setPlanoNome] = useState('');
   const [planoDescricao, setPlanoDescricao] =
@@ -685,8 +705,244 @@ export const FinancialCenterView: React.FC = () => {
     }
   };
 
+
+  const fecharImportacao = () => {
+    if (importandoPlanos) return;
+
+    setModalImportacaoOpen(false);
+    setArquivoImportacaoNome('');
+    setPreviewImportacao([]);
+
+    if (inputImportacaoRef.current) {
+      inputImportacaoRef.current.value = '';
+    }
+  };
+
+  const handleSelecionarPlanilha = async (
+    arquivo?: File
+  ) => {
+    if (!arquivo) return;
+
+    try {
+      const linhas =
+        await planoFinanceiroImportService.lerArquivo(
+          arquivo
+        );
+
+      setArquivoImportacaoNome(arquivo.name);
+      setPreviewImportacao(linhas);
+      setModalImportacaoOpen(true);
+    } catch (error: any) {
+      console.error(
+        'Erro ao ler planilha de planos financeiros:',
+        error
+      );
+      alert(
+        error?.message ||
+          'Não foi possível ler a planilha selecionada.'
+      );
+    } finally {
+      if (inputImportacaoRef.current) {
+        inputImportacaoRef.current.value = '';
+      }
+    }
+  };
+
+  const obterIdRetornado = (resultado: any) =>
+    String(
+      resultado?.id ??
+        resultado?.dbId ??
+        resultado?.data?.id ??
+        resultado?.data?.dbId ??
+        ''
+    );
+
+  const handleConfirmarImportacao = async () => {
+    if (!organizacaoAtivaId) {
+      alert('Não foi possível identificar a organização ativa.');
+      return;
+    }
+
+    if (!empresaSelecionadaId) {
+      alert('Selecione uma empresa.');
+      return;
+    }
+
+    const linhasValidas = previewImportacao.filter(
+      item => item.status === 'valido'
+    );
+
+    if (linhasValidas.length === 0) {
+      alert('Não há registros válidos para importar.');
+      return;
+    }
+
+    try {
+      setImportandoPlanos(true);
+
+      const planosConhecidos = new Map<string, string>();
+
+      planosFinanceiros.forEach((plano: any) => {
+        planosConhecidos.set(
+          normalizarNomeFinanceiro(plano.nome || ''),
+          obterPlanoId(plano)
+        );
+      });
+
+      const centrosConhecidos = new Map<string, string>();
+
+      centrosCustos.forEach((centro: any) => {
+        const planoId = String(
+          centro.planoFinanceiroId || ''
+        );
+        const chave = `${planoId}::${normalizarNomeFinanceiro(
+          centro.nome || ''
+        )}`;
+
+        centrosConhecidos.set(
+          chave,
+          obterCentroId(centro)
+        );
+      });
+
+      let importados = 0;
+
+      for (const linha of linhasValidas) {
+        const chavePlano = normalizarNomeFinanceiro(
+          linha.planoConta
+        );
+
+        let planoId = planosConhecidos.get(chavePlano);
+
+        if (!planoId) {
+          const planoCriado =
+            await cadastrarPlanoFinanceiro({
+              nome: linha.planoConta,
+              descricao:
+                'Criado automaticamente pela importação em Excel.',
+              orcamentoAnual: 0,
+              limiteAnual: 0,
+              tetoAnual: 0,
+              tetoMensal: 0,
+              utilizado: 0,
+              comprometido: 0,
+            });
+
+          planoId = obterIdRetornado(planoCriado);
+
+          if (!planoId) {
+            planoId =
+              await planoFinanceiroImportService.buscarPlanoPorNome({
+                empresaId: empresaSelecionadaId,
+                nome: linha.planoConta,
+              });
+          }
+
+          if (!planoId) {
+            throw new Error(
+              `O plano "${linha.planoConta}" foi criado, mas não foi possível localizar o ID no banco.`
+            );
+          }
+
+          planosConhecidos.set(chavePlano, planoId);
+        }
+
+        const chaveCentro = `${planoId}::${normalizarNomeFinanceiro(
+          linha.centroCusto
+        )}`;
+
+        let centroId =
+          centrosConhecidos.get(chaveCentro);
+
+        if (!centroId) {
+          const centroCriado =
+            await cadastrarCentroCusto({
+              nome: linha.centroCusto,
+              descricao:
+                'Criado automaticamente pela importação em Excel.',
+              planoFinanceiroId: planoId,
+              orcamentoMensal: 0,
+              limiteMensal: 0,
+              tetoMensal: 0,
+              tetoAnual: 0,
+              utilizado: 0,
+              comprometido: 0,
+            });
+
+          centroId = obterIdRetornado(centroCriado);
+
+          if (!centroId) {
+            centroId =
+              await planoFinanceiroImportService.buscarCentroPorNome({
+                empresaId: empresaSelecionadaId,
+                planoFinanceiroId: planoId,
+                nome: linha.centroCusto,
+              });
+          }
+
+          if (!centroId) {
+            throw new Error(
+              `O centro "${linha.centroCusto}" foi criado, mas não foi possível localizar o ID no banco.`
+            );
+          }
+
+          centrosConhecidos.set(chaveCentro, centroId);
+        }
+
+        await planoFinanceiroImportService.salvarOrcamentoImportado({
+          organizacaoId: organizacaoAtivaId,
+          empresaId: empresaSelecionadaId,
+          planoFinanceiroId: planoId,
+          centroCustoId: centroId,
+          ano,
+          mes,
+          valorOrcado: linha.orcamentoMensal,
+          observacao: `Importado do arquivo ${arquivoImportacaoNome}`,
+        });
+
+        importados += 1;
+      }
+
+      await carregarOrcamentos();
+      fecharImportacao();
+      mostrarSucessoTemporario();
+
+      alert(
+        `${importados} orçamento(s) importado(s) para ${labelCompetencia}.`
+      );
+    } catch (error: any) {
+      console.error(
+        'Erro ao importar planos financeiros:',
+        error
+      );
+      alert(
+        error?.message ||
+          'Não foi possível concluir a importação.'
+      );
+    } finally {
+      setImportandoPlanos(false);
+    }
+  };
+
+  const totalImportacaoValido = previewImportacao.filter(
+    item => item.status === 'valido'
+  ).length;
+
+  const totalImportacaoAtencao =
+    previewImportacao.length - totalImportacaoValido;
+
     return (
   <div className="space-y-8">
+  <input
+    ref={inputImportacaoRef}
+    type="file"
+    accept=".xlsx,.xls"
+    className="hidden"
+    onChange={e =>
+      handleSelecionarPlanilha(e.target.files?.[0])
+    }
+  />
+
   <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
   <div className="min-w-0">
     <h1 className="text-2xl font-bold tracking-tight text-[#0F172A]">
@@ -741,6 +997,25 @@ export const FinancialCenterView: React.FC = () => {
     })}
   </select>
 </div>
+
+
+    <a
+      href="/modelos/modelo_importacao_plano_financeiro.xlsx"
+      download
+      className="inline-flex h-[42px] items-center justify-center gap-2 rounded-[12px] border border-slate-100 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+    >
+      <Download className="h-4 w-4" />
+      Baixar Modelo
+    </a>
+
+    <button
+      type="button"
+      onClick={() => inputImportacaoRef.current?.click()}
+      className="inline-flex h-[42px] items-center justify-center gap-2 rounded-[12px] border border-blue-100 bg-blue-50 px-4 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100"
+    >
+      <Upload className="h-4 w-4" />
+      Importar Excel
+    </button>
 
     <button
       type="button"
@@ -1243,6 +1518,163 @@ export const FinancialCenterView: React.FC = () => {
           })
         )}
       </div>
+
+
+      {modalImportacaoOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+                  <FileSpreadsheet className="h-5 w-5 text-blue-600" />
+                </div>
+
+                <div>
+                  <h2 className="text-base font-bold text-[#0F172A]">
+                    Prévia da importação
+                  </h2>
+
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    {arquivoImportacaoNome} • Competência {labelCompetencia}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={fecharImportacao}
+                disabled={importandoPlanos}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-100 bg-white text-slate-400 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-slate-50 p-4 sm:grid-cols-3">
+              <div className="rounded-[14px] border border-slate-100 bg-white p-4">
+                <p className="text-[9px] font-bold uppercase text-slate-400">
+                  Total de linhas
+                </p>
+                <p className="mt-1 text-xl font-black text-slate-900">
+                  {previewImportacao.length}
+                </p>
+              </div>
+
+              <div className="rounded-[14px] border border-emerald-100 bg-emerald-50 p-4">
+                <p className="text-[9px] font-bold uppercase text-emerald-600">
+                  Registros válidos
+                </p>
+                <p className="mt-1 text-xl font-black text-emerald-700">
+                  {totalImportacaoValido}
+                </p>
+              </div>
+
+              <div className="rounded-[14px] border border-amber-100 bg-amber-50 p-4">
+                <p className="text-[9px] font-bold uppercase text-amber-600">
+                  Precisam de atenção
+                </p>
+                <p className="mt-1 text-xl font-black text-amber-700">
+                  {totalImportacaoAtencao}
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-auto">
+              <table className="w-full min-w-[900px]">
+                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-[#F8FAFC]">
+                  <tr className="text-left text-[9px] uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3">Linha</th>
+                    <th className="px-4 py-3">Plano de contas</th>
+                    <th className="px-4 py-3">Centro de custo</th>
+                    <th className="px-4 py-3 text-right">Orçamento mensal</th>
+                    <th className="px-4 py-3">Validação</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {previewImportacao.map(item => (
+                    <tr
+                      key={item.linha}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        {item.linha}
+                      </td>
+
+                      <td className="px-4 py-3 text-xs font-bold text-slate-800">
+                        {item.planoConta || '—'}
+                      </td>
+
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        {item.centroCusto || '—'}
+                      </td>
+
+                      <td className="px-4 py-3 text-right font-mono text-xs font-bold text-slate-900">
+                        {formatarReal(item.orcamentoMensal || 0)}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {item.status === 'valido' ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[9px] font-bold text-emerald-700">
+                            <CheckCircle className="h-3 w-3" />
+                            Válido
+                          </span>
+                        ) : (
+                          <span
+                            title={item.mensagem}
+                            className="inline-flex max-w-[280px] items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[9px] font-bold text-amber-700"
+                          >
+                            <AlertTriangle className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
+                              {item.mensagem}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-100 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[10px] text-slate-400">
+                Planos e centros inexistentes serão criados automaticamente.
+                Orçamentos existentes na competência serão atualizados pelo serviço.
+              </p>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={fecharImportacao}
+                  disabled={importandoPlanos}
+                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmarImportacao}
+                  disabled={
+                    importandoPlanos ||
+                    totalImportacaoValido === 0
+                  }
+                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#0F172A] px-5 text-xs font-bold text-white hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {importandoPlanos && (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  )}
+
+                  {importandoPlanos
+                    ? 'Importando...'
+                    : `Importar ${totalImportacaoValido} registro(s)`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalPlanoOpen && (
         <ModalLateral

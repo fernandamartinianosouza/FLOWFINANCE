@@ -106,6 +106,31 @@ interface FinanceContextType {
     pixObservacao?: string | null;
   }) => Promise<void>;
 
+  criarNovaConta: (dados: {
+    organizacaoId?: string;
+    empresaId: string;
+    fornecedorId: string;
+    planoFinanceiroId: string;
+    planoId?: string;
+    centroCustoId?: string | null;
+    descricao: string;
+    valor: number;
+    prazo: string;
+    vencimento?: string;
+    parcela?: string;
+    numeroParcela?: string;
+    status?: StatusProcesso;
+    tipoPagamento?: 'fornecedor' | 'interno';
+    statusProgramacao?: string;
+    formaPagamento?: string;
+    metodoPagamento?: string;
+    urgencia?: Urgencia;
+    origem?: string;
+    observacao?: string;
+    pixChave?: string | null;
+    pixFavorecido?: string | null;
+  }) => Promise<ProcessoCompra>;
+
   editarProcesso: (id: string, dados: Partial<ProcessoCompra>) => Promise<void>;
   excluirProcesso: (id: string) => Promise<boolean>;
 
@@ -135,7 +160,7 @@ interface FinanceContextType {
 
   cadastrarFornecedor: (
     fornecedor: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
-  ) => Promise<void>;
+  ) => Promise<Fornecedor>;
 
   editarFornecedor: (
     id: string,
@@ -146,7 +171,7 @@ interface FinanceContextType {
 
   cadastrarPlanoFinanceiro: (
     plano: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
-  ) => Promise<void>;
+  ) => Promise<PlanoFinanceiro>;
 
   editarPlanoFinanceiro: (
     id: string,
@@ -556,6 +581,106 @@ const anexarDocumentoProcesso = async (params: {
       console.error('Erro ao criar solicitação:', error);
       alert(error.message || 'Erro ao criar solicitação.');
     }
+  };
+
+
+  const criarNovaConta = async (dados: {
+    organizacaoId?: string;
+    empresaId: string;
+    fornecedorId: string;
+    planoFinanceiroId: string;
+    planoId?: string;
+    centroCustoId?: string | null;
+    descricao: string;
+    valor: number;
+    prazo: string;
+    vencimento?: string;
+    parcela?: string;
+    numeroParcela?: string;
+    status?: StatusProcesso;
+    tipoPagamento?: 'fornecedor' | 'interno';
+    statusProgramacao?: string;
+    formaPagamento?: string;
+    metodoPagamento?: string;
+    urgencia?: Urgencia;
+    origem?: string;
+    observacao?: string;
+    pixChave?: string | null;
+    pixFavorecido?: string | null;
+  }): Promise<ProcessoCompra> => {
+    if (!organizacaoAtivaIdState) {
+      throw new Error('Nenhuma organização ativa selecionada.');
+    }
+
+    const valor = Number(dados.valor);
+
+    if (!Number.isFinite(valor) || valor <= 0) {
+      throw new Error('Informe um valor válido para a conta.');
+    }
+
+    const novoCodigo = `CP-${new Date().getFullYear()}-${String(
+      Date.now()
+    ).slice(-8)}`;
+
+    const agora = new Date()
+      .toISOString()
+      .replace('T', ' ')
+      .substring(0, 16);
+
+    const novaConta: ProcessoCompra = {
+      id: novoCodigo,
+      organizacaoId:
+        dados.organizacaoId || organizacaoAtivaIdState,
+      tipoPagamento: dados.tipoPagamento || 'fornecedor',
+      fornecedorId: dados.fornecedorId,
+      beneficiarioInterno: null,
+      empresaId: dados.empresaId,
+      planoFinanceiroId:
+        dados.planoFinanceiroId || dados.planoId || '',
+      centroCustoId: dados.centroCustoId || '',
+      descricao: dados.descricao,
+      valor,
+      urgencia: dados.urgencia || 'media',
+      responsavel: usuarioLogado,
+      dataCriacao: new Date().toISOString().split('T')[0],
+      status: dados.status || 'pagamento',
+      prazo: dados.prazo || dados.vencimento || '',
+      formaPagamento: dados.formaPagamento || 'boleto',
+      metodoPagamento: dados.metodoPagamento || 'boleto',
+      pixChave: dados.pixChave
+        ? dados.pixChave.trim().toLowerCase()
+        : null,
+      pixFavorecido:
+        dados.pixFavorecido || null,
+      statusProgramacao:
+        dados.statusProgramacao || 'nao_programado',
+      valorPago: 0,
+      saldoPagar: valor,
+      pagamentoParcial: false,
+      parcela:
+        dados.parcela || dados.numeroParcela || '1/1',
+      numeroParcela:
+        dados.numeroParcela || dados.parcela || '1/1',
+      historico: [
+        {
+          data: agora,
+          usuario: usuarioLogado,
+          deStatus: 'criacao',
+          paraStatus: dados.status || 'pagamento',
+          observacao:
+            dados.observacao ||
+            'Conta criada diretamente no Contas a Pagar.',
+        },
+      ],
+    } as any;
+
+    const criada = await financeService.criarProcesso(
+      novaConta
+    );
+
+    setProcessos(prev => [criada, ...prev]);
+
+    return criada;
   };
 
   const editarProcesso = async (id: string, dados: Partial<ProcessoCompra>) => {
@@ -1034,13 +1159,19 @@ const anexarDocumentoProcesso = async (params: {
 
   const cadastrarFornecedor = async (
     dados: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
-  ) => {
+  ): Promise<Fornecedor> => {
     try {
-      const novo = await financeService.criarFornecedor({ ...dados, organizacaoId: organizacaoAtivaIdState });
+      const novo = await financeService.criarFornecedor({
+        ...dados,
+        organizacaoId: organizacaoAtivaIdState,
+      });
+
       setFornecedores(prev => [...prev, novo]);
+      return novo;
     } catch (error: any) {
       console.error('Erro ao cadastrar fornecedor:', error);
       alert(error.message || 'Erro ao cadastrar fornecedor.');
+      throw error;
     }
   };
 
@@ -1076,13 +1207,19 @@ const anexarDocumentoProcesso = async (params: {
 
   const cadastrarPlanoFinanceiro = async (
     dados: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
-  ) => {
+  ): Promise<PlanoFinanceiro> => {
     try {
-      const novo = await financeService.criarPlanoFinanceiro({ ...dados, organizacaoId: organizacaoAtivaIdState });
+      const novo = await financeService.criarPlanoFinanceiro({
+        ...dados,
+        organizacaoId: organizacaoAtivaIdState,
+      });
+
       setPlanosFinanceiros(prev => [...prev, novo]);
+      return novo;
     } catch (error: any) {
       console.error('Erro ao cadastrar plano:', error);
       alert(error.message || 'Erro ao cadastrar plano.');
+      throw error;
     }
   };
 
@@ -1278,6 +1415,7 @@ const anexarDocumentoProcesso = async (params: {
         anexarDocumentoProcesso,
 
         criarSolicitacao,
+        criarNovaConta,
         editarProcesso,
         excluirProcesso,
 

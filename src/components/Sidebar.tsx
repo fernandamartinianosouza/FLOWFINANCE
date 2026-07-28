@@ -158,6 +158,17 @@ export const Sidebar: React.FC = () => {
     },
 
     {
+  title: 'Recursos Humanos',
+  items: [
+    {
+      id: 'rh-financeiro',
+      label: 'RH Financeiro',
+      icon: Users,
+    },
+  ],
+},
+
+    {
       title: 'Cadastros',
       items: [
         {

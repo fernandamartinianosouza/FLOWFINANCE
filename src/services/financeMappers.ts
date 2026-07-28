@@ -50,39 +50,46 @@ export const mapEmpresaToDb = (
   saldo_atual: numero(item.saldoAtual),
 });
 
-export const mapFornecedorFromDb = (
-  item: any
-): Fornecedor => ({
+export const mapFornecedorFromDb = (item: any): Fornecedor => ({
   id: item.id,
   organizacaoId: item.organizacao_id,
-  nome: textoOuVazio(item.nome),
+  empresaId: item.empresa_id || undefined,
+  nome: textoOuVazio(item.nome || item.razao_social),
+  razaoSocial: textoOuVazio(item.razao_social || item.nome),
+  nomeFantasia: textoOuVazio(item.nome_fantasia),
   cnpj: textoOuVazio(item.cnpj),
+  endereco: textoOuVazio(item.endereco),
+  bairro: textoOuVazio(item.bairro),
+  cidade: textoOuVazio(item.cidade),
   email: textoOuVazio(item.email),
   telefone: textoOuVazio(item.telefone),
-  historicoCompras: numero(
-    item.historico_compras
-  ),
-  ultimaCompra:
-    item.ultima_compra || '-',
-  tempoMedioPagamento: numero(
-    item.tempo_medio_pagamento ?? 30
-  ),
+  vendedorPadrao: textoOuVazio(item.vendedor_padrao),
+  chavePix: textoOuVazio(item.chave_pix),
+  prazo: textoOuVazio(item.prazo),
+  entrega: textoOuVazio(item.entrega),
+  frete: textoOuVazio(item.frete),
+  historicoCompras: numero(item.historico_compras),
+  ultimaCompra: item.ultima_compra || '-',
+  tempoMedioPagamento: numero(item.tempo_medio_pagamento ?? 30),
 });
 
-export const mapFornecedorToDb = (
-  item: Omit<
-    Fornecedor,
-    | 'id'
-    | 'historicoCompras'
-    | 'ultimaCompra'
-    | 'tempoMedioPagamento'
-  >
-) => ({
+export const mapFornecedorToDb = (item: any) => ({
   organizacao_id: item.organizacaoId,
-  nome: textoOuVazio(item.nome),
-  cnpj: textoOuNull(item.cnpj),
+  empresa_id: item.empresaId || null,
+  nome: textoOuVazio(item.nome || item.razaoSocial),
+  razao_social: textoOuNull(item.razaoSocial || item.nome),
+  nome_fantasia: textoOuNull(item.nomeFantasia),
+  cnpj: textoOuNull(String(item.cnpj || '').replace(/\D/g, '')),
+  endereco: textoOuNull(item.endereco),
+  bairro: textoOuNull(item.bairro),
+  cidade: textoOuNull(item.cidade),
   email: textoOuNull(item.email),
   telefone: textoOuNull(item.telefone),
+  vendedor_padrao: textoOuNull(item.vendedorPadrao),
+  chave_pix: textoOuNull(item.chavePix),
+  prazo: textoOuNull(item.prazo),
+  entrega: textoOuNull(item.entrega),
+  frete: textoOuNull(item.frete),
 });
 
 export const mapPlanoFromDb = (

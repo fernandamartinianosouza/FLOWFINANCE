@@ -85,17 +85,31 @@ export interface Empresa {
   saldoAtual: number;
 }
 
+Substitua a interface Fornecedor em src/types/index.ts por:
+
 export interface Fornecedor {
   id: string;
   organizacaoId: string;
+  empresaId?: string;
   nome: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
   cnpj: string;
-  email: string;
+  endereco?: string;
+  bairro?: string;
+  cidade?: string;
   telefone: string;
+  email: string;
+  vendedorPadrao?: string;
+  chavePix?: string;
+  prazo?: string;
+  entrega?: string;
+  frete?: string;
   historicoCompras: number;
   ultimaCompra: string;
   tempoMedioPagamento: number;
 }
+
 
 export interface CentroCusto {
   id: string;

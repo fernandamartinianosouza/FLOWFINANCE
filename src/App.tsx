@@ -35,6 +35,7 @@ import { NewAccountView } from './components/NewAccountView';
 import { useAuth } from './context/AuthContext';
 import { podeAcessar } from './config/permissions';
 import { WeeklyPurchasingPlanView } from "./components/WeeklyPurchasingPlanView";
+import { RHFinanceiroView } from './components/RHFinanceiroView';
 
 const verificarDefinicaoSenhaNaUrl = () => {
   const params = new URLSearchParams(
@@ -200,6 +201,7 @@ const AppContent: React.FC = () => {
         return (
           <FinancialCenterView />
         );
+        
 
       case 'calendario':
         return <CalendarView />;
@@ -209,6 +211,9 @@ const AppContent: React.FC = () => {
 
       case 'empresas':
         return <CompaniesView />;
+
+        case 'rh-financeiro':
+  return <RHFinanceiroView />;
 
       case 'fornecedores':
         return <SuppliersView />;
