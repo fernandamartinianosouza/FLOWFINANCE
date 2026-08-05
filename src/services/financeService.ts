@@ -1,14 +1,5 @@
 import { supabase } from "../lib/supabase";
-import {
-  AtualizarItemCatalogoInput,
-  AtualizarSegmentoItemInput,
-  ItemCatalogo,
-  NovaContaInput,
-  NovoItemCatalogoInput,
-  NovoSegmentoItemInput,
-  ProcessoCompra,
-  SegmentoItem,
-} from "../types";
+import { NovaContaInput, ProcessoCompra } from "../types";
 import {
   mapEmpresaFromDb,
   mapEmpresaToDb,
@@ -69,21 +60,36 @@ const limparNomeArquivo = (nome: string) => {
     .replace(/[^a-zA-Z0-9.\-_]/g, "_");
 };
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const obterProcessoDbId = async (processoIdOuCodigo: string) => {
-  const { data, error } = await supabase
+  const identificador = String(processoIdOuCodigo || "").trim();
+
+  if (!identificador) {
+    throw new Error("Identificador do processo não informado.");
+  }
+
+  let query = supabase
     .from("processos_compra")
     .select("id")
-    .or(`id.eq.${processoIdOuCodigo},codigo.eq.${processoIdOuCodigo}`)
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+
+  query = UUID_REGEX.test(identificador)
+    ? query.eq("id", identificador)
+    : query.eq("codigo", identificador);
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw error;
 
   if (!data?.id) {
-    throw new Error("Processo não encontrado.");
+    throw new Error(
+      `Processo não encontrado para o identificador ${identificador}.`
+    );
   }
 
-  return data.id;
+  return String(data.id);
 };
 
 export const financeService = {
@@ -420,452 +426,6 @@ export const financeService = {
 
     const { error } = await supabase
       .from("fornecedores")
-      .delete()
-      .eq("id", id)
-      .eq("organizacao_id", orgId);
-
-    if (error) throw error;
-  },
-
-  async getSegmentosItens(
-    organizacaoId?: string,
-  ): Promise<SegmentoItem[]> {
-    const orgId = await resolverOrganizacaoId(organizacaoId);
-
-    const { data, error } = await supabase
-      .from("segmentos_itens")
-      .select("*")
-      .eq("organizacao_id", orgId)
-      .order("nome", {
-        ascending: true,
-      });
-
-    if (error) throw error;
-
-    return (data || []).map((item: any) => ({
-      id: item.id,
-      organizacaoId: item.organizacao_id,
-      nome: item.nome,
-      descricao: item.descricao,
-      ativo: item.ativo,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
-    }));
-  },
-
-  async criarSegmentoItem(
-    item: NovoSegmentoItemInput,
-    organizacaoId?: string,
-  ): Promise<SegmentoItem> {
-    const orgId = await resolverOrganizacaoId(organizacaoId);
-    const nome = item.nome?.trim();
-
-    if (!nome) {
-      throw new Error("Informe o nome do segmento.");
-    }
-
-    const { data, error } = await supabase
-      .from("segmentos_itens")
-      .insert({
-        organizacao_id: orgId,
-        nome,
-        descricao: item.descricao?.trim() || null,
-        ativo: item.ativo ?? true,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        throw new Error("Já existe um segmento com esse nome.");
-      }
-
-      throw error;
-    }
-
-    return {
-      id: data.id,
-      organizacaoId: data.organizacao_id,
-      nome: data.nome,
-      descricao: data.descricao,
-      ativo: data.ativo,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    };
-  },
-
-  async editarSegmentoItem(
-    id: string,
-    item: AtualizarSegmentoItemInput,
-    organizacaoId?: string,
-  ): Promise<SegmentoItem> {
-    const orgId = await resolverOrganizacaoId(organizacaoId);
-
-    const payload: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
-
-    if (item.nome !== undefined) {
-      const nome = item.nome.trim();
-
-      if (!nome) {
-        throw new Error("Informe o nome do segmento.");
-      }
-
-      payload.nome = nome;
-    }
-
-    if (item.descricao !== undefined) {
-      payload.descricao = item.descricao?.trim() || null;
-    }
-
-    if (item.ativo !== undefined) {
-      payload.ativo = item.ativo;
-    }
-
-    const { data, error } = await supabase
-      .from("segmentos_itens")
-      .update(payload)
-      .eq("id", id)
-      .eq("organizacao_id", orgId)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        throw new Error("Já existe um segmento com esse nome.");
-      }
-
-      throw error;
-    }
-
-    return {
-      id: data.id,
-      organizacaoId: data.organizacao_id,
-      nome: data.nome,
-      descricao: data.descricao,
-      ativo: data.ativo,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    };
-  },
-
-  async excluirSegmentoItem(
-    id: string,
-    organizacaoId?: string,
-  ): Promise<void> {
-    const orgId = await resolverOrganizacaoId(organizacaoId);
-
-    const { count, error: itensError } = await supabase
-      .from("itens_catalogo")
-      .select("id", {
-        count: "exact",
-        head: true,
-      })
-      .eq("segmento_id", id)
-      .eq("organizacao_id", orgId);
-
-    if (itensError) throw itensError;
-
-    if ((count || 0) > 0) {
-      throw new Error(
-        "Este segmento possui itens cadastrados e não pode ser excluído.",
-      );
-    }
-
-    const { error } = await supabase
-      .from("segmentos_itens")
-      .delete()
-      .eq("id", id)
-      .eq("organizacao_id", orgId);
-
-    if (error) throw error;
-  },
-
-  async getItensCatalogo(
-    organizacaoId?: string,
-  ): Promise<ItemCatalogo[]> {
-    const orgId = await resolverOrganizacaoId(organizacaoId);
-
-    const { data, error } = await supabase
-      .from("itens_catalogo")
-      .select(
-        `
-          *,
-          segmentos_itens (
-            id,
-            organizacao_id,
-            nome,
-            descricao,
-            ativo,
-            created_at,
-            updated_at
-          )
-        `,
-      )
-      .eq("organizacao_id", orgId)
-      .order("nome", {
-        ascending: true,
-      });
-
-    if (error) throw error;
-
-    return (data || []).map((item: any) => ({
-      id: item.id,
-      organizacaoId: item.organizacao_id,
-      segmentoId: item.segmento_id,
-      nome: item.nome,
-      descricao: item.descricao,
-      unidadeMedida: item.unidade_medida,
-      codigoInterno: item.codigo_interno,
-      marcaReferencia: item.marca_referencia,
-      especificacao: item.especificacao,
-      ativo: item.ativo,
-      segmento: item.segmentos_itens
-        ? {
-            id: item.segmentos_itens.id,
-            organizacaoId: item.segmentos_itens.organizacao_id,
-            nome: item.segmentos_itens.nome,
-            descricao: item.segmentos_itens.descricao,
-            ativo: item.segmentos_itens.ativo,
-            createdAt: item.segmentos_itens.created_at,
-            updatedAt: item.segmentos_itens.updated_at,
-          }
-        : undefined,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
-    }));
-  },
-
-  async criarItemCatalogo(
-    item: NovoItemCatalogoInput,
-    organizacaoId?: string,
-  ): Promise<ItemCatalogo> {
-    const orgId = await resolverOrganizacaoId(organizacaoId);
-
-    const nome = item.nome?.trim();
-    const unidadeMedida = item.unidadeMedida?.trim().toUpperCase();
-
-    if (!item.segmentoId) {
-      throw new Error("Selecione o segmento do item.");
-    }
-
-    if (!nome) {
-      throw new Error("Informe o nome do item.");
-    }
-
-    if (!unidadeMedida) {
-      throw new Error("Informe a unidade de medida.");
-    }
-
-    const { data, error } = await supabase
-      .from("itens_catalogo")
-      .insert({
-        organizacao_id: orgId,
-        segmento_id: item.segmentoId,
-        nome,
-        descricao: item.descricao?.trim() || null,
-        unidade_medida: unidadeMedida,
-        codigo_interno: item.codigoInterno?.trim() || null,
-        marca_referencia: item.marcaReferencia?.trim() || null,
-        especificacao: item.especificacao?.trim() || null,
-        ativo: item.ativo ?? true,
-      })
-      .select(
-        `
-          *,
-          segmentos_itens (
-            id,
-            organizacao_id,
-            nome,
-            descricao,
-            ativo,
-            created_at,
-            updated_at
-          )
-        `,
-      )
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        throw new Error(
-          "Já existe um item com esse nome no segmento selecionado.",
-        );
-      }
-
-      throw error;
-    }
-
-    return {
-      id: data.id,
-      organizacaoId: data.organizacao_id,
-      segmentoId: data.segmento_id,
-      nome: data.nome,
-      descricao: data.descricao,
-      unidadeMedida: data.unidade_medida,
-      codigoInterno: data.codigo_interno,
-      marcaReferencia: data.marca_referencia,
-      especificacao: data.especificacao,
-      ativo: data.ativo,
-      segmento: data.segmentos_itens
-        ? {
-            id: data.segmentos_itens.id,
-            organizacaoId: data.segmentos_itens.organizacao_id,
-            nome: data.segmentos_itens.nome,
-            descricao: data.segmentos_itens.descricao,
-            ativo: data.segmentos_itens.ativo,
-            createdAt: data.segmentos_itens.created_at,
-            updatedAt: data.segmentos_itens.updated_at,
-          }
-        : undefined,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    };
-  },
-
-  async editarItemCatalogo(
-    id: string,
-    item: AtualizarItemCatalogoInput,
-    organizacaoId?: string,
-  ): Promise<ItemCatalogo> {
-    const orgId = await resolverOrganizacaoId(organizacaoId);
-
-    const payload: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
-
-    if (item.segmentoId !== undefined) {
-      if (!item.segmentoId) {
-        throw new Error("Selecione o segmento do item.");
-      }
-
-      payload.segmento_id = item.segmentoId;
-    }
-
-    if (item.nome !== undefined) {
-      const nome = item.nome.trim();
-
-      if (!nome) {
-        throw new Error("Informe o nome do item.");
-      }
-
-      payload.nome = nome;
-    }
-
-    if (item.descricao !== undefined) {
-      payload.descricao = item.descricao?.trim() || null;
-    }
-
-    if (item.unidadeMedida !== undefined) {
-      const unidadeMedida = item.unidadeMedida.trim().toUpperCase();
-
-      if (!unidadeMedida) {
-        throw new Error("Informe a unidade de medida.");
-      }
-
-      payload.unidade_medida = unidadeMedida;
-    }
-
-    if (item.codigoInterno !== undefined) {
-      payload.codigo_interno = item.codigoInterno?.trim() || null;
-    }
-
-    if (item.marcaReferencia !== undefined) {
-      payload.marca_referencia = item.marcaReferencia?.trim() || null;
-    }
-
-    if (item.especificacao !== undefined) {
-      payload.especificacao = item.especificacao?.trim() || null;
-    }
-
-    if (item.ativo !== undefined) {
-      payload.ativo = item.ativo;
-    }
-
-    const { data, error } = await supabase
-      .from("itens_catalogo")
-      .update(payload)
-      .eq("id", id)
-      .eq("organizacao_id", orgId)
-      .select(
-        `
-          *,
-          segmentos_itens (
-            id,
-            organizacao_id,
-            nome,
-            descricao,
-            ativo,
-            created_at,
-            updated_at
-          )
-        `,
-      )
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        throw new Error(
-          "Já existe um item com esse nome no segmento selecionado.",
-        );
-      }
-
-      throw error;
-    }
-
-    return {
-      id: data.id,
-      organizacaoId: data.organizacao_id,
-      segmentoId: data.segmento_id,
-      nome: data.nome,
-      descricao: data.descricao,
-      unidadeMedida: data.unidade_medida,
-      codigoInterno: data.codigo_interno,
-      marcaReferencia: data.marca_referencia,
-      especificacao: data.especificacao,
-      ativo: data.ativo,
-      segmento: data.segmentos_itens
-        ? {
-            id: data.segmentos_itens.id,
-            organizacaoId: data.segmentos_itens.organizacao_id,
-            nome: data.segmentos_itens.nome,
-            descricao: data.segmentos_itens.descricao,
-            ativo: data.segmentos_itens.ativo,
-            createdAt: data.segmentos_itens.created_at,
-            updatedAt: data.segmentos_itens.updated_at,
-          }
-        : undefined,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    };
-  },
-
-  async excluirItemCatalogo(
-    id: string,
-    organizacaoId?: string,
-  ): Promise<void> {
-    const orgId = await resolverOrganizacaoId(organizacaoId);
-
-    const { count, error: fornecedoresError } = await supabase
-      .from("itens_fornecedores")
-      .select("id", {
-        count: "exact",
-        head: true,
-      })
-      .eq("item_id", id)
-      .eq("organizacao_id", orgId);
-
-    if (fornecedoresError) throw fornecedoresError;
-
-    if ((count || 0) > 0) {
-      throw new Error(
-        "Este item possui fornecedores vinculados e não pode ser excluído.",
-      );
-    }
-
-    const { error } = await supabase
-      .from("itens_catalogo")
       .delete()
       .eq("id", id)
       .eq("organizacao_id", orgId);
@@ -1389,12 +949,36 @@ export const financeService = {
     return data || [];
   },
 
-  async excluirPagamentoProcesso(pagamentoId: string) {
-    const { error } = await supabase
-      .from("pagamentos_processos")
-      .delete()
-      .eq("id", pagamentoId);
+  async estornarPagamentoProcesso(params: {
+    pagamentoId: string;
+    motivo: string;
+  }) {
+    const motivo = params.motivo.trim();
 
-    if (error) throw error;
+    if (!motivo) {
+      throw new Error("Informe o motivo do estorno.");
+    }
+
+    const { data, error } = await supabase.rpc(
+      "estornar_pagamento_processo",
+      {
+        p_pagamento_id: params.pagamentoId,
+        p_motivo: motivo,
+      }
+    );
+
+    if (error) {
+      throw new Error(
+        error.message || "Não foi possível desfazer o pagamento."
+      );
+    }
+
+    return data;
+  },
+
+  async excluirPagamentoProcesso(_pagamentoId: string) {
+    throw new Error(
+      "Pagamentos financeiros não podem ser excluídos. Use o estorno."
+    );
   },
 };

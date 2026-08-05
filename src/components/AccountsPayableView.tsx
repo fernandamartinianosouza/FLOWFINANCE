@@ -16,6 +16,10 @@ import {
   RotateCcw,
   Upload,
   FileSpreadsheet,
+  CheckSquare2,
+  Square,
+  ShieldAlert,
+  Loader2,
 } from 'lucide-react';
 
 import { gerarRelatorioContasPagar } from '../services/relatorioContasPagarService';
@@ -24,6 +28,16 @@ import {
   contasPagarImportService,
   normalizarNomeImportacao,
 } from '../services/contasPagarImportService';
+
+type MetodoPagamentoMassa =
+  | 'cadastrado'
+  | 'pix'
+  | 'ted'
+  | 'boleto'
+  | 'dinheiro'
+  | 'cartao';
+
+const ITENS_POR_PAGINA = 30;
 
 type FiltroSituacao =
   | 'todas'
@@ -59,6 +73,7 @@ export const AccountsPayableView: React.FC = () => {
     criarNovaConta,
     programarPagamento,
     registrarPagamento,
+    desfazerUltimoPagamento,
     setActiveProcessId,
     setActiveView,
     recarregarDados,
@@ -78,6 +93,8 @@ export const AccountsPayableView: React.FC = () => {
     useState('');
   const [dataFim, setDataFim] =
     useState('');
+  const [paginaAtual, setPaginaAtual] =
+    useState(1);
   const [pixCopiadoId, setPixCopiadoId] =
     useState<string | null>(null);
   const [processoPagando, setProcessoPagando] =
@@ -92,8 +109,29 @@ export const AccountsPayableView: React.FC = () => {
     useState('');
   const [salvandoPagamento, setSalvandoPagamento] =
     useState(false);
+  const [processoEstornando, setProcessoEstornando] =
+    useState<any | null>(null);
+  const [motivoEstorno, setMotivoEstorno] = useState('');
+  const [confirmacaoEstorno, setConfirmacaoEstorno] = useState('');
+  const [estornandoPagamento, setEstornandoPagamento] =
+    useState(false);
   const [atualizando, setAtualizando] =
     useState(false);
+
+  const [contasSelecionadas, setContasSelecionadas] =
+    useState<Set<string>>(new Set());
+  const [modalPagamentoMassaOpen, setModalPagamentoMassaOpen] =
+    useState(false);
+  const [metodoPagamentoMassa, setMetodoPagamentoMassa] =
+    useState<MetodoPagamentoMassa>('cadastrado');
+  const [observacaoPagamentoMassa, setObservacaoPagamentoMassa] =
+    useState('');
+  const [confirmacaoPagamentoMassa, setConfirmacaoPagamentoMassa] =
+    useState('');
+  const [pagandoEmMassa, setPagandoEmMassa] =
+    useState(false);
+  const [progressoPagamentoMassa, setProgressoPagamentoMassa] =
+    useState({ atual: 0, total: 0 });
 
   const inputImportacaoRef =
     useRef<HTMLInputElement>(null);
@@ -346,6 +384,287 @@ export const AccountsPayableView: React.FC = () => {
     contasAVencer,
   ]);
 
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(contasFiltradas.length / ITENS_POR_PAGINA)
+  );
+
+  const contasPaginadas = useMemo(() => {
+    const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
+
+    return contasFiltradas.slice(
+      inicio,
+      inicio + ITENS_POR_PAGINA
+    );
+  }, [contasFiltradas, paginaAtual]);
+
+  const primeiroItemPagina =
+    contasFiltradas.length === 0
+      ? 0
+      : (paginaAtual - 1) * ITENS_POR_PAGINA + 1;
+
+  const ultimoItemPagina = Math.min(
+    paginaAtual * ITENS_POR_PAGINA,
+    contasFiltradas.length
+  );
+
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [
+    busca,
+    situacao,
+    empresaFiltro,
+    formaFiltro,
+    dataInicio,
+    dataFim,
+  ]);
+
+  useEffect(() => {
+    if (paginaAtual > totalPaginas) {
+      setPaginaAtual(totalPaginas);
+    }
+  }, [paginaAtual, totalPaginas]);
+
+  const contasElegiveisPagamentoMassa = useMemo(
+    () =>
+      contasFiltradas.filter(
+        (processo: any) =>
+          !contaPaga(processo) &&
+          obterSaldoPagar(processo) > 0.001
+      ),
+    [contasFiltradas]
+  );
+
+  const contasSelecionadasDetalhes = useMemo(
+    () =>
+      contasElegiveisPagamentoMassa.filter(
+        (processo: any) =>
+          contasSelecionadas.has(String(processo.id))
+      ),
+    [contasElegiveisPagamentoMassa, contasSelecionadas]
+  );
+
+  const totalSelecionadoPagamentoMassa = useMemo(
+    () =>
+      contasSelecionadasDetalhes.reduce(
+        (total: number, processo: any) =>
+          total + obterSaldoPagar(processo),
+        0
+      ),
+    [contasSelecionadasDetalhes]
+  );
+
+  const todasElegiveisSelecionadas =
+    contasElegiveisPagamentoMassa.length > 0 &&
+    contasElegiveisPagamentoMassa.every(
+      (processo: any) =>
+        contasSelecionadas.has(String(processo.id))
+    );
+
+  useEffect(() => {
+    const idsElegiveis = new Set(
+      contasElegiveisPagamentoMassa.map(
+        (processo: any) => String(processo.id)
+      )
+    );
+
+    setContasSelecionadas(anteriores => {
+      const proximas = new Set(
+        [...anteriores].filter(id => idsElegiveis.has(id))
+      );
+
+      if (
+        proximas.size === anteriores.size &&
+        [...proximas].every(id => anteriores.has(id))
+      ) {
+        return anteriores;
+      }
+
+      return proximas;
+    });
+  }, [contasElegiveisPagamentoMassa]);
+
+  const alternarContaSelecionada = (processoId: string) => {
+    setContasSelecionadas(anteriores => {
+      const proximas = new Set(anteriores);
+
+      if (proximas.has(processoId)) {
+        proximas.delete(processoId);
+      } else {
+        proximas.add(processoId);
+      }
+
+      return proximas;
+    });
+  };
+
+  const alternarTodasContas = () => {
+    if (todasElegiveisSelecionadas) {
+      setContasSelecionadas(new Set());
+      return;
+    }
+
+    setContasSelecionadas(
+      new Set(
+        contasElegiveisPagamentoMassa.map(
+          (processo: any) => String(processo.id)
+        )
+      )
+    );
+  };
+
+  const abrirPagamentoMassa = () => {
+    if (contasSelecionadasDetalhes.length === 0) {
+      alert('Selecione pelo menos uma conta em aberto.');
+      return;
+    }
+
+    setMetodoPagamentoMassa('cadastrado');
+    setObservacaoPagamentoMassa('');
+    setConfirmacaoPagamentoMassa('');
+    setProgressoPagamentoMassa({
+      atual: 0,
+      total: contasSelecionadasDetalhes.length,
+    });
+    setModalPagamentoMassaOpen(true);
+  };
+
+  const fecharPagamentoMassa = () => {
+    if (pagandoEmMassa) return;
+
+    setModalPagamentoMassaOpen(false);
+    setConfirmacaoPagamentoMassa('');
+    setObservacaoPagamentoMassa('');
+  };
+
+  const normalizarMetodoPagamentoMassa = (processo: any) => {
+    const metodo = String(
+      processo.metodoPagamento ||
+        processo.formaPagamento ||
+        'pix'
+    ).toLowerCase();
+
+    if (
+      ['pix', 'ted', 'boleto', 'dinheiro', 'cartao'].includes(
+        metodo
+      )
+    ) {
+      return metodo as Exclude<
+        MetodoPagamentoMassa,
+        'cadastrado'
+      >;
+    }
+
+    return 'pix';
+  };
+
+  const confirmarPagamentoMassa = async () => {
+    if (pagandoEmMassa) return;
+
+    if (confirmacaoPagamentoMassa.trim().toUpperCase() !== 'PAGAR') {
+      alert('Digite PAGAR para confirmar a operação.');
+      return;
+    }
+
+    const contas = [...contasSelecionadasDetalhes];
+
+    if (contas.length === 0) {
+      alert('Nenhuma conta elegível permanece selecionada.');
+      fecharPagamentoMassa();
+      return;
+    }
+
+    const confirmacaoFinal = window.confirm(
+      `CONFIRMAÇÃO FINAL\n\nVocê está prestes a registrar o pagamento integral de ${contas.length} conta(s), totalizando ${formatarReal(
+        totalSelecionadoPagamentoMassa
+      )}.\n\nEssa ação será registrada na auditoria e pode gerar pagamentos parcialmente concluídos se houver falha de conexão durante o processamento. Deseja continuar?`
+    );
+
+    if (!confirmacaoFinal) return;
+
+    const sucessos: string[] = [];
+    const falhas: Array<{ id: string; erro: string }> = [];
+
+    try {
+      setPagandoEmMassa(true);
+      setProgressoPagamentoMassa({ atual: 0, total: contas.length });
+
+      for (let indice = 0; indice < contas.length; indice += 1) {
+        const processo = contas[indice];
+        const processoId = String(processo.id);
+        const saldo = obterSaldoPagar(processo);
+        const metodo =
+          metodoPagamentoMassa === 'cadastrado'
+            ? normalizarMetodoPagamentoMassa(processo)
+            : metodoPagamentoMassa;
+
+        setProgressoPagamentoMassa({
+          atual: indice + 1,
+          total: contas.length,
+        });
+
+        try {
+          await registrarPagamento(
+            processoId,
+            metodo,
+            saldo,
+            undefined,
+            [
+              'Pagamento integral registrado em massa.',
+              observacaoPagamentoMassa.trim(),
+            ]
+              .filter(Boolean)
+              .join(' ')
+          );
+
+          sucessos.push(processoId);
+        } catch (error: any) {
+          falhas.push({
+            id: processoId,
+            erro:
+              error?.message ||
+              'Não foi possível registrar o pagamento.',
+          });
+        }
+      }
+
+      await recarregarDados?.();
+
+      setContasSelecionadas(anteriores => {
+        const proximas = new Set(anteriores);
+        sucessos.forEach(id => proximas.delete(id));
+        return proximas;
+      });
+
+      if (falhas.length === 0) {
+        alert(
+          `${sucessos.length} pagamento(s) registrado(s) com sucesso, no total de ${formatarReal(
+            totalSelecionadoPagamentoMassa
+          )}.`
+        );
+        setModalPagamentoMassaOpen(false);
+        setConfirmacaoPagamentoMassa('');
+        setObservacaoPagamentoMassa('');
+        return;
+      }
+
+      const resumoFalhas = falhas
+        .slice(0, 5)
+        .map(item => `${item.id}: ${item.erro}`)
+        .join('\n');
+
+      alert(
+        `${sucessos.length} pagamento(s) concluído(s).\n${falhas.length} pagamento(s) falharam.\n\n${resumoFalhas}${
+          falhas.length > 5
+            ? `\n... e mais ${falhas.length - 5} falha(s).`
+            : ''
+        }`
+      );
+    } finally {
+      setPagandoEmMassa(false);
+    }
+  };
+
   const gerarRelatorioPDF = () => {
     try {
       const empresaSelecionada = empresas.find(
@@ -550,6 +869,77 @@ export const AccountsPayableView: React.FC = () => {
     setComprovante('');
     setObservacaoPagamento('');
     setValorPagamento('');
+  };
+
+  const abrirModalEstorno = (processo: any) => {
+    if (obterValorPago(processo) <= 0.001) {
+      alert('Esta conta não possui pagamento ativo para desfazer.');
+      return;
+    }
+
+    setProcessoEstornando(processo);
+    setMotivoEstorno('');
+    setConfirmacaoEstorno('');
+  };
+
+  const fecharModalEstorno = () => {
+    if (estornandoPagamento) return;
+
+    setProcessoEstornando(null);
+    setMotivoEstorno('');
+    setConfirmacaoEstorno('');
+  };
+
+  const confirmarEstorno = async () => {
+    if (!processoEstornando || estornandoPagamento) return;
+
+    if (!motivoEstorno.trim()) {
+      alert('Informe o motivo do estorno.');
+      return;
+    }
+
+    if (confirmacaoEstorno.trim().toUpperCase() !== 'DESFAZER') {
+      alert('Digite DESFAZER para confirmar.');
+      return;
+    }
+
+    const confirmado = window.confirm(
+      `Confirma o estorno do último pagamento da conta ${processoEstornando.id}?\n\nA operação ficará registrada na auditoria.`
+    );
+
+    if (!confirmado) return;
+
+    try {
+      setEstornandoPagamento(true);
+      const identificadorProcesso = String(
+        processoEstornando.dbId ??
+          processoEstornando.processoDbId ??
+          processoEstornando.processo_id ??
+          processoEstornando.id
+      ).trim();
+
+      if (!identificadorProcesso) {
+        throw new Error(
+          'Não foi possível identificar o processo para desfazer o pagamento.'
+        );
+      }
+
+      await desfazerUltimoPagamento(
+        identificadorProcesso,
+        motivoEstorno.trim()
+      );
+
+      alert('Pagamento desfeito com sucesso.');
+      setProcessoEstornando(null);
+      setMotivoEstorno('');
+      setConfirmacaoEstorno('');
+    } catch (error: any) {
+      alert(
+        error?.message || 'Não foi possível desfazer o pagamento.'
+      );
+    } finally {
+      setEstornandoPagamento(false);
+    }
   };
 
   const abrirProcesso = (id: string) => {
@@ -953,7 +1343,7 @@ export const AccountsPayableView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex w-full gap-2 md:w-auto">
+        <div className="flex w-full flex-wrap gap-2 md:w-auto md:justify-end">
           <a
             href="/modelos/modelo_importacao_contas_pagar.xlsx"
             download
@@ -992,6 +1382,22 @@ export const AccountsPayableView: React.FC = () => {
               }`}
             />
             Atualizar
+          </button>
+
+          <button
+            type="button"
+            onClick={abrirPagamentoMassa}
+            disabled={contasSelecionadasDetalhes.length === 0}
+            className="flex flex-1 items-center justify-center gap-2 rounded-[12px] bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 md:flex-none"
+            title="Registrar pagamento integral das contas selecionadas"
+          >
+            <CheckSquare2 className="h-4 w-4" />
+            Pagar selecionadas
+            {contasSelecionadasDetalhes.length > 0 && (
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
+                {contasSelecionadasDetalhes.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -1164,6 +1570,42 @@ export const AccountsPayableView: React.FC = () => {
         </div>
       </div>
 
+      {contasElegiveisPagamentoMassa.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-[16px] border border-emerald-100 bg-emerald-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-bold text-emerald-800">
+              Pagamento em massa
+            </p>
+            <p className="mt-1 text-[10px] text-emerald-700">
+              {contasSelecionadasDetalhes.length} conta(s) selecionada(s) • {formatarReal(
+                totalSelecionadoPagamentoMassa
+              )}
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={alternarTodasContas}
+              className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+            >
+              {todasElegiveisSelecionadas
+                ? 'Limpar seleção'
+                : 'Selecionar contas filtradas'}
+            </button>
+
+            <button
+              type="button"
+              onClick={abrirPagamentoMassa}
+              disabled={contasSelecionadasDetalhes.length === 0}
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Revisar pagamento
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="hidden overflow-hidden rounded-[18px] border border-slate-100 bg-white shadow-sm lg:block">
         {contasFiltradas.length === 0 ? (
           <div className="p-12 text-center">
@@ -1172,303 +1614,299 @@ export const AccountsPayableView: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1450px] text-left">
-              <thead className="bg-slate-50">
-                <tr className="text-[10px] uppercase text-slate-400">
-                  <th className="px-4 py-3">
-                    Situação
-                  </th>
-                  <th className="px-4 py-3">
-                    Processo
-                  </th>
-                  <th className="px-4 py-3">
-                    Favorecido
-                  </th>
-                  <th className="px-4 py-3">
-                    Empresa
-                  </th>
-                  <th className="px-4 py-3">
-                    Descrição
-                  </th>
-                  <th className="px-4 py-3">
-                    PIX
-                  </th>
-                  <th className="px-4 py-3">
-                    Valor total
-                  </th>
-                  <th className="px-4 py-3">
-                    Pago
-                  </th>
-                  <th className="px-4 py-3">
-                    Saldo
-                  </th>
-                  <th className="px-4 py-3">
-                    Vencimento
-                  </th>
-                  <th className="px-4 py-3">
-                    Programação
-                  </th>
-                  <th className="px-4 py-3">
-                    Pagamento
-                  </th>
-                  <th className="px-4 py-3 text-right">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
+          <div className="w-full">
+            <div className="grid grid-cols-[52px_1.05fr_1.25fr_0.8fr_1fr_1.35fr] items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+              <button
+                type="button"
+                onClick={alternarTodasContas}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200"
+                title={
+                  todasElegiveisSelecionadas
+                    ? 'Limpar seleção'
+                    : 'Selecionar todas as contas filtradas'
+                }
+              >
+                {todasElegiveisSelecionadas ? (
+                  <CheckSquare2 className="h-4 w-4 text-emerald-600" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+              </button>
 
-              <tbody className="divide-y divide-slate-50">
-                {contasFiltradas.map(
-                  (processo: any) => {
-                    const fornecedor =
-                      fornecedores.find(
-                        (item: any) =>
-                          item.id ===
-                          processo.fornecedorId
-                      );
+              <span>Conta</span>
+              <span>Favorecido e descrição</span>
+              <span>Empresa e PIX</span>
+              <span>Valores e vencimento</span>
+              <span>Programação, pagamento e ações</span>
+            </div>
 
-                    const empresa =
-                      empresas.find(
-                        (item: any) =>
-                          item.id ===
-                          processo.empresaId
-                      );
+            <div className="divide-y divide-slate-100">
+              {contasPaginadas.map((processo: any) => {
+                const fornecedor = fornecedores.find(
+                  (item: any) =>
+                    item.id === processo.fornecedorId
+                );
 
-                    const pago =
-                      contaPaga(processo);
-                    const vencida =
-                      !pago &&
-                      dataBase(processo) &&
-                      dataBase(processo) < hoje;
+                const empresa = empresas.find(
+                  (item: any) =>
+                    item.id === processo.empresaId
+                );
 
-                    const favorecido =
-                      processo.tipoPagamento ===
-                      'interno'
-                        ? processo.beneficiarioInterno ||
-                          'Pagamento interno'
-                        : fornecedor?.nome || '-';
+                const pago = contaPaga(processo);
+                const vencida =
+                  !pago &&
+                  dataBase(processo) &&
+                  dataBase(processo) < hoje;
 
-                    return (
-                      <tr
-                        key={processo.id}
-                        className="hover:bg-slate-50/60"
-                      >
-                        <td className="px-4 py-4">
-                          <Situacao
-                            pago={pago}
-                            vencida={Boolean(vencida)}
-                            programada={
-                              processo.statusProgramacao ===
-                              'programado'
-                            }
-                          />
-                        </td>
+                const favorecido =
+                  processo.tipoPagamento === 'interno'
+                    ? processo.beneficiarioInterno ||
+                      'Pagamento interno'
+                    : fornecedor?.nome || '-';
 
-                        <td className="px-4 py-4 font-mono text-xs font-bold">
-                          {processo.id}
-                        </td>
-
-                        <td className="px-4 py-4">
-                          <p className="text-xs font-semibold text-slate-700">
-                            {favorecido}
-                          </p>
-
-                          <p className="mt-1 text-[9px] uppercase text-slate-400">
-                            {processo.tipoPagamento ===
-                            'interno'
-                              ? 'Interno'
-                              : 'Fornecedor'}
-                          </p>
-                        </td>
-
-                        <td className="px-4 py-4 text-xs text-slate-600">
-                          {empresa?.nome || '-'}
-                        </td>
-
-                        <td className="px-4 py-4">
-                          <p
-                            className="max-w-[220px] truncate text-xs text-slate-600"
-                            title={
-                              processo.descricao
-                            }
-                          >
-                            {processo.descricao ||
-                              '-'}
-                          </p>
-                        </td>
-
-                        <td className="px-4 py-4">
-                          {processo.pixChave ? (
-                            <div className="flex min-w-[180px] items-center gap-2">
-                              <p
-                                className="max-w-[130px] truncate font-mono text-[10px] text-slate-600"
-                                title={
-                                  processo.pixChave
-                                }
-                              >
-                                {
-                                  processo.pixChave
-                                }
-                              </p>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  copiarPix(
-                                    processo.id,
-                                    processo.pixChave
-                                  )
-                                }
-                                className={`flex h-8 w-8 items-center justify-center rounded-[9px] ${
-                                  pixCopiadoId ===
-                                  processo.id
-                                    ? 'bg-emerald-50 text-emerald-600'
-                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                }`}
-                                title="Copiar PIX"
-                              >
-                                {pixCopiadoId ===
-                                processo.id ? (
-                                  <Check className="h-4 w-4" />
-                                ) : (
-                                  <Copy className="h-4 w-4" />
-                                )}
-                              </button>
-                            </div>
+                return (
+                  <div
+                    key={processo.id}
+                    className={`grid grid-cols-[52px_1.05fr_1.25fr_0.8fr_1fr_1.35fr] items-start gap-3 px-4 py-4 transition hover:bg-slate-50/70 ${
+                      contasSelecionadas.has(String(processo.id))
+                        ? 'bg-emerald-50/50'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-2 pt-0.5">
+                      {!pago ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            alternarContaSelecionada(
+                              String(processo.id)
+                            )
+                          }
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-emerald-100"
+                          title="Selecionar para pagamento em massa"
+                        >
+                          {contasSelecionadas.has(
+                            String(processo.id)
+                          ) ? (
+                            <CheckSquare2 className="h-5 w-5 text-emerald-600" />
                           ) : (
-                            <span className="text-[10px] text-slate-400">
-                              Não informado
-                            </span>
+                            <Square className="h-5 w-5" />
                           )}
-                        </td>
+                        </button>
+                      ) : (
+                        <Check className="h-4 w-4 text-emerald-500" />
+                      )}
 
-                        <td className="px-4 py-4 font-mono text-xs font-bold">
-                          {formatarReal(
-                            processo.valor
-                          )}
-                        </td>
+                      <Situacao
+                        pago={pago}
+                        vencida={Boolean(vencida)}
+                        programada={
+                          processo.statusProgramacao ===
+                          'programado'
+                        }
+                      />
+                    </div>
 
-                        <td className="px-4 py-4 font-mono text-xs font-semibold text-emerald-600">
-                          {formatarReal(
-                            obterValorPago(processo)
-                          )}
-                        </td>
+                    <div className="min-w-0">
+                      <p className="break-all font-mono text-[10px] font-bold leading-relaxed text-slate-700">
+                        {processo.id}
+                      </p>
 
-                        <td className="px-4 py-4 font-mono text-xs font-bold text-amber-600">
-                          {formatarReal(
-                            obterSaldoPagar(processo)
-                          )}
-                        </td>
+                      <p className="mt-2 text-[9px] font-bold uppercase text-slate-400">
+                        {processo.tipoPagamento === 'interno'
+                          ? 'Pagamento interno'
+                          : 'Fornecedor'}
+                      </p>
+                    </div>
 
-                        <td className="px-4 py-4 font-mono text-xs text-slate-500">
-                          {processo.prazo || '-'}
-                        </td>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold leading-snug text-slate-800">
+                        {favorecido}
+                      </p>
 
-                        <td className="px-4 py-4">
-                          {pago ? (
-                            <span className="text-[10px] text-slate-400">
-                              Encerrada
-                            </span>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <input
-                                id={`data-programacao-${processo.id}`}
-                                type="date"
-                                defaultValue={
-                                  processo.dataProgramadaPagamento ||
-                                  ''
-                                }
-                                className="rounded-[9px] border-0 bg-slate-50 px-2 py-2 font-mono text-[10px]"
-                              />
+                      <p className="mt-1 break-words text-[10px] leading-relaxed text-slate-500">
+                        {processo.descricao || '-'}
+                      </p>
+                    </div>
 
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  programar(
-                                    processo.id
-                                  )
-                                }
-                                className="rounded-[9px] bg-slate-100 px-2.5 py-2 text-[9px] font-bold text-slate-700 hover:bg-slate-200"
-                              >
-                                Programar
-                              </button>
-                            </div>
-                          )}
-                        </td>
+                    <div className="min-w-0">
+                      <p className="break-words text-[10px] font-semibold leading-relaxed text-slate-600">
+                        {empresa?.nome || '-'}
+                      </p>
 
-                        <td className="px-4 py-4">
-                          {pago ? (
-                            <div>
-                              <p className="font-mono text-[10px] font-semibold text-emerald-600">
-                                {processo.dataPagamento ||
-                                  'Pago'}
-                              </p>
+                      <div className="mt-2">
+                        {processo.pixChave ? (
+                          <div className="flex items-start gap-1.5">
+                            <p className="min-w-0 flex-1 break-all font-mono text-[9px] leading-relaxed text-slate-500">
+                              {processo.pixChave}
+                            </p>
 
-                              <p className="mt-1 text-[9px] uppercase text-slate-400">
-                                {processo.metodoPagamento ||
-                                  processo.formaPagamento ||
-                                  '-'}
-                              </p>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">
-                              Aguardando
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end gap-2">
                             <button
                               type="button"
                               onClick={() =>
-                                abrirProcesso(
-                                  processo.id
+                                copiarPix(
+                                  processo.id,
+                                  processo.pixChave
                                 )
                               }
-                              className="rounded-[9px] border border-slate-100 bg-white px-3 py-2 text-[9px] font-bold text-slate-600 hover:bg-slate-50"
+                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                                pixCopiadoId === processo.id
+                                  ? 'bg-emerald-50 text-emerald-600'
+                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                              }`}
+                              title="Copiar PIX"
                             >
-                              Detalhes
+                              {pixCopiadoId === processo.id ? (
+                                <Check className="h-3.5 w-3.5" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
                             </button>
-
-                            {processo.anexoUrl && (
-                              <a
-                                href={
-                                  processo.anexoUrl
-                                }
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1 rounded-[9px] bg-slate-100 px-3 py-2 text-[9px] font-bold text-slate-600 hover:bg-slate-200"
-                              >
-                                <FileText className="h-3.5 w-3.5" />
-                                Anexo
-                              </a>
-                            )}
-
-                            {!pago && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  abrirModalPagamento(
-                                    processo
-                                  )
-                                }
-                                className="rounded-[9px] bg-emerald-600 px-3 py-2 text-[9px] font-bold text-white hover:bg-emerald-700"
-                              >
-                                {obterValorPago(processo) > 0
-                                  ? 'Novo pagamento'
-                                  : 'Registrar pagamento'}
-                              </button>
-                            )}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-                )}
-              </tbody>
-            </table>
+                        ) : (
+                          <span className="text-[9px] text-slate-400">
+                            PIX não informado
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-bold uppercase text-slate-400">
+                          Total
+                        </span>
+                        <span className="font-mono text-[10px] font-bold text-slate-800">
+                          {formatarReal(processo.valor)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-bold uppercase text-slate-400">
+                          Pago
+                        </span>
+                        <span className="font-mono text-[10px] font-semibold text-emerald-600">
+                          {formatarReal(
+                            obterValorPago(processo)
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-bold uppercase text-slate-400">
+                          Saldo
+                        </span>
+                        <span className="font-mono text-[10px] font-bold text-amber-600">
+                          {formatarReal(
+                            obterSaldoPagar(processo)
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2">
+                        <p className="text-[8px] font-bold uppercase text-slate-400">
+                          Vencimento
+                        </p>
+                        <p className="mt-1 font-mono text-[10px] font-semibold text-slate-600">
+                          {processo.prazo || '-'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 space-y-2">
+                      {pago ? (
+                        <div className="rounded-xl bg-emerald-50 p-2.5">
+                          <p className="font-mono text-[10px] font-semibold text-emerald-700">
+                            {processo.dataPagamento || 'Pago'}
+                          </p>
+                          <p className="mt-1 text-[8px] font-bold uppercase text-emerald-600">
+                            {processo.metodoPagamento ||
+                              processo.formaPagamento ||
+                              '-'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            id={`data-programacao-${processo.id}`}
+                            type="date"
+                            defaultValue={
+                              processo.dataProgramadaPagamento ||
+                              ''
+                            }
+                            className="min-w-[125px] flex-1 rounded-[9px] border-0 bg-slate-50 px-2 py-2 font-mono text-[9px]"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              programar(processo.id)
+                            }
+                            className="rounded-[9px] bg-slate-100 px-2.5 py-2 text-[9px] font-bold text-slate-700 hover:bg-slate-200"
+                          >
+                            Programar
+                          </button>
+                        </div>
+                      )}
+
+                      {!pago && (
+                        <p className="text-[8px] text-slate-400">
+                          Pagamento aguardando registro
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            abrirProcesso(processo.id)
+                          }
+                          className="rounded-[9px] border border-slate-200 bg-white px-3 py-2 text-[9px] font-bold text-slate-600 hover:bg-slate-50"
+                        >
+                          Detalhes
+                        </button>
+
+                        {processo.anexoUrl && (
+                          <a
+                            href={processo.anexoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1 rounded-[9px] bg-slate-100 px-3 py-2 text-[9px] font-bold text-slate-600 hover:bg-slate-200"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            Anexo
+                          </a>
+                        )}
+
+                        {!pago && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              abrirModalPagamento(processo)
+                            }
+                            className="rounded-[9px] bg-emerald-600 px-3 py-2 text-[9px] font-bold text-white hover:bg-emerald-700"
+                          >
+                            {obterValorPago(processo) > 0
+                              ? 'Novo pagamento'
+                              : 'Registrar pagamento'}
+                          </button>
+                        )}
+
+                        {obterValorPago(processo) > 0.001 && (
+                          <button
+                            type="button"
+                            onClick={() => abrirModalEstorno(processo)}
+                            className="rounded-[9px] border border-red-200 bg-red-50 px-3 py-2 text-[9px] font-bold text-red-700 hover:bg-red-100"
+                          >
+                            Desfazer pagamento
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -1482,7 +1920,7 @@ export const AccountsPayableView: React.FC = () => {
             </p>
           </div>
         ) : (
-          contasFiltradas.map((processo: any) => {
+          contasPaginadas.map((processo: any) => {
             const fornecedor = fornecedores.find(
               (item: any) =>
                 item.id === processo.fornecedorId
@@ -1509,10 +1947,35 @@ export const AccountsPayableView: React.FC = () => {
             return (
               <article
                 key={processo.id}
-                className="rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm"
+                className={`rounded-[18px] border bg-white p-4 shadow-sm ${
+                  contasSelecionadas.has(String(processo.id))
+                    ? 'border-emerald-300 ring-2 ring-emerald-100'
+                    : 'border-slate-100'
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  {!pago && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        alternarContaSelecionada(
+                          String(processo.id)
+                        )
+                      }
+                      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50"
+                      title="Selecionar para pagamento em massa"
+                    >
+                      {contasSelecionadas.has(
+                        String(processo.id)
+                      ) ? (
+                        <CheckSquare2 className="h-5 w-5 text-emerald-600" />
+                      ) : (
+                        <Square className="h-5 w-5 text-slate-400" />
+                      )}
+                    </button>
+                  )}
+
+                  <div className="min-w-0 flex-1">
                     <p className="font-mono text-[10px] font-bold text-slate-400">
                       {processo.id}
                     </p>
@@ -1667,11 +2130,148 @@ export const AccountsPayableView: React.FC = () => {
                     </span>
                   )}
                 </div>
+
+                {obterValorPago(processo) > 0.001 && (
+                  <button
+                    type="button"
+                    onClick={() => abrirModalEstorno(processo)}
+                    className="mt-2 w-full rounded-xl border border-red-200 bg-red-50 py-3 text-[10px] font-bold text-red-700"
+                  >
+                    Desfazer último pagamento
+                  </button>
+                )}
               </article>
             );
           })
         )}
       </div>
+
+      {contasFiltradas.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-[16px] border border-slate-100 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[10px] font-semibold text-slate-500">
+            Exibindo {primeiroItemPagina}–{ultimoItemPagina} de{' '}
+            {contasFiltradas.length} conta(s)
+          </p>
+
+          <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={() =>
+                setPaginaAtual(pagina => Math.max(1, pagina - 1))
+              }
+              disabled={paginaAtual === 1}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Anterior
+            </button>
+
+            <span className="min-w-[92px] text-center text-[10px] font-bold text-slate-600">
+              Página {paginaAtual} de {totalPaginas}
+            </span>
+
+            <button
+              type="button"
+              onClick={() =>
+                setPaginaAtual(pagina =>
+                  Math.min(totalPaginas, pagina + 1)
+                )
+              }
+              disabled={paginaAtual === totalPaginas}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+      )}
+
+      {processoEstornando && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[24px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 p-5">
+              <div>
+                <h2 className="text-base font-bold text-[#0F172A]">
+                  Desfazer pagamento
+                </h2>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  O último pagamento ativo será estornado e o saldo será recalculado.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={fecharModalEstorno}
+                disabled={estornandoPagamento}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-4">
+                <p className="text-[10px] font-bold uppercase text-red-600">Conta</p>
+                <p className="mt-1 font-mono text-xs font-bold text-slate-800">
+                  {processoEstornando.id}
+                </p>
+                <p className="mt-2 text-xs text-slate-600">
+                  Valor pago atual: {formatarReal(obterValorPago(processoEstornando))}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500">
+                  Motivo do estorno
+                </label>
+                <textarea
+                  value={motivoEstorno}
+                  onChange={event => setMotivoEstorno(event.target.value)}
+                  rows={3}
+                  placeholder="Ex.: Pagamento lançado na conta errada."
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-xs outline-none focus:border-red-300"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500">
+                  Digite DESFAZER para confirmar
+                </label>
+                <input
+                  value={confirmacaoEstorno}
+                  onChange={event => setConfirmacaoEstorno(event.target.value)}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-xs font-bold uppercase outline-none focus:border-red-300"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-100 p-5">
+              <button
+                type="button"
+                onClick={fecharModalEstorno}
+                disabled={estornandoPagamento}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarEstorno}
+                disabled={
+                  estornandoPagamento ||
+                  !motivoEstorno.trim() ||
+                  confirmacaoEstorno.trim().toUpperCase() !== 'DESFAZER'
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-40"
+              >
+                {estornandoPagamento && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Confirmar estorno
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalImportacaoOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
@@ -1829,6 +2429,193 @@ export const AccountsPayableView: React.FC = () => {
                   {importandoContas
                     ? 'Importando...'
                     : `Importar ${totalImportacaoValido} conta(s)`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalPagamentoMassaOpen && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[24px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 p-5 sm:p-6">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50">
+                  <ShieldAlert className="h-5 w-5 text-amber-600" />
+                </div>
+
+                <div>
+                  <h2 className="text-base font-bold text-[#0F172A]">
+                    Confirmar pagamento em massa
+                  </h2>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    Revise com atenção. Cada conta será quitada pelo saldo integral existente.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={fecharPagamentoMassa}
+                disabled={pagandoEmMassa}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 disabled:opacity-40"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5 sm:p-6">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">
+                    Contas selecionadas
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-[#0F172A]">
+                    {contasSelecionadasDetalhes.length}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-emerald-50 p-4">
+                  <p className="text-[10px] font-bold uppercase text-emerald-600">
+                    Total a pagar
+                  </p>
+                  <p className="mt-2 font-mono text-xl font-bold text-emerald-700">
+                    {formatarReal(totalSelecionadoPagamentoMassa)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="max-h-52 overflow-y-auto rounded-2xl border border-slate-100">
+                {contasSelecionadasDetalhes.map((processo: any) => {
+                  const fornecedor = fornecedores.find(
+                    (item: any) => item.id === processo.fornecedorId
+                  );
+                  const favorecido =
+                    processo.tipoPagamento === 'interno'
+                      ? processo.beneficiarioInterno || 'Pagamento interno'
+                      : fornecedor?.nome || processo.descricao || '-';
+
+                  return (
+                    <div
+                      key={processo.id}
+                      className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-bold text-slate-700">
+                          {favorecido}
+                        </p>
+                        <p className="mt-1 font-mono text-[9px] text-slate-400">
+                          {processo.id} • Venc. {processo.prazo || '-'}
+                        </p>
+                      </div>
+                      <p className="shrink-0 font-mono text-xs font-bold text-slate-800">
+                        {formatarReal(obterSaldoPagar(processo))}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-400">
+                  Forma de pagamento
+                </label>
+                <select
+                  value={metodoPagamentoMassa}
+                  onChange={event =>
+                    setMetodoPagamentoMassa(
+                      event.target.value as MetodoPagamentoMassa
+                    )
+                  }
+                  disabled={pagandoEmMassa}
+                  className="mt-2 w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-xs"
+                >
+                  <option value="cadastrado">Usar a forma cadastrada em cada conta</option>
+                  <option value="pix">PIX para todas</option>
+                  <option value="boleto">Boleto para todas</option>
+                  <option value="ted">TED para todas</option>
+                  <option value="dinheiro">Dinheiro para todas</option>
+                  <option value="cartao">Cartão para todas</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-400">
+                  Observação geral (opcional)
+                </label>
+                <textarea
+                  value={observacaoPagamentoMassa}
+                  onChange={event =>
+                    setObservacaoPagamentoMassa(event.target.value)
+                  }
+                  disabled={pagandoEmMassa}
+                  rows={3}
+                  placeholder="Ex.: Pagamentos autorizados pela diretoria em 05/08/2026."
+                  className="mt-2 w-full resize-none rounded-xl border-0 bg-slate-50 px-4 py-3 text-xs"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-4">
+                <p className="text-xs font-bold text-red-700">
+                  Confirmação de segurança
+                </p>
+                <p className="mt-1 text-[10px] leading-relaxed text-red-600">
+                  Digite <strong>PAGAR</strong> abaixo. Depois ainda será exibida uma confirmação final do navegador.
+                </p>
+                <input
+                  value={confirmacaoPagamentoMassa}
+                  onChange={event =>
+                    setConfirmacaoPagamentoMassa(event.target.value)
+                  }
+                  disabled={pagandoEmMassa}
+                  placeholder="Digite PAGAR"
+                  autoComplete="off"
+                  className="mt-3 w-full rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold uppercase text-red-700 outline-none focus:border-red-400"
+                />
+              </div>
+
+              {pagandoEmMassa && (
+                <div className="rounded-2xl bg-blue-50 p-4">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                    <div>
+                      <p className="text-xs font-bold text-blue-700">
+                        Processando pagamentos
+                      </p>
+                      <p className="mt-1 text-[10px] text-blue-600">
+                        {progressoPagamentoMassa.atual} de {progressoPagamentoMassa.total}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={fecharPagamentoMassa}
+                  disabled={pagandoEmMassa}
+                  className="rounded-xl bg-slate-100 px-5 py-3 text-xs font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-40"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={confirmarPagamentoMassa}
+                  disabled={
+                    pagandoEmMassa ||
+                    confirmacaoPagamentoMassa.trim().toUpperCase() !== 'PAGAR'
+                  }
+                  className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-xs font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {pagandoEmMassa ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckSquare2 className="h-4 w-4" />
+                  )}
+                  Confirmar {contasSelecionadasDetalhes.length} pagamento(s)
                 </button>
               </div>
             </div>

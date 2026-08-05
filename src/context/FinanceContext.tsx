@@ -152,6 +152,11 @@ interface FinanceContextType {
     observacao?: string
   ) => Promise<void>;
 
+  desfazerUltimoPagamento: (
+    processoId: string,
+    motivo: string
+  ) => Promise<void>;
+
   conciliarPagamento: (id: string) => Promise<void>;
 
   cadastrarEmpresa: (empresa: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>) => Promise<void>;
@@ -1100,6 +1105,37 @@ const anexarDocumentoProcesso = async (params: {
     }
   };
 
+  const desfazerUltimoPagamento = async (
+    processoId: string,
+    motivo: string
+  ) => {
+    const motivoLimpo = motivo.trim();
+
+    if (!motivoLimpo) {
+      throw new Error('Informe o motivo do estorno.');
+    }
+
+    const pagamentos =
+      await financeService.getPagamentosProcesso(processoId);
+
+    const ultimoPagamentoAtivo = pagamentos.find(
+      (pagamento: any) => !pagamento.estornado
+    );
+
+    if (!ultimoPagamentoAtivo) {
+      throw new Error(
+        'Nenhum pagamento ativo foi encontrado para desfazer.'
+      );
+    }
+
+    await financeService.estornarPagamentoProcesso({
+      pagamentoId: String(ultimoPagamentoAtivo.id),
+      motivo: motivoLimpo,
+    });
+
+    await recarregarDados();
+  };
+
   const conciliarPagamento = async (id: string) => {
     await avancarProcesso(
       id,
@@ -1423,6 +1459,7 @@ const anexarDocumentoProcesso = async (params: {
         reprovarProcesso,
         solicitarAjustes,
         registrarPagamento,
+        desfazerUltimoPagamento,
         conciliarPagamento,
 
         cadastrarEmpresa,
