@@ -133,6 +133,19 @@ export const AccountsPayableView: React.FC = () => {
   const [progressoPagamentoMassa, setProgressoPagamentoMassa] =
     useState({ atual: 0, total: 0 });
 
+  const [contasEstornoSelecionadas, setContasEstornoSelecionadas] =
+    useState<Set<string>>(new Set());
+  const [modalEstornoMassaOpen, setModalEstornoMassaOpen] =
+    useState(false);
+  const [motivoEstornoMassa, setMotivoEstornoMassa] =
+    useState('');
+  const [confirmacaoEstornoMassa, setConfirmacaoEstornoMassa] =
+    useState('');
+  const [estornandoEmMassa, setEstornandoEmMassa] =
+    useState(false);
+  const [progressoEstornoMassa, setProgressoEstornoMassa] =
+    useState({ atual: 0, total: 0 });
+
   const inputImportacaoRef =
     useRef<HTMLInputElement>(null);
   const [modalImportacaoOpen, setModalImportacaoOpen] =
@@ -511,6 +524,227 @@ export const AccountsPayableView: React.FC = () => {
         )
       )
     );
+  };
+
+  const contasElegiveisEstornoMassa = useMemo(
+    () =>
+      contasFiltradas.filter(
+        (processo: any) =>
+          contaPaga(processo) &&
+          obterValorPago(processo) > 0.001
+      ),
+    [contasFiltradas]
+  );
+
+  const contasEstornoSelecionadasDetalhes = useMemo(
+    () =>
+      contasElegiveisEstornoMassa.filter(
+        (processo: any) =>
+          contasEstornoSelecionadas.has(String(processo.id))
+      ),
+    [contasElegiveisEstornoMassa, contasEstornoSelecionadas]
+  );
+
+  const totalPagoSelecionadoEstorno = useMemo(
+    () =>
+      contasEstornoSelecionadasDetalhes.reduce(
+        (total: number, processo: any) =>
+          total + obterValorPago(processo),
+        0
+      ),
+    [contasEstornoSelecionadasDetalhes]
+  );
+
+  const todasPagasElegiveisSelecionadas =
+    contasElegiveisEstornoMassa.length > 0 &&
+    contasElegiveisEstornoMassa.every(
+      (processo: any) =>
+        contasEstornoSelecionadas.has(String(processo.id))
+    );
+
+  useEffect(() => {
+    const idsElegiveis = new Set(
+      contasElegiveisEstornoMassa.map(
+        (processo: any) => String(processo.id)
+      )
+    );
+
+    setContasEstornoSelecionadas(anteriores => {
+      const proximas = new Set(
+        [...anteriores].filter(id => idsElegiveis.has(id))
+      );
+
+      if (
+        proximas.size === anteriores.size &&
+        [...proximas].every(id => anteriores.has(id))
+      ) {
+        return anteriores;
+      }
+
+      return proximas;
+    });
+  }, [contasElegiveisEstornoMassa]);
+
+  const alternarContaEstornoSelecionada = (processoId: string) => {
+    setContasEstornoSelecionadas(anteriores => {
+      const proximas = new Set(anteriores);
+
+      if (proximas.has(processoId)) {
+        proximas.delete(processoId);
+      } else {
+        proximas.add(processoId);
+      }
+
+      return proximas;
+    });
+  };
+
+  const alternarTodasContasPagas = () => {
+    if (todasPagasElegiveisSelecionadas) {
+      setContasEstornoSelecionadas(new Set());
+      return;
+    }
+
+    setContasEstornoSelecionadas(
+      new Set(
+        contasElegiveisEstornoMassa.map(
+          (processo: any) => String(processo.id)
+        )
+      )
+    );
+  };
+
+  const abrirEstornoMassa = () => {
+    if (contasEstornoSelecionadasDetalhes.length === 0) {
+      alert('Selecione pelo menos uma conta paga.');
+      return;
+    }
+
+    setMotivoEstornoMassa('');
+    setConfirmacaoEstornoMassa('');
+    setProgressoEstornoMassa({
+      atual: 0,
+      total: contasEstornoSelecionadasDetalhes.length,
+    });
+    setModalEstornoMassaOpen(true);
+  };
+
+  const fecharEstornoMassa = () => {
+    if (estornandoEmMassa) return;
+
+    setModalEstornoMassaOpen(false);
+    setMotivoEstornoMassa('');
+    setConfirmacaoEstornoMassa('');
+  };
+
+  const confirmarEstornoMassa = async () => {
+    if (estornandoEmMassa) return;
+
+    if (motivoEstornoMassa.trim().length < 5) {
+      alert('Informe um motivo com pelo menos 5 caracteres.');
+      return;
+    }
+
+    if (confirmacaoEstornoMassa.trim().toUpperCase() !== 'DESFAZER') {
+      alert('Digite DESFAZER para confirmar a operação.');
+      return;
+    }
+
+    const contas = [...contasEstornoSelecionadasDetalhes];
+
+    if (contas.length === 0) {
+      alert('Nenhuma conta paga permanece selecionada.');
+      fecharEstornoMassa();
+      return;
+    }
+
+    const confirmado = window.confirm(
+      `CONFIRMAÇÃO FINAL\n\nVocê está prestes a desfazer o último pagamento ativo de ${contas.length} conta(s).\n\nValor pago atual das contas selecionadas: ${formatarReal(
+        totalPagoSelecionadoEstorno
+      )}.\n\nCada estorno ficará registrado na auditoria. Deseja continuar?`
+    );
+
+    if (!confirmado) return;
+
+    const sucessos: string[] = [];
+    const falhas: Array<{ id: string; erro: string }> = [];
+
+    try {
+      setEstornandoEmMassa(true);
+      setProgressoEstornoMassa({ atual: 0, total: contas.length });
+
+      for (let indice = 0; indice < contas.length; indice += 1) {
+        const processo = contas[indice];
+        const codigoVisual = String(processo.id);
+
+        setProgressoEstornoMassa({
+          atual: indice + 1,
+          total: contas.length,
+        });
+
+        try {
+          const identificadorProcesso = String(
+            processo.dbId ??
+              processo.processoDbId ??
+              processo.processo_id ??
+              processo.id
+          ).trim();
+
+          if (!identificadorProcesso) {
+            throw new Error(
+              'Não foi possível identificar o processo no banco.'
+            );
+          }
+
+          await desfazerUltimoPagamento(
+            identificadorProcesso,
+            `${motivoEstornoMassa.trim()} Estorno realizado em lote.`
+          );
+
+          sucessos.push(codigoVisual);
+        } catch (error: any) {
+          falhas.push({
+            id: codigoVisual,
+            erro:
+              error?.message ||
+              'Não foi possível desfazer o pagamento.',
+          });
+        }
+      }
+
+      await recarregarDados?.();
+
+      setContasEstornoSelecionadas(anteriores => {
+        const proximas = new Set(anteriores);
+        sucessos.forEach(id => proximas.delete(id));
+        return proximas;
+      });
+
+      if (falhas.length === 0) {
+        alert(
+          `${sucessos.length} pagamento(s) desfeito(s) com sucesso.`
+        );
+        setModalEstornoMassaOpen(false);
+        setMotivoEstornoMassa('');
+        setConfirmacaoEstornoMassa('');
+        return;
+      }
+
+      const resumoFalhas = falhas
+        .slice(0, 5)
+        .map(item => `${item.id}: ${item.erro}`)
+        .join('\n');
+
+      alert(
+        `${sucessos.length} estorno(s) concluído(s).\n${falhas.length} estorno(s) falharam.\n\n${resumoFalhas}${
+          falhas.length > 5
+            ? `\n... e mais ${falhas.length - 5} falha(s).`
+            : ''
+        }`
+      );
+    } finally {
+      setEstornandoEmMassa(false);
+    }
   };
 
   const abrirPagamentoMassa = () => {
@@ -1402,6 +1636,22 @@ export const AccountsPayableView: React.FC = () => {
 
           <button
             type="button"
+            onClick={abrirEstornoMassa}
+            disabled={contasEstornoSelecionadasDetalhes.length === 0}
+            className="flex flex-1 items-center justify-center gap-2 rounded-[12px] bg-red-600 px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40 md:flex-none"
+            title="Desfazer o último pagamento das contas pagas selecionadas"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Desfazer selecionadas
+            {contasEstornoSelecionadasDetalhes.length > 0 && (
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
+                {contasEstornoSelecionadasDetalhes.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={gerarRelatorioPDF}
             disabled={
               contasFiltradas.length === 0
@@ -1606,6 +1856,42 @@ export const AccountsPayableView: React.FC = () => {
         </div>
       )}
 
+      {contasElegiveisEstornoMassa.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-[16px] border border-red-100 bg-red-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-bold text-red-800">
+              Desfazer pagamentos em massa
+            </p>
+            <p className="mt-1 text-[10px] text-red-700">
+              {contasEstornoSelecionadasDetalhes.length} conta(s) paga(s) selecionada(s) • valor pago atual {formatarReal(
+                totalPagoSelecionadoEstorno
+              )}
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={alternarTodasContasPagas}
+              className="rounded-xl border border-red-200 bg-white px-3 py-2 text-[10px] font-bold text-red-700 hover:bg-red-100"
+            >
+              {todasPagasElegiveisSelecionadas
+                ? 'Limpar seleção de pagas'
+                : 'Selecionar pagas filtradas'}
+            </button>
+
+            <button
+              type="button"
+              onClick={abrirEstornoMassa}
+              disabled={contasEstornoSelecionadasDetalhes.length === 0}
+              className="rounded-xl bg-red-600 px-4 py-2 text-[10px] font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Revisar estornos
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="hidden overflow-hidden rounded-[18px] border border-slate-100 bg-white shadow-sm lg:block">
         {contasFiltradas.length === 0 ? (
           <div className="p-12 text-center">
@@ -1694,7 +1980,24 @@ export const AccountsPayableView: React.FC = () => {
                           )}
                         </button>
                       ) : (
-                        <Check className="h-4 w-4 text-emerald-500" />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            alternarContaEstornoSelecionada(
+                              String(processo.id)
+                            )
+                          }
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-100"
+                          title="Selecionar para desfazer pagamento em massa"
+                        >
+                          {contasEstornoSelecionadas.has(
+                            String(processo.id)
+                          ) ? (
+                            <CheckSquare2 className="h-5 w-5 text-red-600" />
+                          ) : (
+                            <Square className="h-5 w-5 text-red-400" />
+                          )}
+                        </button>
                       )}
 
                       <Situacao
@@ -1950,30 +2253,48 @@ export const AccountsPayableView: React.FC = () => {
                 className={`rounded-[18px] border bg-white p-4 shadow-sm ${
                   contasSelecionadas.has(String(processo.id))
                     ? 'border-emerald-300 ring-2 ring-emerald-100'
-                    : 'border-slate-100'
+                    : contasEstornoSelecionadas.has(String(processo.id))
+                      ? 'border-red-300 ring-2 ring-red-100'
+                      : 'border-slate-100'
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  {!pago && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        alternarContaSelecionada(
-                          String(processo.id)
-                        )
-                      }
-                      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50"
-                      title="Selecionar para pagamento em massa"
-                    >
-                      {contasSelecionadas.has(
+                  <button
+                    type="button"
+                    onClick={() =>
+                      pago
+                        ? alternarContaEstornoSelecionada(
+                            String(processo.id)
+                          )
+                        : alternarContaSelecionada(
+                            String(processo.id)
+                          )
+                    }
+                    className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                      pago ? 'bg-red-50' : 'bg-slate-50'
+                    }`}
+                    title={
+                      pago
+                        ? 'Selecionar para desfazer pagamento em massa'
+                        : 'Selecionar para pagamento em massa'
+                    }
+                  >
+                    {pago ? (
+                      contasEstornoSelecionadas.has(
                         String(processo.id)
                       ) ? (
-                        <CheckSquare2 className="h-5 w-5 text-emerald-600" />
+                        <CheckSquare2 className="h-5 w-5 text-red-600" />
                       ) : (
-                        <Square className="h-5 w-5 text-slate-400" />
-                      )}
-                    </button>
-                  )}
+                        <Square className="h-5 w-5 text-red-400" />
+                      )
+                    ) : contasSelecionadas.has(
+                        String(processo.id)
+                      ) ? (
+                      <CheckSquare2 className="h-5 w-5 text-emerald-600" />
+                    ) : (
+                      <Square className="h-5 w-5 text-slate-400" />
+                    )}
+                  </button>
 
                   <div className="min-w-0 flex-1">
                     <p className="font-mono text-[10px] font-bold text-slate-400">
@@ -2181,6 +2502,176 @@ export const AccountsPayableView: React.FC = () => {
             >
               Próxima
             </button>
+          </div>
+        </div>
+      )}
+
+      {modalEstornoMassaOpen && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[24px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 p-5 sm:p-6">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-50">
+                  <RotateCcw className="h-5 w-5 text-red-600" />
+                </div>
+
+                <div>
+                  <h2 className="text-base font-bold text-[#0F172A]">
+                    Desfazer pagamentos em massa
+                  </h2>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    Será estornado apenas o último pagamento ativo de cada conta selecionada.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={fecharEstornoMassa}
+                disabled={estornandoEmMassa}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 disabled:opacity-40"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5 sm:p-6">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">
+                    Contas selecionadas
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-[#0F172A]">
+                    {contasEstornoSelecionadasDetalhes.length}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-red-50 p-4">
+                  <p className="text-[10px] font-bold uppercase text-red-600">
+                    Valor pago atual
+                  </p>
+                  <p className="mt-2 font-mono text-xl font-bold text-red-700">
+                    {formatarReal(totalPagoSelecionadoEstorno)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="max-h-52 overflow-y-auto rounded-2xl border border-slate-100">
+                {contasEstornoSelecionadasDetalhes.map((processo: any) => {
+                  const fornecedor = fornecedores.find(
+                    (item: any) => item.id === processo.fornecedorId
+                  );
+
+                  const favorecido =
+                    processo.tipoPagamento === 'interno'
+                      ? processo.beneficiarioInterno || 'Pagamento interno'
+                      : fornecedor?.nome || processo.descricao || '-';
+
+                  return (
+                    <div
+                      key={processo.id}
+                      className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-bold text-slate-700">
+                          {favorecido}
+                        </p>
+                        <p className="mt-1 font-mono text-[9px] text-slate-400">
+                          {processo.id}
+                        </p>
+                      </div>
+
+                      <p className="shrink-0 font-mono text-xs font-bold text-red-700">
+                        Pago: {formatarReal(obterValorPago(processo))}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500">
+                  Motivo do estorno em lote
+                </label>
+                <textarea
+                  value={motivoEstornoMassa}
+                  onChange={event =>
+                    setMotivoEstornoMassa(event.target.value)
+                  }
+                  rows={3}
+                  placeholder="Ex.: Pagamentos importados ou registrados incorretamente."
+                  disabled={estornandoEmMassa}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-xs outline-none focus:border-red-300 disabled:bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500">
+                  Digite DESFAZER para confirmar
+                </label>
+                <input
+                  value={confirmacaoEstornoMassa}
+                  onChange={event =>
+                    setConfirmacaoEstornoMassa(event.target.value)
+                  }
+                  disabled={estornandoEmMassa}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-xs font-bold uppercase outline-none focus:border-red-300 disabled:bg-slate-50"
+                />
+              </div>
+
+              {estornandoEmMassa && (
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-600">
+                    <span>Processando estornos...</span>
+                    <span>
+                      {progressoEstornoMassa.atual}/{progressoEstornoMassa.total}
+                    </span>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full rounded-full bg-red-600 transition-all"
+                      style={{
+                        width: `${
+                          progressoEstornoMassa.total
+                            ? (progressoEstornoMassa.atual /
+                                progressoEstornoMassa.total) *
+                              100
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-100 p-5">
+              <button
+                type="button"
+                onClick={fecharEstornoMassa}
+                disabled={estornandoEmMassa}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmarEstornoMassa}
+                disabled={
+                  estornandoEmMassa ||
+                  motivoEstornoMassa.trim().length < 5 ||
+                  confirmacaoEstornoMassa.trim().toUpperCase() !==
+                    'DESFAZER'
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-40"
+              >
+                {estornandoEmMassa && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Desfazer {contasEstornoSelecionadasDetalhes.length} pagamento(s)
+              </button>
+            </div>
           </div>
         </div>
       )}
