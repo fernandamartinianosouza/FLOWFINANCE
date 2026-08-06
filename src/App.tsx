@@ -29,7 +29,6 @@ import { PasswordAccessView } from './components/auth/PasswordAccessView';
 
 import { UsersAdminView } from './views/UsersAdminView';
 import { AuthView } from './views/AuthView';
-import { CatalogItemsView } from './views/CatalogItemsView';
 
 import { NewAccountView } from './components/NewAccountView';
 import { useAuth } from './context/AuthContext';
