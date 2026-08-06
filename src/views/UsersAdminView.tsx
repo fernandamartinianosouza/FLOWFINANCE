@@ -3,17 +3,25 @@ import React, {
   useEffect,
   useState,
 } from 'react';
+
 import {
+  CheckCircle2,
   Mail,
   RefreshCw,
+  ShieldCheck,
+  UserCog,
   UserPlus,
+  Users,
   XCircle,
 } from 'lucide-react';
+
 import { useFinance } from '../context/FinanceContext';
+
 import {
   ConviteOrganizacao,
   organizacaoUsuariosService,
   PerfilOrganizacao,
+  UsuarioOrganizacaoAdmin,
 } from '../services/organizacaoUsuariosService';
 
 const perfilLabels:
@@ -34,6 +42,9 @@ export const UsersAdminView: React.FC =
       organizacoes,
     } = useFinance();
 
+    const [usuarios, setUsuarios] =
+      useState<UsuarioOrganizacaoAdmin[]>([]);
+
     const [convites, setConvites] =
       useState<ConviteOrganizacao[]>([]);
 
@@ -51,6 +62,9 @@ export const UsersAdminView: React.FC =
     const [loading, setLoading] =
       useState(false);
 
+    const [salvandoId, setSalvandoId] =
+      useState<string | null>(null);
+
     const [erro, setErro] =
       useState<string | null>(null);
 
@@ -63,6 +77,7 @@ export const UsersAdminView: React.FC =
 
     const carregar = async () => {
       if (!organizacaoAtivaId) {
+        setUsuarios([]);
         setConvites([]);
         return;
       }
@@ -71,17 +86,26 @@ export const UsersAdminView: React.FC =
         setLoading(true);
         setErro(null);
 
-        const dados =
-          await organizacaoUsuariosService
+        const [
+          usuariosDados,
+          convitesDados,
+        ] = await Promise.all([
+          organizacaoUsuariosService
+            .listarUsuarios(
+              organizacaoAtivaId
+            ),
+          organizacaoUsuariosService
             .listarConvites(
               organizacaoAtivaId
-            );
+            ),
+        ]);
 
-        setConvites(dados);
+        setUsuarios(usuariosDados);
+        setConvites(convitesDados);
       } catch (error: any) {
         setErro(
           error?.message ||
-            'Erro ao carregar convites.'
+            'Erro ao carregar usuários e convites.'
         );
       } finally {
         setLoading(false);
@@ -123,7 +147,7 @@ export const UsersAdminView: React.FC =
 
         alert(
           resposta?.message ||
-            'Convite enviado. O usuário deverá abrir o e-mail e criar a própria senha.'
+            'Convite enviado. O usuário deverá criar a própria senha.'
         );
 
         setNome('');
@@ -145,6 +169,8 @@ export const UsersAdminView: React.FC =
       conviteId: string
     ) => {
       try {
+        setErro(null);
+
         await organizacaoUsuariosService
           .cancelarConvite(
             conviteId
@@ -156,6 +182,40 @@ export const UsersAdminView: React.FC =
           error?.message ||
             'Erro ao cancelar convite.'
         );
+      }
+    };
+
+    const atualizarUsuario = async (
+      usuario: UsuarioOrganizacaoAdmin,
+      alteracoes: {
+        perfil?: PerfilOrganizacao;
+        ativo?: boolean;
+      }
+    ) => {
+      try {
+        setSalvandoId(usuario.id);
+        setErro(null);
+
+        await organizacaoUsuariosService
+          .atualizarAcesso({
+            vinculoId:
+              usuario.id,
+            perfil:
+              alteracoes.perfil ??
+              usuario.perfil,
+            ativo:
+              alteracoes.ativo ??
+              usuario.ativo,
+          });
+
+        await carregar();
+      } catch (error: any) {
+        setErro(
+          error?.message ||
+            'Erro ao atualizar acesso.'
+        );
+      } finally {
+        setSalvandoId(null);
       }
     };
 
@@ -288,7 +348,155 @@ export const UsersAdminView: React.FC =
           </div>
         </form>
 
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b p-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <Users
+                  size={19}
+                  className="text-slate-500"
+                />
+
+                <h2 className="font-bold text-slate-900">
+                  Acessos existentes
+                </h2>
+              </div>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Usuários vinculados a esta organização.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={carregar}
+              className="rounded-xl border p-2"
+              title="Atualizar"
+            >
+              <RefreshCw
+                size={18}
+                className={
+                  loading
+                    ? 'animate-spin'
+                    : ''
+                }
+              />
+            </button>
+          </div>
+
+          <div className="divide-y">
+            {usuarios.map(usuario => (
+              <div
+                key={usuario.id}
+                className="grid gap-4 p-5 md:grid-cols-[1fr_210px_150px] md:items-center"
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`rounded-xl p-2 ${
+                      usuario.ativo
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {usuario.ativo ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <UserCog size={18} />
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-900">
+                      {usuario.nome}
+                    </p>
+
+                    <p className="truncate text-sm text-slate-500">
+                      {usuario.email}
+                    </p>
+
+                    <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                      {usuario.ativo ? (
+                        <>
+                          <CheckCircle2 size={12} />
+                          Acesso ativo
+                        </>
+                      ) : (
+                        'Acesso desativado'
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <select
+                  value={usuario.perfil}
+                  disabled={
+                    salvandoId === usuario.id
+                  }
+                  onChange={event =>
+                    atualizarUsuario(
+                      usuario,
+                      {
+                        perfil:
+                          event.target
+                            .value as PerfilOrganizacao,
+                      }
+                    )
+                  }
+                  className="w-full rounded-xl border px-3 py-2.5 text-sm disabled:opacity-50"
+                >
+                  {Object.entries(
+                    perfilLabels
+                  ).map(
+                    ([valor, label]) => (
+                      <option
+                        key={valor}
+                        value={valor}
+                      >
+                        {label}
+                      </option>
+                    )
+                  )}
+                </select>
+
+                <button
+                  type="button"
+                  disabled={
+                    salvandoId === usuario.id
+                  }
+                  onClick={() =>
+                    atualizarUsuario(
+                      usuario,
+                      {
+                        ativo:
+                          !usuario.ativo,
+                      }
+                    )
+                  }
+                  className={`rounded-xl border px-4 py-2.5 text-sm font-semibold disabled:opacity-50 ${
+                    usuario.ativo
+                      ? 'border-red-200 text-red-600 hover:bg-red-50'
+                      : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                  }`}
+                >
+                  {salvandoId === usuario.id
+                    ? 'Salvando...'
+                    : usuario.ativo
+                    ? 'Desativar'
+                    : 'Ativar'}
+                </button>
+              </div>
+            ))}
+
+            {!loading &&
+              usuarios.length === 0 && (
+                <div className="p-10 text-center text-sm text-slate-500">
+                  Nenhum acesso ativo encontrado.
+                </div>
+              )}
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
           <div className="flex items-center justify-between border-b p-5">
             <div>
               <h2 className="font-bold text-slate-900">
@@ -296,8 +504,7 @@ export const UsersAdminView: React.FC =
               </h2>
 
               <p className="text-sm text-slate-500">
-                Convites enviados para
-                esta organização.
+                Convites enviados para esta organização.
               </p>
             </div>
 
@@ -377,7 +584,7 @@ export const UsersAdminView: React.FC =
                 </div>
               )}
           </div>
-        </div>
+        </section>
       </div>
     );
   };

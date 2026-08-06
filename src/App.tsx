@@ -26,25 +26,58 @@ import { QuotationsView } from './components/QuotationsView';
 import { MobileNavigation } from './components/MobileNavigation';
 import { MobileTopBar } from './components/MobileTopBar';
 import { PasswordAccessView } from './components/auth/PasswordAccessView';
+import { NewAccountView } from './components/NewAccountView';
+import { WeeklyPurchasingPlanView } from './components/WeeklyPurchasingPlanView';
+import { RHFinanceiroView } from './components/RHFinanceiroView';
+import CatalogItemsView from './components/CatalogItemsView';
 
 import { UsersAdminView } from './views/UsersAdminView';
 import { AuthView } from './views/AuthView';
-import CatalogItemsView from "./components/CatalogItemsView";
 
-import { NewAccountView } from './components/NewAccountView';
 import { useAuth } from './context/AuthContext';
 import { podeAcessar } from './config/permissions';
-import { WeeklyPurchasingPlanView } from "./components/WeeklyPurchasingPlanView";
-import { RHFinanceiroView } from './components/RHFinanceiroView';
 
+/**
+ * Detecta tanto o parâmetro personalizado usado pelo FlowFinance:
+ *
+ * ?definir-senha=1
+ *
+ * quanto o tipo enviado pelo Supabase:
+ *
+ * ?type=invite
+ * #type=invite
+ * #type=recovery
+ */
 const verificarDefinicaoSenhaNaUrl = () => {
-  const params = new URLSearchParams(
-    window.location.search
+  const url = new URL(
+    window.location.href
   );
 
-  return params.get('definir-senha') === '1';
+  const hashParams =
+    new URLSearchParams(
+      url.hash.replace(/^#/, '')
+    );
+
+  const definirSenha =
+    url.searchParams.get(
+      'definir-senha'
+    ) === '1';
+
+  const tipoAuth =
+    url.searchParams.get('type') ||
+    hashParams.get('type');
+
+  return (
+    definirSenha ||
+    tipoAuth === 'invite'
+  );
 };
 
+/**
+ * Remove apenas os parâmetros usados na ativação.
+ *
+ * Não altera as rotas ou páginas do sistema.
+ */
 const limparParametroDefinirSenha = () => {
   const url = new URL(
     window.location.href
@@ -53,6 +86,19 @@ const limparParametroDefinirSenha = () => {
   url.searchParams.delete(
     'definir-senha'
   );
+
+  url.searchParams.delete('type');
+
+  const hashParams =
+    new URLSearchParams(
+      url.hash.replace(/^#/, '')
+    );
+
+  hashParams.delete('type');
+
+  url.hash = hashParams.toString()
+    ? `#${hashParams.toString()}`
+    : '';
 
   const novaUrl =
     `${url.pathname}` +
@@ -81,10 +127,17 @@ const AppContent: React.FC = () => {
   const [
     deveDefinirSenha,
     setDeveDefinirSenha,
-  ] = useState<boolean>(
-    verificarDefinicaoSenhaNaUrl
+  ] = useState<boolean>(() =>
+    verificarDefinicaoSenhaNaUrl()
   );
 
+  /**
+   * Atualiza a tela de ativação quando a URL
+   * for alterada pelo Supabase.
+   *
+   * O Supabase pode atualizar o hash depois
+   * que a aplicação já iniciou.
+   */
   useEffect(() => {
     const atualizarPelaUrl = () => {
       setDeveDefinirSenha(
@@ -92,8 +145,15 @@ const AppContent: React.FC = () => {
       );
     };
 
+    atualizarPelaUrl();
+
     window.addEventListener(
       'popstate',
+      atualizarPelaUrl
+    );
+
+    window.addEventListener(
+      'hashchange',
       atualizarPelaUrl
     );
 
@@ -102,9 +162,18 @@ const AppContent: React.FC = () => {
         'popstate',
         atualizarPelaUrl
       );
+
+      window.removeEventListener(
+        'hashchange',
+        atualizarPelaUrl
+      );
     };
   }, []);
 
+  /**
+   * Se o usuário tentar permanecer em uma
+   * página sem permissão, volta ao Dashboard.
+   */
   useEffect(() => {
     if (
       user &&
@@ -131,37 +200,24 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
+      /**
+       * Administração de usuários,
+       * convites e acessos do sistema.
+       */
       case 'usuarios':
         return <UsersAdminView />;
 
       case 'dashboard':
         return <DashboardView />;
 
-      /*
-       * Central de processos de compras.
-       */
       case 'processos':
         return <ProcessesView />;
 
-      /*
-       * Nova solicitação de compra.
-       * Continua seguindo o fluxo:
-       *
-       * solicitação
-       * → cotação
-       * → conferência
-       * → autorizações
-       * → pagamento
-       */
       case 'solicitacao':
         return <NewRequestView />;
 
-      /*
-       * Catálogo de itens utilizado
-       * nas solicitações e cotações.
-       */
       case 'catalogo-itens':
-  return <CatalogItemsView />;
+        return <CatalogItemsView />;
 
       case 'cotacoes':
         return <QuotationsView />;
@@ -169,15 +225,11 @@ const AppContent: React.FC = () => {
       case 'autorizacoes':
         return <ApprovalsView />;
 
-        case "planejamento-compras":
-  return <WeeklyPurchasingPlanView />;
+      case 'planejamento-compras':
+        return (
+          <WeeklyPurchasingPlanView />
+        );
 
-      /*
-       * Novo lançamento financeiro direto.
-       *
-       * Não passa pelo fluxo de compras.
-       * Entra diretamente no Contas a Pagar.
-       */
       case 'nova-conta':
         return <NewAccountView />;
 
@@ -201,7 +253,6 @@ const AppContent: React.FC = () => {
         return (
           <FinancialCenterView />
         );
-        
 
       case 'calendario':
         return <CalendarView />;
@@ -212,8 +263,8 @@ const AppContent: React.FC = () => {
       case 'empresas':
         return <CompaniesView />;
 
-        case 'rh-financeiro':
-  return <RHFinanceiroView />;
+      case 'rh-financeiro':
+        return <RHFinanceiroView />;
 
       case 'fornecedores':
         return <SuppliersView />;
@@ -231,14 +282,13 @@ const AppContent: React.FC = () => {
     );
   }
 
-  /*
-   * Esta verificação precisa vir antes
-   * de `if (!user)`.
+  /**
+   * Esta verificação fica antes do login.
    *
-   * O link do convite cria uma sessão
-   * automaticamente. Portanto, o usuário
-   * pode estar autenticado e ainda precisar
-   * definir a senha.
+   * Ao clicar no convite, o Supabase pode
+   * criar uma sessão temporária automaticamente.
+   * Mesmo autenticado, o usuário ainda precisa
+   * criar a própria senha.
    */
   if (deveDefinirSenha) {
     return (
@@ -258,6 +308,10 @@ const AppContent: React.FC = () => {
     return <AuthView />;
   }
 
+  /**
+   * Evita renderizar uma página sem permissão
+   * enquanto o redirecionamento ocorre.
+   */
   if (
     perfil &&
     !podeAcessar(
@@ -265,7 +319,11 @@ const AppContent: React.FC = () => {
       activeView
     )
   ) {
-    return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F6F8FC] text-sm font-bold text-slate-500">
+        Redirecionando...
+      </div>
+    );
   }
 
   return (

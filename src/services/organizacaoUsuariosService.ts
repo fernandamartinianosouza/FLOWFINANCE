@@ -16,6 +16,7 @@ export interface UsuarioOrganizacaoAdmin {
   ativo: boolean;
   nome: string;
   email: string;
+  createdAt?: string | null;
 }
 
 export interface ConviteOrganizacao {
@@ -52,13 +53,69 @@ export const organizacaoUsuariosService = {
         }
       );
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
 
     if (data?.error) {
       throw new Error(data.error);
     }
+
+    return data;
+  },
+
+  async listarUsuarios(
+    organizacaoId: string
+  ): Promise<UsuarioOrganizacaoAdmin[]> {
+    const { data, error } =
+      await supabase.rpc(
+        'listar_usuarios_organizacao_admin',
+        {
+          p_organizacao_id:
+            organizacaoId,
+        }
+      );
+
+    if (error) throw error;
+
+    return (data || []).map(
+      (item: any) => ({
+        id: String(item.id),
+        userId: String(item.user_id),
+        organizacaoId: String(
+          item.organizacao_id
+        ),
+        perfil:
+          item.perfil as PerfilOrganizacao,
+        ativo: Boolean(item.ativo),
+        nome:
+          item.nome ||
+          item.email ||
+          'Usuário',
+        email: item.email || '',
+        createdAt:
+          item.created_at || null,
+      })
+    );
+  },
+
+  async atualizarAcesso(params: {
+    vinculoId: string;
+    perfil: PerfilOrganizacao;
+    ativo: boolean;
+  }) {
+    const { data, error } =
+      await supabase.rpc(
+        'atualizar_acesso_usuario_organizacao_admin',
+        {
+          p_vinculo_id:
+            params.vinculoId,
+          p_perfil:
+            params.perfil,
+          p_ativo:
+            params.ativo,
+        }
+      );
+
+    if (error) throw error;
 
     return data;
   },
