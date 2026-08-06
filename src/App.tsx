@@ -29,33 +29,20 @@ import { PasswordAccessView } from './components/auth/PasswordAccessView';
 
 import { UsersAdminView } from './views/UsersAdminView';
 import { AuthView } from './views/AuthView';
+import CatalogItemsView from "./components/CatalogItemsView";
 
 import { NewAccountView } from './components/NewAccountView';
 import { useAuth } from './context/AuthContext';
 import { podeAcessar } from './config/permissions';
+import { WeeklyPurchasingPlanView } from "./components/WeeklyPurchasingPlanView";
+import { RHFinanceiroView } from './components/RHFinanceiroView';
 
 const verificarDefinicaoSenhaNaUrl = () => {
-  const url = new URL(
-    window.location.href
+  const params = new URLSearchParams(
+    window.location.search
   );
 
-  const queryAtivacao =
-    url.searchParams.get(
-      'definir-senha'
-    ) === '1';
-
-  const hash = new URLSearchParams(
-    url.hash.replace(/^#/, '')
-  );
-
-  const tipoAuth =
-    url.searchParams.get('type') ||
-    hash.get('type');
-
-  return (
-    queryAtivacao ||
-    tipoAuth === 'invite'
-  );
+  return params.get('definir-senha') === '1';
 };
 
 const limparParametroDefinirSenha = () => {
@@ -66,19 +53,6 @@ const limparParametroDefinirSenha = () => {
   url.searchParams.delete(
     'definir-senha'
   );
-
-  url.searchParams.delete('type');
-
-  const hash = new URLSearchParams(
-    url.hash.replace(/^#/, '')
-  );
-
-  hash.delete('type');
-
-  url.hash =
-    hash.toString()
-      ? `#${hash.toString()}`
-      : '';
 
   const novaUrl =
     `${url.pathname}` +
@@ -123,21 +97,9 @@ const AppContent: React.FC = () => {
       atualizarPelaUrl
     );
 
-    window.addEventListener(
-      'hashchange',
-      atualizarPelaUrl
-    );
-
-    atualizarPelaUrl();
-
     return () => {
       window.removeEventListener(
         'popstate',
-        atualizarPelaUrl
-      );
-
-      window.removeEventListener(
-        'hashchange',
         atualizarPelaUrl
       );
     };
@@ -199,13 +161,16 @@ const AppContent: React.FC = () => {
        * nas solicitações e cotações.
        */
       case 'catalogo-itens':
-        return <CatalogItemsView />;
+  return <CatalogItemsView />;
 
       case 'cotacoes':
         return <QuotationsView />;
 
       case 'autorizacoes':
         return <ApprovalsView />;
+
+        case "planejamento-compras":
+  return <WeeklyPurchasingPlanView />;
 
       /*
        * Novo lançamento financeiro direto.
@@ -236,6 +201,7 @@ const AppContent: React.FC = () => {
         return (
           <FinancialCenterView />
         );
+        
 
       case 'calendario':
         return <CalendarView />;
@@ -245,6 +211,9 @@ const AppContent: React.FC = () => {
 
       case 'empresas':
         return <CompaniesView />;
+
+        case 'rh-financeiro':
+  return <RHFinanceiroView />;
 
       case 'fornecedores':
         return <SuppliersView />;
