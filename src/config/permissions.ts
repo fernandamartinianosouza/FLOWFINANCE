@@ -16,6 +16,7 @@ export const PERMISSIONS: Record<
     'cotacoes',
     'planejamento-compras',
     'fornecedores',
+    'rh-financeiro',
   ],
 
   contas_pagar: [
