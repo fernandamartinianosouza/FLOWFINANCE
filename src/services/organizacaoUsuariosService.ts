@@ -12,14 +12,10 @@ export interface UsuarioOrganizacaoAdmin {
   id: string;
   userId: string;
   organizacaoId: string;
-  nome: string;
-  email: string;
   perfil: PerfilOrganizacao;
   ativo: boolean;
-  createdAt: string;
-  ultimoAcesso: string | null;
-  emailConfirmado: boolean;
-  isCurrentUser: boolean;
+  nome: string;
+  email: string;
 }
 
 export interface ConviteOrganizacao {
@@ -36,24 +32,6 @@ export interface ConviteOrganizacao {
   expiresAt: string;
   createdAt: string;
 }
-
-const invocarGestao = async (
-  body: Record<string, unknown>
-) => {
-  const { data, error } =
-    await supabase.functions.invoke(
-      'manage-organization-users',
-      { body }
-    );
-
-  if (error) throw error;
-
-  if (data?.error) {
-    throw new Error(data.error);
-  }
-
-  return data;
-};
 
 export const organizacaoUsuariosService = {
   async convidar(params: {
@@ -74,7 +52,9 @@ export const organizacaoUsuariosService = {
         }
       );
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
 
     if (data?.error) {
       throw new Error(data.error);
@@ -83,81 +63,52 @@ export const organizacaoUsuariosService = {
     return data;
   },
 
-  async listar(
+  async listarConvites(
     organizacaoId: string
-  ): Promise<{
-    usuarios: UsuarioOrganizacaoAdmin[];
-    convites: ConviteOrganizacao[];
-  }> {
-    const data =
-      await invocarGestao({
-        acao: 'listar',
-        organizacaoId,
-      });
+  ): Promise<ConviteOrganizacao[]> {
+    const { data, error } =
+      await supabase
+        .from(
+          'convites_organizacoes'
+        )
+        .select('*')
+        .eq(
+          'organizacao_id',
+          organizacaoId
+        )
+        .order('created_at', {
+          ascending: false,
+        });
 
-    return {
-      usuarios:
-        data.usuarios || [],
-      convites:
-        (data.convites || []).map(
-          (item: any) => ({
-            id: item.id,
-            organizacaoId:
-              item.organizacao_id,
-            email: item.email,
-            nome: item.nome,
-            perfil: item.perfil,
-            status: item.status,
-            expiresAt:
-              item.expires_at,
-            createdAt:
-              item.created_at,
-          })
-        ),
-    };
+    if (error) throw error;
+
+    return (data || []).map(
+      (item: any) => ({
+        id: item.id,
+        organizacaoId:
+          item.organizacao_id,
+        email: item.email,
+        nome: item.nome,
+        perfil: item.perfil,
+        status: item.status,
+        expiresAt:
+          item.expires_at,
+        createdAt:
+          item.created_at,
+      })
+    );
   },
 
-  async editarUsuario(params: {
-    organizacaoId: string;
-    userId: string;
-    nome: string;
-    email: string;
-    perfil: PerfilOrganizacao;
-  }) {
-    return invocarGestao({
-      acao: 'editar',
-      ...params,
-    });
-  },
+  async cancelarConvite(
+    conviteId: string
+  ) {
+    const { error } = await supabase
+      .from('convites_organizacoes')
+      .update({
+        status: 'cancelado',
+      })
+      .eq('id', conviteId);
 
-  async alterarStatus(params: {
-    organizacaoId: string;
-    userId: string;
-    ativo: boolean;
-  }) {
-    return invocarGestao({
-      acao: 'alterar_status',
-      ...params,
-    });
-  },
-
-  async removerUsuario(params: {
-    organizacaoId: string;
-    userId: string;
-  }) {
-    return invocarGestao({
-      acao: 'remover',
-      ...params,
-    });
-  },
-
-  async cancelarConvite(params: {
-    organizacaoId: string;
-    conviteId: string;
-  }) {
-    return invocarGestao({
-      acao: 'cancelar_convite',
-      ...params,
-    });
+    if (error) throw error;
   },
 };

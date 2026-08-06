@@ -297,9 +297,25 @@ Deno.serve(async req => {
       });
     }
 
+    const origin =
+      req.headers.get('origin') || '';
+
     const redirectTo =
       body.redirectTo ||
-      `${req.headers.get('origin') || ''}/`;
+      `${origin}/?definir-senha=1`;
+
+    if (
+      !redirectTo ||
+      !/^https?:\/\//i.test(redirectTo)
+    ) {
+      return json(
+        {
+          error:
+            'URL de ativação inválida.',
+        },
+        400
+      );
+    }
 
     const {
       data: inviteData,
@@ -321,13 +337,35 @@ Deno.serve(async req => {
       throw inviteError;
     }
 
+    const novoUserId =
+      inviteData.user?.id || null;
+
+    if (novoUserId) {
+      const { error: atualizarConviteError } =
+        await adminClient
+          .from('convites_organizacoes')
+          .update({
+            user_id: novoUserId,
+            status: 'pendente',
+            aceito_em: null,
+          })
+          .eq(
+            'organizacao_id',
+            organizacaoId
+          )
+          .eq('email', email);
+
+      if (atualizarConviteError) {
+        throw atualizarConviteError;
+      }
+    }
+
     return json({
       success: true,
       vinculado: false,
-      userId:
-        inviteData.user?.id || null,
+      userId: novoUserId,
       message:
-        'Convite enviado por e-mail.',
+        'Convite enviado. O usuário deverá abrir o e-mail e criar a própria senha.',
     });
   } catch (error) {
     console.error(error);

@@ -1,233 +1,221 @@
-import React, {
-  FormEvent,
-  useState,
-} from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
   Eye,
   EyeOff,
   KeyRound,
+  Loader2,
+  Lock,
   Mail,
+  ShieldCheck,
 } from 'lucide-react';
+
 import { useAuth } from '../../context/AuthContext';
 
-interface PasswordAccessViewProps {
-  modo:
-    | 'esqueci-senha'
-    | 'definir-senha';
+type PasswordAccessMode =
+  | 'esqueci-senha'
+  | 'redefinir-senha'
+  | 'definir-senha';
 
-  onVoltar: () => void;
+interface PasswordAccessViewProps {
+  modo: PasswordAccessMode;
+  onVoltar?: () => void;
   onConcluido?: () => void;
 }
 
-export const PasswordAccessView:
-  React.FC<PasswordAccessViewProps> = ({
-    modo,
-    onVoltar,
-    onConcluido,
-  }) => {
-    const {
-      solicitarRedefinicaoSenha,
-      atualizarSenha,
-    } = useAuth();
+export const PasswordAccessView: React.FC<
+  PasswordAccessViewProps
+> = ({
+  modo,
+  onVoltar,
+  onConcluido,
+}) => {
+  const {
+    solicitarRecuperacaoSenha,
+    atualizarSenha,
+    concluirAtivacaoConvite,
+  } = useAuth();
 
-    const [email, setEmail] =
-      useState('');
+  const [email, setEmail] =
+    useState('');
+  const [senha, setSenha] =
+    useState('');
+  const [confirmarSenha, setConfirmarSenha] =
+    useState('');
+  const [mostrarSenha, setMostrarSenha] =
+    useState(false);
+  const [loading, setLoading] =
+    useState(false);
+  const [erro, setErro] =
+    useState('');
+  const [sucesso, setSucesso] =
+    useState('');
 
-    const [senha, setSenha] =
-      useState('');
+  const definindoSenha =
+    modo === 'definir-senha' ||
+    modo === 'redefinir-senha';
 
-    const [confirmarSenha,
-      setConfirmarSenha] =
-      useState('');
+  const titulo = useMemo(() => {
+    if (modo === 'definir-senha') {
+      return 'Ativar sua conta';
+    }
 
-    const [mostrarSenha,
-      setMostrarSenha] =
-      useState(false);
+    if (modo === 'redefinir-senha') {
+      return 'Criar nova senha';
+    }
 
-    const [loading, setLoading] =
-      useState(false);
+    return 'Recuperar acesso';
+  }, [modo]);
 
-    const [erro, setErro] =
-      useState<string | null>(null);
+  const descricao = useMemo(() => {
+    if (modo === 'definir-senha') {
+      return 'Crie sua senha para concluir o convite e liberar seu acesso à organização.';
+    }
 
-    const [sucesso, setSucesso] =
-      useState<string | null>(null);
+    if (modo === 'redefinir-senha') {
+      return 'Defina uma nova senha para voltar a acessar o FlowFinance.';
+    }
 
-    const definirSenha =
-      modo === 'definir-senha';
+    return 'Informe seu e-mail para receber o link de redefinição de senha.';
+  }, [modo]);
 
-    const enviar = async (
-      event: FormEvent
-    ) => {
-      event.preventDefault();
+  const validarSenhas = () => {
+    if (senha !== confirmarSenha) {
+      throw new Error(
+        'As senhas informadas não são iguais.'
+      );
+    }
 
-      try {
-        setLoading(true);
-        setErro(null);
-        setSucesso(null);
+    if (!senha) {
+      throw new Error(
+        'Informe a nova senha.'
+      );
+    }
+  };
 
-        if (definirSenha) {
-          if (senha !== confirmarSenha) {
-            throw new Error(
-              'As senhas não coincidem.'
-            );
-          }
+  const enviar = async (
+    event: React.FormEvent
+  ) => {
+    event.preventDefault();
 
-          await atualizarSenha(senha);
+    setErro('');
+    setSucesso('');
+    setLoading(true);
 
-          setSucesso(
-            'Senha definida com sucesso. Você já pode acessar o FlowFinance.'
-          );
-
-          window.setTimeout(() => {
-            onConcluido?.();
-          }, 1200);
-
-          return;
-        }
-
-        await solicitarRedefinicaoSenha(
+    try {
+      if (modo === 'esqueci-senha') {
+        await solicitarRecuperacaoSenha(
           email
         );
 
         setSucesso(
-          'Enviamos um link para o seu e-mail. Abra a mensagem e clique para definir uma nova senha.'
+          'Se o e-mail estiver cadastrado, você receberá o link para criar uma nova senha.'
         );
-      } catch (error: any) {
-        setErro(
-          error?.message ||
-            'Não foi possível concluir a operação.'
-        );
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
 
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl md:p-8">
-          <button
-            type="button"
-            onClick={onVoltar}
-            className="mb-6 flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900"
-          >
-            <ArrowLeft size={17} />
-            Voltar para o login
-          </button>
+      validarSenhas();
 
-          <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
-            {definirSenha ? (
-              <KeyRound size={22} />
-            ) : (
-              <Mail size={22} />
-            )}
+      if (modo === 'definir-senha') {
+        await concluirAtivacaoConvite(
+          senha
+        );
+
+        setSucesso(
+          'Conta ativada com sucesso. Seu acesso à organização foi liberado.'
+        );
+      } else {
+        await atualizarSenha(senha);
+
+        setSucesso(
+          'Senha atualizada com sucesso.'
+        );
+      }
+
+      window.setTimeout(() => {
+        onConcluido?.();
+      }, 700);
+    } catch (error: any) {
+      setErro(
+        error?.message ||
+          'Não foi possível concluir a operação.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#F6F8FC] p-4 sm:p-6">
+      <div className="w-full max-w-md rounded-[28px] border border-slate-100 bg-white p-6 shadow-2xl sm:p-8">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0F172A]">
+          {modo === 'definir-senha' ? (
+            <ShieldCheck className="h-7 w-7 text-[#D4AF37]" />
+          ) : (
+            <KeyRound className="h-7 w-7 text-[#D4AF37]" />
+          )}
+        </div>
+
+        <h1 className="mt-6 text-2xl font-black text-[#0F172A]">
+          {titulo}
+        </h1>
+
+        <p className="mt-2 text-sm leading-relaxed text-slate-500">
+          {descricao}
+        </p>
+
+        {erro && (
+          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {erro}
           </div>
+        )}
 
-          <h1 className="text-2xl font-bold text-slate-950">
-            {definirSenha
-              ? 'Definir minha senha'
-              : 'Esqueci minha senha'}
-          </h1>
+        {sucesso && (
+          <div className="mt-5 flex gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+            <span>{sucesso}</span>
+          </div>
+        )}
 
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            {definirSenha
-              ? 'Crie uma senha segura para concluir o acesso à sua organização.'
-              : 'Informe seu e-mail para receber o link de redefinição de senha.'}
-          </p>
+        <form
+          onSubmit={enviar}
+          className="mt-6 space-y-4"
+        >
+          {!definindoSenha && (
+            <div>
+              <label className="mb-2 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                E-mail
+              </label>
 
-          {erro && (
-            <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {erro}
-            </div>
-          )}
-
-          {sucesso && (
-            <div className="mt-5 flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-              <CheckCircle2
-                className="mt-0.5 shrink-0"
-                size={18}
-              />
-              {sucesso}
-            </div>
-          )}
-
-          <form
-            onSubmit={enviar}
-            className="mt-6 space-y-4"
-          >
-            {!definirSenha && (
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  E-mail
-                </label>
+              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4">
+                <Mail className="h-4 w-4 text-slate-400" />
 
                 <input
                   type="email"
+                  required
                   value={email}
                   onChange={event =>
                     setEmail(
                       event.target.value
                     )
                   }
-                  required
-                  autoComplete="email"
-                  placeholder="seuemail@empresa.com"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 outline-none transition focus:border-slate-900"
+                  className="w-full border-0 bg-transparent py-3 text-sm outline-none focus:ring-0"
+                  placeholder="usuario@empresa.com"
                 />
               </div>
-            )}
+            </div>
+          )}
 
-            {definirSenha && (
-              <>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Nova senha
-                  </label>
+          {definindoSenha && (
+            <>
+              <div>
+                <label className="mb-2 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  Nova senha
+                </label>
 
-                  <div className="relative">
-                    <input
-                      type={
-                        mostrarSenha
-                          ? 'text'
-                          : 'password'
-                      }
-                      value={senha}
-                      onChange={event =>
-                        setSenha(
-                          event.target.value
-                        )
-                      }
-                      required
-                      minLength={8}
-                      autoComplete="new-password"
-                      placeholder="Mínimo de 8 caracteres"
-                      className="w-full rounded-xl border border-slate-200 px-4 py-3 pr-12 outline-none transition focus:border-slate-900"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMostrarSenha(
-                          atual => !atual
-                        )
-                      }
-                      className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-slate-400"
-                    >
-                      {mostrarSenha ? (
-                        <EyeOff size={18} />
-                      ) : (
-                        <Eye size={18} />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Confirmar senha
-                  </label>
+                <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4">
+                  <Lock className="h-4 w-4 text-slate-400" />
 
                   <input
                     type={
@@ -235,35 +223,103 @@ export const PasswordAccessView:
                         ? 'text'
                         : 'password'
                     }
+                    required
+                    value={senha}
+                    onChange={event =>
+                      setSenha(
+                        event.target.value
+                      )
+                    }
+                    className="min-w-0 flex-1 border-0 bg-transparent py-3 text-sm outline-none focus:ring-0"
+                    placeholder="Mínimo de 10 caracteres"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMostrarSenha(
+                        atual => !atual
+                      )
+                    }
+                    className="text-slate-400"
+                    title={
+                      mostrarSenha
+                        ? 'Ocultar senha'
+                        : 'Mostrar senha'
+                    }
+                  >
+                    {mostrarSenha ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  Confirmar senha
+                </label>
+
+                <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4">
+                  <Lock className="h-4 w-4 text-slate-400" />
+
+                  <input
+                    type={
+                      mostrarSenha
+                        ? 'text'
+                        : 'password'
+                    }
+                    required
                     value={confirmarSenha}
                     onChange={event =>
                       setConfirmarSenha(
                         event.target.value
                       )
                     }
-                    required
-                    minLength={8}
-                    autoComplete="new-password"
-                    placeholder="Digite novamente"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 outline-none transition focus:border-slate-900"
+                    className="w-full border-0 bg-transparent py-3 text-sm outline-none focus:ring-0"
+                    placeholder="Repita a nova senha"
                   />
                 </div>
-              </>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-4 text-[11px] leading-relaxed text-slate-500">
+                Use pelo menos 10 caracteres, incluindo letra maiúscula,
+                letra minúscula, número e caractere especial.
+              </div>
+            </>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0F172A] px-5 py-3.5 text-sm font-bold text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading && (
+              <Loader2 className="h-4 w-4 animate-spin" />
             )}
 
+            {modo === 'esqueci-senha'
+              ? 'Enviar link'
+              : modo === 'definir-senha'
+              ? 'Ativar conta'
+              : 'Atualizar senha'}
+          </button>
+
+          {onVoltar && (
             <button
-              type="submit"
+              type="button"
+              onClick={onVoltar}
               disabled={loading}
-              className="w-full rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-50"
             >
-              {loading
-                ? 'Aguarde...'
-                : definirSenha
-                ? 'Salvar nova senha'
-                : 'Enviar link'}
+              <ArrowLeft className="h-4 w-4" />
+              Voltar
             </button>
-          </form>
-        </div>
+          )}
+        </form>
       </div>
-    );
-  };
+    </div>
+  );
+};
