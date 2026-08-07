@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 
 export interface OrcamentoMensal {
   id: string;
+  organizacaoId: string;
   empresaId: string;
   planoFinanceiroId: string;
   centroCustoId: string | null;
@@ -17,6 +18,7 @@ export interface OrcamentoMensal {
 }
 
 export interface CriarOrcamentoMensalInput {
+  organizacaoId: string;
   empresaId: string;
   planoFinanceiroId: string;
   centroCustoId?: string | null;
@@ -72,6 +74,7 @@ const mapOrcamentoFromDb = (item: any): OrcamentoMensal => {
 
   return {
     id: item.id,
+    organizacaoId: item.organizacao_id,
     empresaId: item.empresa_id,
     planoFinanceiroId: item.plano_financeiro_id,
     centroCustoId: item.centro_custo_id ?? null,
@@ -99,6 +102,7 @@ const getUserId = async () => {
 
 export const orcamentoService = {
   async listarPorCompetencia(params: {
+    organizacaoId: string;
     empresaId: string;
     ano: number;
     mes: number;
@@ -110,6 +114,7 @@ export const orcamentoService = {
     let query = supabase
       .from('orcamentos_mensais')
       .select('*')
+      .eq('organizacao_id', params.organizacaoId)
       .eq('empresa_id', params.empresaId)
       .eq('ano', params.ano)
       .eq('mes', params.mes)
@@ -146,6 +151,7 @@ export const orcamentoService = {
   },
 
   async buscarUnico(params: {
+    organizacaoId: string;
     empresaId: string;
     planoFinanceiroId: string;
     centroCustoId?: string | null;
@@ -157,6 +163,7 @@ export const orcamentoService = {
     let query = supabase
       .from('orcamentos_mensais')
       .select('*')
+      .eq('organizacao_id', params.organizacaoId)
       .eq('empresa_id', params.empresaId)
       .eq('plano_financeiro_id', params.planoFinanceiroId)
       .eq('ano', params.ano)
@@ -190,6 +197,7 @@ export const orcamentoService = {
     );
 
     const existente = await this.buscarUnico({
+      organizacaoId: input.organizacaoId,
       empresaId: input.empresaId,
       planoFinanceiroId: input.planoFinanceiroId,
       centroCustoId: input.centroCustoId ?? null,
@@ -208,6 +216,7 @@ export const orcamentoService = {
     const { data, error } = await supabase
       .from('orcamentos_mensais')
       .insert({
+        organizacao_id: input.organizacaoId,
         user_id: userId,
         empresa_id: input.empresaId,
         plano_financeiro_id: input.planoFinanceiroId,
@@ -231,6 +240,7 @@ export const orcamentoService = {
     input: CriarOrcamentoMensalInput
   ): Promise<OrcamentoMensal> {
     const existente = await this.buscarUnico({
+      organizacaoId: input.organizacaoId,
       empresaId: input.empresaId,
       planoFinanceiroId: input.planoFinanceiroId,
       centroCustoId: input.centroCustoId ?? null,
@@ -319,6 +329,7 @@ export const orcamentoService = {
     const origem = await this.buscarPorId(input.orcamentoId);
 
     return this.criar({
+      organizacaoId: origem.organizacaoId,
       empresaId: origem.empresaId,
       planoFinanceiroId: origem.planoFinanceiroId,
       centroCustoId: origem.centroCustoId,
@@ -345,6 +356,7 @@ export const orcamentoService = {
   },
 
   async obterResumoCompetencia(params: {
+    organizacaoId: string;
     empresaId: string;
     ano: number;
     mes: number;
@@ -374,11 +386,13 @@ export const orcamentoService = {
   },
 
   async listarCompetenciasDisponiveis(
+    organizacaoId: string,
     empresaId: string
   ): Promise<Array<{ ano: number; mes: number }>> {
     const { data, error } = await supabase
       .from('orcamentos_mensais')
       .select('ano, mes')
+      .eq('organizacao_id', organizacaoId)
       .eq('empresa_id', empresaId)
       .order('ano', { ascending: false })
       .order('mes', { ascending: false });

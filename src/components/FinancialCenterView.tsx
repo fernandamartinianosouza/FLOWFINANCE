@@ -188,6 +188,14 @@ export const FinancialCenterView: React.FC = () => {
   const labelCompetencia = `${nomesMeses[mes - 1]}/${ano}`;
 
   const carregarOrcamentos = async () => {
+    if (!organizacaoAtivaId) {
+      setOrcamentos([]);
+      setErroOrcamentos(
+        'Nenhuma organização ativa foi encontrada.'
+      );
+      return;
+    }
+
     if (!empresaSelecionadaId) {
       setOrcamentos([]);
       setErroOrcamentos(
@@ -202,6 +210,7 @@ export const FinancialCenterView: React.FC = () => {
 
       const lista =
         await orcamentoService.listarPorCompetencia({
+          organizacaoId: organizacaoAtivaId,
           empresaId: empresaSelecionadaId,
           ano,
           mes,
@@ -224,7 +233,7 @@ export const FinancialCenterView: React.FC = () => {
 
   useEffect(() => {
     carregarOrcamentos();
-  }, [empresaSelecionadaId, ano, mes]);
+  }, [organizacaoAtivaId, empresaSelecionadaId, ano, mes]);
 
   /*
    * CÁLCULO FINANCEIRO REAL
@@ -877,6 +886,11 @@ export const FinancialCenterView: React.FC = () => {
   ) => {
     e.preventDefault();
 
+    if (!organizacaoAtivaId) {
+      alert('Nenhuma organização ativa foi encontrada.');
+      return;
+    }
+
     if (!empresaSelecionadaId) {
       alert('Selecione uma empresa.');
       return;
@@ -910,6 +924,7 @@ export const FinancialCenterView: React.FC = () => {
         );
       } else {
         await orcamentoService.salvar({
+          organizacaoId: organizacaoAtivaId,
           empresaId: empresaSelecionadaId,
           planoFinanceiroId: orcamentoPlanoId,
           centroCustoId:
