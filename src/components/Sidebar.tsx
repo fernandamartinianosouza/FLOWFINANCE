@@ -105,10 +105,10 @@ export const Sidebar: React.FC = () => {
           icon: ClipboardList,
         },
         {
-        id: "planejamento-compras",
-       label: "Planejamento semanal",
-       icon: CalendarRange,
-    },
+          id: 'planejamento-compras',
+          label: 'Planejamento semanal',
+          icon: CalendarRange,
+        },
         {
           id: 'autorizacoes',
           label: 'Autorizações',
@@ -158,15 +158,15 @@ export const Sidebar: React.FC = () => {
     },
 
     {
-  title: 'Recursos Humanos',
-  items: [
-    {
-      id: 'rh-financeiro',
-      label: 'RH Financeiro',
-      icon: Users,
+      title: 'Recursos Humanos',
+      items: [
+        {
+          id: 'rh-financeiro',
+          label: 'RH Financeiro',
+          icon: Users,
+        },
+      ],
     },
-  ],
-},
 
     {
       title: 'Cadastros',
@@ -256,34 +256,79 @@ export const Sidebar: React.FC = () => {
       'nova-conta'
     );
 
+  const formatarBadge = (
+    valor?: number
+  ) => {
+    if (
+      valor === undefined ||
+      valor <= 0
+    ) {
+      return null;
+    }
+
+    /*
+     * Mantém o menu organizado mesmo com muitos registros.
+     * Ex.:
+     * 927  -> 927
+     * 1927 -> 1.9k
+     * 12500 -> 12.5k
+     */
+    if (valor >= 10000) {
+      return `${(valor / 1000)
+        .toFixed(1)
+        .replace('.0', '')}k`;
+    }
+
+    if (valor >= 1000) {
+      return `${(valor / 1000)
+        .toFixed(1)
+        .replace('.0', '')}k`;
+    }
+
+    return String(valor);
+  };
+
   return (
     <aside
-      className="ff-sidebar sticky top-0 flex h-screen w-72 flex-col"
-      id="flow_sidebar"
-    >
-      <div className="p-7 pb-5">
-        <div className="flex items-center gap-3.5">
-          <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 shadow-lg">
+  className="
+    ff-sidebar
+    fixed
+    left-0
+    top-0
+    z-40
+    hidden
+    h-dvh
+    w-72
+    flex-col
+    overflow-hidden
+    lg:flex
+  "
+  id="flow_sidebar"
+>
+      {/* CABEÇALHO / LOGO */}
+      <div className="shrink-0 px-5 pb-4 pt-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 shadow-lg">
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent" />
 
             <Sparkles className="relative z-10 h-5 w-5 text-[#D4AF37]" />
           </div>
 
-          <div>
-            <span className="block text-[15px] font-black leading-none tracking-tight text-slate-950">
+          <div className="min-w-0 flex-1">
+            <span className="block truncate text-[14px] font-black leading-none tracking-tight text-slate-950">
               FLOW
               <span className="text-[#3557FF]">
                 FINANCE
               </span>
             </span>
 
-            <span className="mt-1.5 block text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+            <span className="mt-1.5 block truncate text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">
               Sistema Financeiro
             </span>
           </div>
         </div>
 
-        <div className="mt-7 space-y-2">
+        <div className="mt-5 space-y-2">
           {podeCriarSolicitacao && (
             <button
               type="button"
@@ -292,136 +337,226 @@ export const Sidebar: React.FC = () => {
                   'solicitacao'
                 )
               }
-              className="ff-button-primary flex h-11 w-full items-center justify-center gap-2 text-xs font-bold"
+              className="
+                ff-button-primary
+                flex
+                h-10
+                w-full
+                items-center
+                justify-center
+                gap-2
+                whitespace-nowrap
+                text-xs
+                font-bold
+              "
             >
-              <PlusCircle className="h-4 w-4" />
-              Nova solicitação
+              <PlusCircle className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                Nova solicitação
+              </span>
             </button>
           )}
 
           {podeCriarConta && (
-            <button
-              type="button"
-              onClick={() =>
-                setActiveView(
-                  'nova-conta'
-                )
-              }
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#3557FF]/20 bg-[#EEF2FF] text-xs font-bold text-[#3557FF] transition hover:bg-[#E4E9FF]"
-            >
-              <ReceiptText className="h-4 w-4" />
-              Nova conta
-            </button>
+  <button
+    type="button"
+    onClick={() =>
+      setActiveView('nova-conta')
+    }
+    className="
+      ff-button-primary
+      flex
+      h-10
+      w-full
+      items-center
+      justify-center
+      gap-2
+      whitespace-nowrap
+      text-xs
+      font-bold
+    "
+  >
+    <ReceiptText className="h-4 w-4 shrink-0" />
+
+    <span className="truncate">
+      Nova conta
+    </span>
+  </button>
+)}
+        </div>
+      </div>
+
+      {/* MENU CENTRAL */}
+      <div
+        className="
+          scrollbar-none
+          min-h-0
+          flex-1
+          overflow-x-hidden
+          overflow-y-auto
+          px-3
+          py-2
+        "
+      >
+        <div className="space-y-5 pb-4">
+          {menuGroupsPermitidos.map(
+            group => (
+              <div
+                key={group.title}
+                className="space-y-1.5"
+              >
+                <h3 className="truncate px-3 text-[9px] font-black uppercase tracking-[0.13em] text-slate-400">
+                  {group.title}
+                </h3>
+
+                <ul className="space-y-1">
+                  {group.items.map(
+                    item => {
+                      const Icon =
+                        item.icon;
+
+                      const isActive =
+                        activeView ===
+                        item.id;
+
+                      const badge =
+                        formatarBadge(
+                          item.badge
+                        );
+
+                      return (
+                        <li
+                          key={item.id}
+                          className="min-w-0"
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveView(
+                                item.id
+                              )
+                            }
+                            className={`
+                              group
+                              relative
+                              flex
+                              h-11
+                              w-full
+                              min-w-0
+                              items-center
+                              gap-2.5
+                              overflow-hidden
+                              rounded-2xl
+                              px-3
+                              text-left
+                              text-[12px]
+                              font-semibold
+                              transition-all
+                              duration-200
+                              ${
+                                isActive
+                                  ? 'bg-slate-950 text-white shadow-[0_12px_30px_rgba(15,23,42,.16)]'
+                                  : 'text-slate-500 hover:bg-white/80 hover:text-slate-950'
+                              }
+                            `}
+                            id={`sidebar-item-${item.id}`}
+                          >
+                            {isActive && (
+                              <span className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-[#D4AF37]" />
+                            )}
+
+                            <span
+                              className={`
+                                flex
+                                h-7
+                                w-7
+                                shrink-0
+                                items-center
+                                justify-center
+                                rounded-xl
+                                transition-colors
+                                ${
+                                  isActive
+                                    ? 'bg-white/10'
+                                    : 'bg-slate-100/70 group-hover:bg-[#EEF2FF]'
+                                }
+                              `}
+                            >
+                              <Icon
+                                className={`
+                                  h-3.5
+                                  w-3.5
+                                  transition-colors
+                                  ${
+                                    isActive
+                                      ? 'text-[#D4AF37]'
+                                      : 'text-slate-400 group-hover:text-[#3557FF]'
+                                  }
+                                `}
+                              />
+                            </span>
+
+                            <span className="min-w-0 flex-1 truncate whitespace-nowrap">
+                              {item.label}
+                            </span>
+
+                            {badge && (
+                              <span
+                                title={`${item.badge} item(ns)`}
+                                className={`
+                                  ml-auto
+                                  flex
+                                  h-5
+                                  min-w-[22px]
+                                  max-w-[42px]
+                                  shrink-0
+                                  items-center
+                                  justify-center
+                                  whitespace-nowrap
+                                  rounded-full
+                                  px-1.5
+                                  text-[9px]
+                                  font-black
+                                  leading-none
+                                  ${
+                                    isActive
+                                      ? 'bg-[#D4AF37] text-slate-950'
+                                      : 'bg-[#EEF2FF] text-[#3557FF]'
+                                  }
+                                `}
+                              >
+                                {badge}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    }
+                  )}
+                </ul>
+              </div>
+            )
           )}
         </div>
       </div>
 
-      <div className="scrollbar-none flex-1 space-y-6 overflow-y-auto px-4 py-3">
-        {menuGroupsPermitidos.map(
-          group => (
-            <div
-              key={group.title}
-              className="space-y-2"
-            >
-              <h3 className="px-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
-                {group.title}
-              </h3>
-
-              <ul className="space-y-1.5">
-                {group.items.map(
-                  item => {
-                    const Icon =
-                      item.icon;
-
-                    const isActive =
-                      activeView ===
-                      item.id;
-
-                    return (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setActiveView(
-                              item.id
-                            )
-                          }
-                          className={`group relative flex w-full items-center justify-between rounded-2xl px-3.5 py-3 text-[13px] font-semibold transition-all duration-200 ${
-                            isActive
-                              ? 'bg-slate-950 text-white shadow-[0_14px_35px_rgba(15,23,42,.18)]'
-                              : 'text-slate-500 hover:bg-white/80 hover:text-slate-950'
-                          }`}
-                          id={`sidebar-item-${item.id}`}
-                        >
-                          {isActive && (
-                            <span className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-[#D4AF37]" />
-                          )}
-
-                          <div className="flex min-w-0 items-center gap-3">
-                            <span
-                              className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
-                                isActive
-                                  ? 'bg-white/10'
-                                  : 'bg-slate-100/70 group-hover:bg-[#EEF2FF]'
-                              }`}
-                            >
-                              <Icon
-                                className={`h-4 w-4 transition-colors ${
-                                  isActive
-                                    ? 'text-[#D4AF37]'
-                                    : 'text-slate-400 group-hover:text-[#3557FF]'
-                                }`}
-                              />
-                            </span>
-
-                            <span className="truncate">
-                              {item.label}
-                            </span>
-                          </div>
-
-                          {item.badge !==
-                            undefined &&
-                            item.badge >
-                              0 && (
-                              <span
-                                className={`flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[10px] font-black ${
-                                  isActive
-                                    ? 'bg-[#D4AF37] text-slate-950'
-                                    : 'bg-[#EEF2FF] text-[#3557FF]'
-                                }`}
-                              >
-                                {
-                                  item.badge
-                                }
-                              </span>
-                            )}
-                        </button>
-                      </li>
-                    );
-                  }
-                )}
-              </ul>
-            </div>
-          )
-        )}
-      </div>
-
-      <div className="mt-auto p-5">
-        <div className="relative overflow-hidden rounded-[22px] bg-slate-950 p-4 text-white shadow-lg">
+      {/* USUÁRIO / RODAPÉ */}
+      <div className="shrink-0 border-t border-slate-100/80 bg-white/70 p-3 backdrop-blur-sm">
+        <div className="relative overflow-hidden rounded-[18px] bg-slate-950 p-3 text-white shadow-lg">
           <div className="absolute right-[-20px] top-[-20px] h-20 w-20 rounded-full bg-[#3557FF]/30 blur-2xl" />
 
-          <div className="relative z-10 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
-              <ShieldCheck className="h-5 w-5 text-[#D4AF37]" />
+          <div className="relative z-10 flex min-w-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10">
+              <ShieldCheck className="h-4 w-4 text-[#D4AF37]" />
             </div>
 
-            <div className="min-w-0">
-              <span className="block truncate text-xs font-bold">
+            <div className="min-w-0 flex-1">
+              <span className="block truncate text-[11px] font-bold">
                 {nomeUsuario ||
                   'FlowFinance'}
               </span>
 
-              <span className="block text-[10px] uppercase tracking-wider text-white/45">
+              <span className="block truncate text-[8px] uppercase tracking-wider text-white/45">
                 {perfil
                   ?.replace(
                     '_',

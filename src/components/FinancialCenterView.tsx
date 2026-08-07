@@ -90,6 +90,7 @@ export const FinancialCenterView: React.FC = () => {
     empresas,
     planosFinanceiros,
     centrosCustos,
+    processos,
     cadastrarPlanoFinanceiro,
     editarPlanoFinanceiro,
     excluirPlanoFinanceiro,
@@ -225,41 +226,24 @@ export const FinancialCenterView: React.FC = () => {
     carregarOrcamentos();
   }, [empresaSelecionadaId, ano, mes]);
 
-  const resumo = useMemo(
-    () =>
-      orcamentos.reduce(
-        (acumulado, item) => {
-          acumulado.valorOrcado += numeroSeguro(
-            item.valorOrcado
-          );
-          acumulado.valorComprometido += numeroSeguro(
-            item.valorComprometido
-          );
-          acumulado.valorUtilizado += numeroSeguro(
-            item.valorUtilizado
-          );
-          acumulado.disponivel += numeroSeguro(
-            item.disponivel
-          );
-
-          return acumulado;
-        },
-        {
-          valorOrcado: 0,
-          valorComprometido: 0,
-          valorUtilizado: 0,
-          disponivel: 0,
-        }
-      ),
-    [orcamentos]
-  );
+  /*
+   * CÁLCULO FINANCEIRO REAL
+   *
+   * O orçamento continua vindo de orcamentos_mensais.
+   * Comprometido e utilizado passam a ser calculados a partir
+   * dos processos/contas reais carregados do Supabase.
+   *
+   * Isso faz com que contas criadas diretamente em Contas a Pagar,
+   * importadas por Excel ou originadas no fluxo de Compras entrem
+   * automaticamente no Plano Financeiro.
+   */
 
   const orcamentoPorCentro = useMemo(() => {
     const mapa = new Map<string, OrcamentoMensal>();
 
     for (const item of orcamentos) {
       if (item.centroCustoId) {
-        mapa.set(item.centroCustoId, item);
+        mapa.set(String(item.centroCustoId), item);
       }
     }
 
@@ -271,12 +255,370 @@ export const FinancialCenterView: React.FC = () => {
 
     for (const item of orcamentos) {
       if (!item.centroCustoId) {
-        mapa.set(item.planoFinanceiroId, item);
+        mapa.set(String(item.planoFinanceiroId), item);
       }
     }
 
     return mapa;
   }, [orcamentos]);
+
+  const obterPlanoProcessoId = (processo: any) =>
+    String(
+      processo?.planoFinanceiroId ??
+        processo?.plano_financeiro_id ??
+        processo?.planoId ??
+        processo?.plano_id ??
+        ''
+    ).trim();
+
+  const obterCentroProcessoId = (processo: any) =>
+    String(
+      processo?.centroCustoId ??
+        processo?.centro_custo_id ??
+        processo?.centroId ??
+        processo?.centro_id ??
+        ''
+    ).trim();
+
+  const obterEmpresaProcessoId = (processo: any) =>
+    String(
+      processo?.empresaId ??
+        processo?.empresa_id ??
+        ''
+    ).trim();
+
+  const obterCompetenciaProcesso = (processo: any) => {
+    /*
+     * Para orçamento mensal, a conta é classificada prioritariamente
+     * pela data de vencimento/prazo.
+     *
+     * Isso mantém a despesa na competência para a qual ela foi
+     * lançada, mesmo quando o pagamento acontece depois.
+     */
+    const data =
+      processo?.prazo ??
+      processo?.vencimento ??
+      processo?.dataVencimento ??
+      processo?.data_vencimento ??
+      processo?.dataProgramadaPagamento ??
+      processo?.data_programada_pagamento ??
+      processo?.dataPagamento ??
+      processo?.data_pagamento ??
+      processo?.dataCriacao ??
+      processo?.created_at ??
+      '';
+
+    return String(data).slice(0, 7);
+  };
+
+  const obterValoresProcesso = (processo: any) => {
+    const valorTotal = Math.max(
+      numeroSeguro(processo?.valor),
+      0
+    );
+
+    let valorPago = Math.max(
+      numeroSeguro(
+        processo?.valorPago ??
+          processo?.valor_pago
+      ),
+      0
+    );
+
+    /*
+     * Compatibilidade com contas antigas:
+     * algumas contas finalizadas/conciliadas podem não ter valorPago
+     * preenchido, embora já estejam quitadas.
+     */
+    const status = String(
+      processo?.status ?? ''
+    ).toLowerCase();
+
+    if (
+      valorPago <= 0.001 &&
+      ['conciliacao', 'finalizado'].includes(status)
+    ) {
+      valorPago = valorTotal;
+    }
+
+    valorPago = Math.min(
+      valorPago,
+      valorTotal
+    );
+
+    const saldo = Math.max(
+      valorTotal - valorPago,
+      0
+    );
+
+    return {
+      valorTotal,
+      utilizado: valorPago,
+      comprometido: saldo,
+    };
+  };
+
+  const processosDaCompetencia = useMemo(() => {
+    if (!empresaSelecionadaId) {
+      return [];
+    }
+
+    return (processos || []).filter(
+      (processo: any) => {
+        const empresaId =
+          obterEmpresaProcessoId(processo);
+
+        const planoId =
+          obterPlanoProcessoId(processo);
+
+        const competenciaProcesso =
+          obterCompetenciaProcesso(processo);
+
+        return (
+          empresaId ===
+            String(empresaSelecionadaId) &&
+          Boolean(planoId) &&
+          competenciaProcesso === competencia
+        );
+      }
+    );
+  }, [
+    processos,
+    empresaSelecionadaId,
+    competencia,
+  ]);
+
+  const movimentoPorPlano = useMemo(() => {
+    const mapa = new Map<
+      string,
+      {
+        comprometido: number;
+        utilizado: number;
+        total: number;
+        semCentro: number;
+        quantidade: number;
+      }
+    >();
+
+    for (const processo of processosDaCompetencia) {
+      const planoId =
+        obterPlanoProcessoId(processo);
+
+      if (!planoId) continue;
+
+      const valores =
+        obterValoresProcesso(processo);
+
+      const atual =
+        mapa.get(planoId) || {
+          comprometido: 0,
+          utilizado: 0,
+          total: 0,
+          semCentro: 0,
+          quantidade: 0,
+        };
+
+      atual.comprometido +=
+        valores.comprometido;
+
+      atual.utilizado +=
+        valores.utilizado;
+
+      atual.total +=
+        valores.valorTotal;
+
+      atual.quantidade += 1;
+
+      if (
+        !obterCentroProcessoId(processo)
+      ) {
+        atual.semCentro +=
+          valores.valorTotal;
+      }
+
+      mapa.set(planoId, atual);
+    }
+
+    return mapa;
+  }, [processosDaCompetencia]);
+
+  const movimentoPorCentro = useMemo(() => {
+    const mapa = new Map<
+      string,
+      {
+        comprometido: number;
+        utilizado: number;
+        total: number;
+        quantidade: number;
+      }
+    >();
+
+    for (const processo of processosDaCompetencia) {
+      const centroId =
+        obterCentroProcessoId(processo);
+
+      if (!centroId) continue;
+
+      const valores =
+        obterValoresProcesso(processo);
+
+      const atual =
+        mapa.get(centroId) || {
+          comprometido: 0,
+          utilizado: 0,
+          total: 0,
+          quantidade: 0,
+        };
+
+      atual.comprometido +=
+        valores.comprometido;
+
+      atual.utilizado +=
+        valores.utilizado;
+
+      atual.total +=
+        valores.valorTotal;
+
+      atual.quantidade += 1;
+
+      mapa.set(centroId, atual);
+    }
+
+    return mapa;
+  }, [processosDaCompetencia]);
+
+  const obterOrcadoPlano = (
+    planoId: string
+  ) => {
+    const orcamentoGeral =
+      orcamentoPorPlano.get(planoId);
+
+    if (orcamentoGeral) {
+      return numeroSeguro(
+        orcamentoGeral.valorOrcado
+      );
+    }
+
+    return centrosCustos
+      .filter(
+        (centro: any) =>
+          String(
+            centro.planoFinanceiroId
+          ) === planoId
+      )
+      .reduce(
+        (total: number, centro: any) => {
+          const orcamentoCentro =
+            orcamentoPorCentro.get(
+              obterCentroId(centro)
+            );
+
+          return (
+            total +
+            numeroSeguro(
+              orcamentoCentro?.valorOrcado
+            )
+          );
+        },
+        0
+      );
+  };
+
+  const valoresCalculadosPorPlano = useMemo(() => {
+    const mapa = new Map<
+      string,
+      {
+        orcado: number;
+        comprometido: number;
+        utilizado: number;
+        disponivel: number;
+        totalLancado: number;
+        semCentro: number;
+        quantidade: number;
+      }
+    >();
+
+    for (const plano of planosFinanceiros) {
+      const planoId =
+        obterPlanoId(plano);
+
+      const movimento =
+        movimentoPorPlano.get(planoId) || {
+          comprometido: 0,
+          utilizado: 0,
+          total: 0,
+          semCentro: 0,
+          quantidade: 0,
+        };
+
+      const orcado =
+        obterOrcadoPlano(planoId);
+
+      const comprometido =
+        numeroSeguro(
+          movimento.comprometido
+        );
+
+      const utilizado =
+        numeroSeguro(
+          movimento.utilizado
+        );
+
+      mapa.set(planoId, {
+        orcado,
+        comprometido,
+        utilizado,
+        disponivel:
+          orcado -
+          comprometido -
+          utilizado,
+        totalLancado:
+          movimento.total,
+        semCentro:
+          movimento.semCentro,
+        quantidade:
+          movimento.quantidade,
+      });
+    }
+
+    return mapa;
+  }, [
+    planosFinanceiros,
+    centrosCustos,
+    movimentoPorPlano,
+    orcamentoPorPlano,
+    orcamentoPorCentro,
+  ]);
+
+  const resumo = useMemo(() => {
+    return Array.from(
+      valoresCalculadosPorPlano.values()
+    ).reduce(
+      (acumulado, item) => {
+        acumulado.valorOrcado +=
+          numeroSeguro(item.orcado);
+
+        acumulado.valorComprometido +=
+          numeroSeguro(
+            item.comprometido
+          );
+
+        acumulado.valorUtilizado +=
+          numeroSeguro(item.utilizado);
+
+        acumulado.disponivel +=
+          numeroSeguro(item.disponivel);
+
+        return acumulado;
+      },
+      {
+        valorOrcado: 0,
+        valorComprometido: 0,
+        valorUtilizado: 0,
+        disponivel: 0,
+      }
+    );
+  }, [valoresCalculadosPorPlano]);
 
   const centrosDoPlanoSelecionado = useMemo(
     () =>
@@ -1161,40 +1503,18 @@ export const FinancialCenterView: React.FC = () => {
             const orcamentoPlano =
               orcamentoPorPlano.get(planoId);
 
-            const totaisCentros = centros.reduce(
-              (total, centro: any) => {
-                const item = orcamentoPorCentro.get(
-                  obterCentroId(centro)
-                );
-
-                if (!item) return total;
-
-                total.orcado += item.valorOrcado;
-                total.comprometido +=
-                  item.valorComprometido;
-                total.utilizado += item.valorUtilizado;
-                total.disponivel += item.disponivel;
-
-                return total;
-              },
-              {
+            const valoresPlano =
+              valoresCalculadosPorPlano.get(
+                planoId
+              ) || {
                 orcado: 0,
                 comprometido: 0,
                 utilizado: 0,
                 disponivel: 0,
-              }
-            );
-
-            const valoresPlano = orcamentoPlano
-              ? {
-                  orcado: orcamentoPlano.valorOrcado,
-                  comprometido:
-                    orcamentoPlano.valorComprometido,
-                  utilizado:
-                    orcamentoPlano.valorUtilizado,
-                  disponivel: orcamentoPlano.disponivel,
-                }
-              : totaisCentros;
+                totalLancado: 0,
+                semCentro: 0,
+                quantidade: 0,
+              };
 
             return (
               <div
@@ -1234,8 +1554,18 @@ export const FinancialCenterView: React.FC = () => {
 
                         <p className="mt-2 text-[10px] font-semibold text-slate-500">
                           {centros.length} centro(s) de
-                          custo • {labelCompetencia}
+                          custo • {labelCompetencia} •{' '}
+                          {valoresPlano.quantidade} lançamento(s)
                         </p>
+
+                        {valoresPlano.semCentro > 0.001 && (
+                          <p className="mt-1 text-[9px] font-semibold text-amber-600">
+                            {formatarReal(
+                              valoresPlano.semCentro
+                            )}{' '}
+                            ainda está sem centro de custo.
+                          </p>
+                        )}
                       </div>
                     </button>
 
@@ -1343,6 +1673,44 @@ export const FinancialCenterView: React.FC = () => {
                               centroId
                             );
 
+                          const movimentoCentro =
+                            movimentoPorCentro.get(
+                              centroId
+                            ) || {
+                              comprometido: 0,
+                              utilizado: 0,
+                              total: 0,
+                              quantidade: 0,
+                            };
+
+                          const valorOrcadoCentro =
+                            numeroSeguro(
+                              orcamento?.valorOrcado
+                            );
+
+                          const valoresCentro = {
+                            orcado:
+                              valorOrcadoCentro,
+                            comprometido:
+                              numeroSeguro(
+                                movimentoCentro.comprometido
+                              ),
+                            utilizado:
+                              numeroSeguro(
+                                movimentoCentro.utilizado
+                              ),
+                            disponivel:
+                              valorOrcadoCentro -
+                              numeroSeguro(
+                                movimentoCentro.comprometido
+                              ) -
+                              numeroSeguro(
+                                movimentoCentro.utilizado
+                              ),
+                            quantidade:
+                              movimentoCentro.quantidade,
+                          };
+
                           return (
                             <div
                               key={centroId}
@@ -1426,72 +1794,72 @@ export const FinancialCenterView: React.FC = () => {
                                 </div>
                               </div>
 
-                              {orcamento ? (
-                                <>
-                                  <div className="mt-4 grid grid-cols-2 gap-2">
-                                    <Metrica
-                                      titulo="Orçado"
-                                      valor={formatarReal(
-                                        orcamento.valorOrcado
-                                      )}
-                                    />
+                              <div className="mt-4 grid grid-cols-2 gap-2">
+                                <Metrica
+                                  titulo="Orçado"
+                                  valor={formatarReal(
+                                    valoresCentro.orcado
+                                  )}
+                                />
 
-                                    <Metrica
-                                      titulo="Disponível"
-                                      valor={formatarReal(
-                                        orcamento.disponivel
-                                      )}
-                                      destaque={
-                                        orcamento.disponivel >=
-                                        0
-                                      }
-                                      alerta={
-                                        orcamento.disponivel <
-                                        0
-                                      }
-                                    />
+                                <Metrica
+                                  titulo="Disponível"
+                                  valor={formatarReal(
+                                    valoresCentro.disponivel
+                                  )}
+                                  destaque={
+                                    valoresCentro.disponivel >=
+                                    0
+                                  }
+                                  alerta={
+                                    valoresCentro.disponivel <
+                                    0
+                                  }
+                                />
 
-                                    <Metrica
-                                      titulo="Comprometido"
-                                      valor={formatarReal(
-                                        orcamento.valorComprometido
-                                      )}
-                                    />
+                                <Metrica
+                                  titulo="Comprometido"
+                                  valor={formatarReal(
+                                    valoresCentro.comprometido
+                                  )}
+                                />
 
-                                    <Metrica
-                                      titulo="Utilizado"
-                                      valor={formatarReal(
-                                        orcamento.valorUtilizado
-                                      )}
-                                    />
-                                  </div>
+                                <Metrica
+                                  titulo="Utilizado"
+                                  valor={formatarReal(
+                                    valoresCentro.utilizado
+                                  )}
+                                />
+                              </div>
 
-                                  <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-                                    <p className="text-[9px] text-slate-400">
-                                      {orcamento.observacao ||
-                                        'Sem observação.'}
-                                    </p>
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleExcluirOrcamento(
-                                          orcamento
-                                        )
-                                      }
-                                      className="text-[9px] font-bold text-red-500 hover:text-red-600"
-                                    >
-                                      Excluir orçamento
-                                    </button>
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="mt-4 rounded-[12px] border border-dashed border-amber-200 bg-amber-50 p-3">
-                                  <p className="text-[10px] font-semibold text-amber-700">
-                                    Sem orçamento em{' '}
-                                    {labelCompetencia}
+                              <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                                <div>
+                                  <p className="text-[9px] text-slate-400">
+                                    {valoresCentro.quantidade}{' '}
+                                    lançamento(s) nesta competência.
                                   </p>
 
+                                  <p className="mt-1 text-[9px] text-slate-400">
+                                    {orcamento
+                                      ? orcamento.observacao ||
+                                        'Sem observação.'
+                                      : `Sem orçamento em ${labelCompetencia}.`}
+                                  </p>
+                                </div>
+
+                                {orcamento ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleExcluirOrcamento(
+                                        orcamento
+                                      )
+                                    }
+                                    className="shrink-0 text-[9px] font-bold text-red-500 hover:text-red-600"
+                                  >
+                                    Excluir orçamento
+                                  </button>
+                                ) : (
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1500,12 +1868,12 @@ export const FinancialCenterView: React.FC = () => {
                                         centroId
                                       )
                                     }
-                                    className="mt-2 text-[9px] font-bold text-amber-700"
+                                    className="shrink-0 text-[9px] font-bold text-amber-700"
                                   >
-                                    Cadastrar agora
+                                    Cadastrar orçamento
                                   </button>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
                           );
                         })}

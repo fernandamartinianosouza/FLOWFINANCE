@@ -568,24 +568,68 @@ export const financeService = {
   async getProcessos(organizacaoId?: string) {
     const orgId = await resolverOrganizacaoId(organizacaoId);
 
-    const { data, error } = await supabase
-      .from("processos_compra")
-      .select(
-        `
-          *,
-          historico_processos (*),
-          processo_documentos (*),
-          pagamentos_processos (*)
-        `,
-      )
-      .eq("organizacao_id", orgId)
-      .order("created_at", {
-        ascending: false,
-      });
+    /*
+     * O Supabase/PostgREST pode limitar a quantidade de linhas retornadas
+     * em uma única requisição.
+     *
+     * Por isso, carregamos os processos em lotes de 1000 registros até
+     * não existir mais nenhum lote completo.
+     *
+     * A paginação visual da tela de Contas a Pagar continua funcionando
+     * normalmente (ex.: 30 itens por página), mas agora o FinanceContext
+     * recebe todos os processos existentes no banco para a organização.
+     */
+    const TAMANHO_LOTE = 1000;
 
-    if (error) throw error;
+    let inicio = 0;
+    let todosOsProcessos: any[] = [];
 
-    return (data || []).map(mapProcessoFromDb);
+    while (true) {
+      const fim = inicio + TAMANHO_LOTE - 1;
+
+      const { data, error } = await supabase
+        .from("processos_compra")
+        .select(
+          `
+            *,
+            historico_processos (*),
+            processo_documentos (*),
+            pagamentos_processos (*)
+          `,
+        )
+        .eq("organizacao_id", orgId)
+        .order("created_at", {
+          ascending: false,
+        })
+        .order("id", {
+          ascending: false,
+        })
+        .range(inicio, fim);
+
+      if (error) {
+        console.error(
+          `Erro ao carregar processos do intervalo ${inicio}-${fim}:`,
+          error,
+        );
+
+        throw error;
+      }
+
+      const lote = data || [];
+
+      todosOsProcessos = [
+        ...todosOsProcessos,
+        ...lote,
+      ];
+
+      if (lote.length < TAMANHO_LOTE) {
+        break;
+      }
+
+      inicio += TAMANHO_LOTE;
+    }
+
+    return todosOsProcessos.map(mapProcessoFromDb);
   },
 
   async criarProcesso(item: any) {

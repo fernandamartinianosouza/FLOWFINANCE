@@ -64,10 +64,10 @@ interface FinanceContextType {
   setActiveProcessId: (id: string | null) => void;
 
   programarPagamento: (
-  id: string,
-  dataProgramada: string,
-  usuario: string
-) => Promise<void>;
+    id: string,
+    dataProgramada: string,
+    usuario: string
+  ) => Promise<void>;
 
   uploadAnexoProcesso: (file: File) => Promise<{
     nome: string;
@@ -217,14 +217,16 @@ export const useFinance = () => {
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+
   const usuarioLogado =
-  user?.user_metadata?.nome ||
-  user?.user_metadata?.name ||
-  user?.email ||
-  'Usuário logado';
+    user?.user_metadata?.nome ||
+    user?.user_metadata?.name ||
+    user?.email ||
+    'Usuário logado';
 
   const [organizacoesUsuario, setOrganizacoesUsuario] =
     useState<UsuarioOrganizacao[]>([]);
+
   const [organizacaoAtivaIdState, setOrganizacaoAtivaIdState] =
     useState<string>('');
 
@@ -257,6 +259,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setEmpresaAtivaId('');
   }, []);
+
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
 
@@ -399,78 +402,32 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     recarregarDados();
   }, [user, organizacaoAtivaIdState, recarregarDados]);
 
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    const atualizarAoVoltar = () => {
-      if (
-        document.visibilityState === 'visible'
-      ) {
-        recarregarDados();
-      }
-    };
-
-    const atualizarAoFocar = () => {
-      recarregarDados();
-    };
-
-    document.addEventListener(
-      'visibilitychange',
-      atualizarAoVoltar
-    );
-
-    window.addEventListener(
-      'focus',
-      atualizarAoFocar
-    );
-
-    const intervalo = window.setInterval(
-      () => {
-        if (
-          document.visibilityState === 'visible'
-        ) {
-          recarregarDados();
-        }
-      },
-      30000
-    );
-
-    return () => {
-      document.removeEventListener(
-        'visibilitychange',
-        atualizarAoVoltar
-      );
-
-      window.removeEventListener(
-        'focus',
-        atualizarAoFocar
-      );
-
-      window.clearInterval(intervalo);
-    };
-  }, [user, recarregarDados]);
+  /*
+   * CORREÇÃO:
+   * Não adicionamos listener de window.focus nem visibilitychange.
+   * Assim, trocar de aba no navegador e voltar para o FLOWFINANCE
+   * não dispara recarregarDados() novamente.
+   */
 
   const uploadAnexoProcesso = async (file: File) => {
     return financeService.uploadAnexoProcesso(file, organizacaoAtivaIdState);
   };
 
   const getDocumentosProcesso = async (processoDbId: string) => {
-  return financeService.getDocumentosProcesso(processoDbId);
-};
+    return financeService.getDocumentosProcesso(processoDbId);
+  };
 
-const anexarDocumentoProcesso = async (params: {
-  processoDbId: string;
-  file: File;
-  tipo?: string;
-  enviadoPor?: string;
-}) => {
-  return financeService.anexarDocumentoProcesso({
-    ...params,
-    organizacaoId: organizacaoAtivaIdState,
-  });
-};
+  const anexarDocumentoProcesso = async (params: {
+    processoDbId: string;
+    file: File;
+    tipo?: string;
+    enviadoPor?: string;
+  }) => {
+    return financeService.anexarDocumentoProcesso({
+      ...params,
+      organizacaoId: organizacaoAtivaIdState,
+    });
+  };
 
   const criarSolicitacao = async (dados: {
     tipoPagamento: 'fornecedor' | 'interno';
@@ -587,7 +544,6 @@ const anexarDocumentoProcesso = async (params: {
       alert(error.message || 'Erro ao criar solicitação.');
     }
   };
-
 
   const criarNovaConta = async (dados: {
     organizacaoId?: string;
@@ -818,49 +774,49 @@ const anexarDocumentoProcesso = async (params: {
   };
 
   const programarPagamento = async (
-  id: string,
-  dataProgramada: string,
-  usuario: string
-) => {
-  try {
-    const processoAtual = processos.find(p => p.id === id);
-    if (!processoAtual) return;
+    id: string,
+    dataProgramada: string,
+    usuario: string
+  ) => {
+    try {
+      const processoAtual = processos.find(p => p.id === id);
+      if (!processoAtual) return;
 
-    const novoHistorico: HistoricoStatus = {
-      data: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      usuario: usuarioLogado,
-      deStatus: processoAtual.status,
-      paraStatus: processoAtual.status,
-      observacao: `Pagamento programado para ${dataProgramada}.`,
-    };
-
-    const atualizado: ProcessoCompra = {
-      ...processoAtual,
-      dataProgramadaPagamento: dataProgramada,
-      statusProgramacao: 'programado',
-      programadoPor: usuario,
-      dataProgramacao: new Date().toISOString(),
-      historico: [...(processoAtual.historico || []), novoHistorico],
-    };
-
-    await financeService.editarProcesso(id, atualizado);
-
-    if ((processoAtual as any).dbId) {
-      await financeService.criarHistoricoProcesso({
-        dbId: (processoAtual as any).dbId,
+      const novoHistorico: HistoricoStatus = {
+        data: new Date().toISOString().replace('T', ' ').substring(0, 16),
         usuario: usuarioLogado,
         deStatus: processoAtual.status,
         paraStatus: processoAtual.status,
-        observacao: novoHistorico.observacao,
-      });
-    }
+        observacao: `Pagamento programado para ${dataProgramada}.`,
+      };
 
-    setProcessos(prev => prev.map(p => (p.id === id ? atualizado : p)));
-  } catch (error: any) {
-    console.error('Erro ao programar pagamento:', error);
-    alert(error.message || 'Erro ao programar pagamento.');
-  }
-};
+      const atualizado: ProcessoCompra = {
+        ...processoAtual,
+        dataProgramadaPagamento: dataProgramada,
+        statusProgramacao: 'programado',
+        programadoPor: usuario,
+        dataProgramacao: new Date().toISOString(),
+        historico: [...(processoAtual.historico || []), novoHistorico],
+      };
+
+      await financeService.editarProcesso(id, atualizado);
+
+      if ((processoAtual as any).dbId) {
+        await financeService.criarHistoricoProcesso({
+          dbId: (processoAtual as any).dbId,
+          usuario: usuarioLogado,
+          deStatus: processoAtual.status,
+          paraStatus: processoAtual.status,
+          observacao: novoHistorico.observacao,
+        });
+      }
+
+      setProcessos(prev => prev.map(p => (p.id === id ? atualizado : p)));
+    } catch (error: any) {
+      console.error('Erro ao programar pagamento:', error);
+      alert(error.message || 'Erro ao programar pagamento.');
+    }
+  };
 
   const registrarPagamento = async (
     id: string,
@@ -1145,9 +1101,15 @@ const anexarDocumentoProcesso = async (params: {
     );
   };
 
-  const cadastrarEmpresa = async (dados: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>) => {
+  const cadastrarEmpresa = async (
+    dados: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>
+  ) => {
     try {
-      const nova = await financeService.criarEmpresa({ ...dados, organizacaoId: organizacaoAtivaIdState });
+      const nova = await financeService.criarEmpresa({
+        ...dados,
+        organizacaoId: organizacaoAtivaIdState,
+      });
+
       setEmpresas(prev => [...prev, nova]);
 
       if (!empresaAtivaId) {
@@ -1159,10 +1121,19 @@ const anexarDocumentoProcesso = async (params: {
     }
   };
 
-  const editarEmpresa = async (id: string, dados: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>) => {
+  const editarEmpresa = async (
+    id: string,
+    dados: Omit<Empresa, 'id' | 'saldoAtual' | 'organizacaoId'>
+  ) => {
     try {
-      const atualizada = await financeService.editarEmpresa(id, { ...dados, organizacaoId: organizacaoAtivaIdState });
-      setEmpresas(prev => prev.map(emp => (emp.id === id ? atualizada : emp)));
+      const atualizada = await financeService.editarEmpresa(id, {
+        ...dados,
+        organizacaoId: organizacaoAtivaIdState,
+      });
+
+      setEmpresas(prev =>
+        prev.map(emp => (emp.id === id ? atualizada : emp))
+      );
     } catch (error: any) {
       console.error('Erro ao editar empresa:', error);
       alert(error.message || 'Erro ao editar empresa.');
@@ -1216,8 +1187,14 @@ const anexarDocumentoProcesso = async (params: {
     dados: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
   ) => {
     try {
-      const atualizado = await financeService.editarFornecedor(id, { ...dados, organizacaoId: organizacaoAtivaIdState });
-      setFornecedores(prev => prev.map(f => (f.id === id ? atualizado : f)));
+      const atualizado = await financeService.editarFornecedor(id, {
+        ...dados,
+        organizacaoId: organizacaoAtivaIdState,
+      });
+
+      setFornecedores(prev =>
+        prev.map(f => (f.id === id ? atualizado : f))
+      );
     } catch (error: any) {
       console.error('Erro ao editar fornecedor:', error);
       alert(error.message || 'Erro ao editar fornecedor.');
@@ -1264,8 +1241,14 @@ const anexarDocumentoProcesso = async (params: {
     dados: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
   ) => {
     try {
-      const atualizado = await financeService.editarPlanoFinanceiro(id, { ...dados, organizacaoId: organizacaoAtivaIdState });
-      setPlanosFinanceiros(prev => prev.map(p => (p.id === id ? atualizado : p)));
+      const atualizado = await financeService.editarPlanoFinanceiro(id, {
+        ...dados,
+        organizacaoId: organizacaoAtivaIdState,
+      });
+
+      setPlanosFinanceiros(prev =>
+        prev.map(p => (p.id === id ? atualizado : p))
+      );
     } catch (error: any) {
       console.error('Erro ao editar plano:', error);
       alert(error.message || 'Erro ao editar plano.');
@@ -1294,7 +1277,9 @@ const anexarDocumentoProcesso = async (params: {
     }
   };
 
-  const cadastrarCentroCusto = async (dados: Omit<CentroCusto, 'id' | 'utilizado'>) => {
+  const cadastrarCentroCusto = async (
+    dados: Omit<CentroCusto, 'id' | 'utilizado'>
+  ) => {
     try {
       const novo = await financeService.criarCentroCusto(dados);
       setCentrosCustos(prev => [...prev, novo]);
@@ -1310,7 +1295,9 @@ const anexarDocumentoProcesso = async (params: {
   ) => {
     try {
       const atualizado = await financeService.editarCentroCusto(id, dados);
-      setCentrosCustos(prev => prev.map(c => (c.id === id ? atualizado : c)));
+      setCentrosCustos(prev =>
+        prev.map(c => (c.id === id ? atualizado : c))
+      );
     } catch (error: any) {
       console.error('Erro ao editar centro de custo:', error);
       alert(error.message || 'Erro ao editar centro de custo.');
@@ -1336,10 +1323,18 @@ const anexarDocumentoProcesso = async (params: {
 
   const marcarAlertaLido = async (id: string) => {
     try {
-      const alertaAtualizado = await financeService.marcarAlertaLido(id, organizacaoAtivaIdState);
-      setAlertas(prev => prev.map(a => (a.id === id ? alertaAtualizado : a)));
+      const alertaAtualizado = await financeService.marcarAlertaLido(
+        id,
+        organizacaoAtivaIdState
+      );
+
+      setAlertas(prev =>
+        prev.map(a => (a.id === id ? alertaAtualizado : a))
+      );
     } catch {
-      setAlertas(prev => prev.map(a => (a.id === id ? { ...a, lido: true } : a)));
+      setAlertas(prev =>
+        prev.map(a => (a.id === id ? { ...a, lido: true } : a))
+      );
     }
   };
 
@@ -1411,7 +1406,6 @@ const anexarDocumentoProcesso = async (params: {
           acaoLabel: 'Ver Processo',
           viewTarget: 'processos',
         };
-
     }
   };
 

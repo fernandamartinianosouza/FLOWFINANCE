@@ -337,9 +337,9 @@ const AppContent: React.FC = () => {
 
       <div className="pointer-events-none absolute left-[28%] top-[32%] z-0 h-[38%] w-[38%] rounded-full bg-sky-200/22 blur-[150px]" />
 
-      <div className="relative z-20 hidden h-screen shrink-0 lg:block">
-        <Sidebar />
-      </div>
+      <div className="relative z-20 hidden h-screen w-72 min-w-72 shrink-0 lg:block">
+  <Sidebar />
+</div>
 
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <div className="hidden lg:block">
@@ -349,9 +349,9 @@ const AppContent: React.FC = () => {
         <MobileTopBar />
 
         <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-28 sm:px-5 lg:h-screen lg:px-10 lg:py-8 lg:pb-8">
-          <div className="ff-page-container ff-fade-up relative z-10 mx-auto w-full max-w-[1600px]">
-            {renderView()}
-          </div>
+          <div className="ff-page-container relative z-10 mx-auto w-full max-w-[1600px]">
+  {renderView()}
+</div>
         </main>
       </div>
 
