@@ -6,7 +6,6 @@ import { podeAcessar } from '../config/permissions';
 
 import {
   LayoutDashboard,
-  GitBranch,
   PlusCircle,
   CheckSquare,
   Wallet,
@@ -77,11 +76,6 @@ export const Sidebar: React.FC = () => {
           id: 'dashboard',
           label: 'Dashboard',
           icon: LayoutDashboard,
-        },
-        {
-          id: 'processos',
-          label: 'Central de Processos',
-          icon: GitBranch,
         },
       ],
     },

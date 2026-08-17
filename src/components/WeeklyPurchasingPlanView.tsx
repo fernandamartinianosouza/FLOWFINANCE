@@ -785,23 +785,24 @@ export const WeeklyPurchasingPlanView:
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-600">
-              <Target className="h-4 w-4" />
-              Compras
-            </div>
-
-            <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-              Planejamento semanal de compras
-            </h1>
-
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-              Controle o teto semanal, organize as compras e transfira despesas para a próxima semana quando necessário.
-            </p>
+        {/* CABEÇALHO — título em uma linha exclusiva */}
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-600">
+            <Target className="h-4 w-4" />
+            Compras
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+            Planejamento semanal de compras
+          </h1>
+
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+            Controle o teto semanal, organize as compras e transfira despesas para a próxima semana quando necessário.
+          </p>
+        </div>
+
+        {/* AÇÕES — linha exclusiva abaixo do título */}
+        <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => carregar()}
@@ -848,7 +849,6 @@ export const WeeklyPurchasingPlanView:
               Adicionar compra
             </button>
           </div>
-        </div>
 
         {erro && (
           <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -864,7 +864,7 @@ export const WeeklyPurchasingPlanView:
           </div>
         )}
 
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-2">
             <button
               type="button"

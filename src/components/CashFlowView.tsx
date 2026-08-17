@@ -33,6 +33,7 @@ import {
 } from '../services/faturamentoImportService';
 
 type Aba = 'visao-geral' | 'contas-receber' | 'conciliacao';
+type TipoPeriodoConciliacao = 'dia' | 'mes' | 'ano';
 
 type LinhaConciliacao = {
   data: string;
@@ -40,6 +41,13 @@ type LinhaConciliacao = {
   pagar: number;
   saldoDia: number;
   saldoAcumulado: number;
+};
+
+type LinhaConciliacaoPeriodo = {
+  data: string;
+  receber: number;
+  pagar: number;
+  resultado: number;
 };
 
 const hojeIso = () => new Date().toISOString().slice(0, 10);
@@ -54,6 +62,13 @@ const formatarData = (data?: string | null) => {
 };
 
 const mesAtual = () => hojeIso().slice(0, 7);
+const anoAtual = () => hojeIso().slice(0, 4);
+
+const normalizarDataIso = (data?: string | null) => {
+  if (!data) return '';
+  const valor = String(data).slice(0, 10);
+  return dataValida(valor) ? valor : '';
+};
 
 export const CashFlowView: React.FC = () => {
   const {
@@ -76,6 +91,12 @@ export const CashFlowView: React.FC = () => {
   const [fimFiltro, setFimFiltro] = useState('');
   const [paginaContas, setPaginaContas] = useState(1);
   const itensPorPagina = 12;
+
+  const [tipoPeriodoConciliacao, setTipoPeriodoConciliacao] =
+    useState<TipoPeriodoConciliacao>('mes');
+  const [diaConciliacao, setDiaConciliacao] = useState(hojeIso());
+  const [mesConciliacao, setMesConciliacao] = useState(mesAtual());
+  const [anoConciliacao, setAnoConciliacao] = useState(anoAtual());
 
   const [modalImportacao, setModalImportacao] = useState(false);
   const [arquivoNome, setArquivoNome] = useState('');
@@ -229,23 +250,26 @@ export const CashFlowView: React.FC = () => {
   const saldoAtual = Number(empresa?.saldoAtual ?? empresa?.saldoInicial ?? 0);
   const saldoPrevisto = saldoAtual + totalAReceber - totalSaidasPlanejadas;
 
+  // Mantém a projeção acumulada usada somente na aba Visão geral.
+  // A aba Conciliação possui uma lógica independente mais abaixo.
   const conciliacao = useMemo<LinhaConciliacao[]>(() => {
     const mapa = new Map<string, { receber: number; pagar: number }>();
 
     contas
       .filter(c => !['recebido', 'cancelado'].includes(c.status) && c.dataVencimento)
       .forEach(conta => {
-        const data = conta.dataVencimento!;
+        const data = normalizarDataIso(conta.dataVencimento);
+        if (!data) return;
         const atual = mapa.get(data) || { receber: 0, pagar: 0 };
-        atual.receber += conta.saldo;
+        atual.receber += Number(conta.saldo || 0);
         mapa.set(data, atual);
       });
 
     processos
       .filter(p => p.empresaId === empresaAtivaId && p.status !== 'finalizado')
       .forEach(processo => {
-        const data = processo.prazo || processo.dataCriacao;
-        if (!dataValida(data)) return;
+        const data = normalizarDataIso(processo.prazo || processo.dataCriacao);
+        if (!data) return;
         const atual = mapa.get(data) || { receber: 0, pagar: 0 };
         atual.pagar += Number(processo.valor ?? 0);
         mapa.set(data, atual);
@@ -267,6 +291,110 @@ export const CashFlowView: React.FC = () => {
         };
       });
   }, [contas, processos, empresaAtivaId, saldoAtual]);
+
+  const conciliacaoCompleta = useMemo<LinhaConciliacaoPeriodo[]>(() => {
+    const mapa = new Map<string, { receber: number; pagar: number }>();
+
+    // CONTAS A RECEBER:
+    // considera apenas o saldo ainda não recebido na data de vencimento.
+    contas
+      .filter(conta => {
+        const saldo = Number(conta.saldo || 0);
+        return (
+          !['recebido', 'cancelado'].includes(String(conta.status)) &&
+          saldo > 0.001 &&
+          Boolean(conta.dataVencimento)
+        );
+      })
+      .forEach(conta => {
+        const data = normalizarDataIso(conta.dataVencimento);
+        if (!data) return;
+
+        const atual = mapa.get(data) || { receber: 0, pagar: 0 };
+        atual.receber += Number(conta.saldo || 0);
+        mapa.set(data, atual);
+      });
+
+    // CONTAS A PAGAR:
+    // replica a regra da tela Contas a Pagar. Uma conta é realmente elegível
+    // quando está em pagamento/conciliacao/finalizado e ainda possui saldo.
+    processos
+      .filter((processo: any) => {
+        if (String(processo.empresaId) !== String(empresaAtivaId)) return false;
+
+        const status = String(processo.status || '');
+        if (!['pagamento', 'conciliacao', 'finalizado'].includes(status)) return false;
+
+        const valor = Number(processo.valor || 0);
+        const valorPago = Number(processo.valorPago || 0);
+        const saldo = Math.max(valor - valorPago, 0);
+
+        const contaPaga =
+          saldo <= 0.001 || ['conciliacao', 'finalizado'].includes(status);
+
+        return !contaPaga && saldo > 0.001;
+      })
+      .forEach((processo: any) => {
+        const data = normalizarDataIso(
+          processo.dataProgramadaPagamento || processo.prazo || processo.vencimento
+        );
+        if (!data) return;
+
+        const valor = Number(processo.valor || 0);
+        const valorPago = Number(processo.valorPago || 0);
+        const saldo = Math.max(valor - valorPago, 0);
+
+        const atual = mapa.get(data) || { receber: 0, pagar: 0 };
+        atual.pagar += saldo;
+        mapa.set(data, atual);
+      });
+
+    return Array.from(mapa.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([data, valores]) => ({
+        data,
+        receber: valores.receber,
+        pagar: valores.pagar,
+        resultado: valores.receber - valores.pagar,
+      }));
+  }, [contas, processos, empresaAtivaId]);
+
+  const conciliacaoFiltrada = useMemo(() => {
+    return conciliacaoCompleta.filter(linha => {
+      if (tipoPeriodoConciliacao === 'dia') {
+        return linha.data === diaConciliacao;
+      }
+
+      if (tipoPeriodoConciliacao === 'mes') {
+        return linha.data.slice(0, 7) === mesConciliacao;
+      }
+
+      return linha.data.slice(0, 4) === anoConciliacao;
+    });
+  }, [
+    conciliacaoCompleta,
+    tipoPeriodoConciliacao,
+    diaConciliacao,
+    mesConciliacao,
+    anoConciliacao,
+  ]);
+
+  const resumoConciliacao = useMemo(() => {
+    const receber = conciliacaoFiltrada.reduce(
+      (total, linha) => total + linha.receber,
+      0
+    );
+    const pagar = conciliacaoFiltrada.reduce(
+      (total, linha) => total + linha.pagar,
+      0
+    );
+
+    return {
+      receber,
+      pagar,
+      resultado: receber - pagar,
+    };
+  }, [conciliacaoFiltrada]);
 
   const resumoImportacao = useMemo(() => {
     return {
@@ -925,81 +1053,158 @@ export const CashFlowView: React.FC = () => {
 
       {aba === 'conciliacao' && (
         <div className="space-y-5">
+          <div className="bg-white rounded-[18px] border border-slate-100 shadow-sm p-4">
+            <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-bold text-[#0F172A]">Período da conciliação</h2>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Escolha como deseja consultar os vencimentos em aberto.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-400 block mb-1.5">
+                    Visualização
+                  </label>
+                  <div className="flex items-center p-1 bg-slate-100 rounded-[12px]">
+                    {([
+                      ['dia', 'Dia'],
+                      ['mes', 'Mês'],
+                      ['ano', 'Ano'],
+                    ] as Array<[TipoPeriodoConciliacao, string]>).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setTipoPeriodoConciliacao(id)}
+                        className={`h-9 px-4 rounded-[9px] text-[10px] font-bold transition ${
+                          tipoPeriodoConciliacao === id
+                            ? 'bg-white text-[#0F172A] shadow-sm'
+                            : 'text-slate-400 hover:text-slate-700'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="min-w-[190px]">
+                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-400 block mb-1.5">
+                    Período
+                  </label>
+
+                  {tipoPeriodoConciliacao === 'dia' && (
+                    <input
+                      type="date"
+                      value={diaConciliacao}
+                      onChange={e => setDiaConciliacao(e.target.value)}
+                      className="w-full h-11 bg-white border border-slate-200 rounded-[12px] px-3 text-xs text-slate-700 outline-none focus:border-slate-400"
+                    />
+                  )}
+
+                  {tipoPeriodoConciliacao === 'mes' && (
+                    <input
+                      type="month"
+                      value={mesConciliacao}
+                      onChange={e => setMesConciliacao(e.target.value)}
+                      className="w-full h-11 bg-white border border-slate-200 rounded-[12px] px-3 text-xs text-slate-700 outline-none focus:border-slate-400"
+                    />
+                  )}
+
+                  {tipoPeriodoConciliacao === 'ano' && (
+                    <input
+                      type="number"
+                      min="2000"
+                      max="2100"
+                      step="1"
+                      value={anoConciliacao}
+                      onChange={e => setAnoConciliacao(e.target.value)}
+                      className="w-full h-11 bg-white border border-slate-200 rounded-[12px] px-3 text-xs text-slate-700 outline-none focus:border-slate-400"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Kpi
               titulo="Total a receber"
-              valor={formatarReal(totalAReceber)}
-              detalhe="Entradas ainda não recebidas"
+              valor={formatarReal(resumoConciliacao.receber)}
+              detalhe="Saldo em aberto com vencimento no período"
               icon={ArrowUpRight}
               destaque="emerald"
             />
             <Kpi
               titulo="Total a pagar"
-              valor={formatarReal(totalSaidasPlanejadas)}
-              detalhe="Saídas ainda não finalizadas"
+              valor={formatarReal(resumoConciliacao.pagar)}
+              detalhe="Saldo de contas ainda não pagas no período"
               icon={ArrowDownRight}
               destaque="default"
             />
             <Kpi
-              titulo="Resultado projetado"
-              valor={formatarReal(totalAReceber - totalSaidasPlanejadas)}
-              detalhe="Receber menos pagar, sem saldo inicial"
+              titulo="Resultado do período"
+              valor={formatarReal(resumoConciliacao.resultado)}
+              detalhe="A receber menos a pagar, sem acumular dias anteriores"
               icon={TrendingUp}
-              destaque={totalAReceber - totalSaidasPlanejadas >= 0 ? 'emerald' : 'red'}
+              destaque={resumoConciliacao.resultado >= 0 ? 'emerald' : 'red'}
             />
           </div>
 
           <div className="bg-white rounded-[18px] border border-slate-100 shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-slate-100">
-              <h2 className="text-sm font-bold text-[#0F172A]">Conciliação por vencimento</h2>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Comparação diária entre entradas, saídas e saldo acumulado.
-              </p>
+            <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-[#0F172A]">Conciliação por vencimento</h2>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Cada dia é calculado de forma independente: a receber menos a pagar.
+                </p>
+              </div>
+
+              <span className="inline-flex self-start sm:self-auto items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100 text-[10px] font-bold text-slate-500">
+                <CalendarDays className="w-3.5 h-3.5" />
+                {conciliacaoFiltrada.length} dia{conciliacaoFiltrada.length === 1 ? '' : 's'} com movimento
+              </span>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px]">
+              <table className="w-full min-w-[680px]">
                 <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
                   <tr>
                     <th className="px-5 py-3 text-left">Data</th>
                     <th className="px-5 py-3 text-right">A receber</th>
                     <th className="px-5 py-3 text-right">A pagar</th>
-                    <th className="px-5 py-3 text-right">Saldo do dia</th>
-                    <th className="px-5 py-3 text-right">Saldo acumulado</th>
+                    <th className="px-5 py-3 text-right">Resultado do dia</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {conciliacao.length === 0 ? (
+                  {conciliacaoFiltrada.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-5 py-12 text-center text-xs text-slate-400">
-                        Não existem vencimentos para conciliar.
+                      <td colSpan={4} className="px-5 py-12 text-center text-xs text-slate-400">
+                        Não existem vencimentos em aberto para o período selecionado.
                       </td>
                     </tr>
                   ) : (
-                    conciliacao.map(linha => (
-                      <tr key={linha.data} className={linha.saldoAcumulado < 0 ? 'bg-red-50/50' : ''}>
+                    conciliacaoFiltrada.map(linha => (
+                      <tr
+                        key={linha.data}
+                        className={linha.resultado < 0 ? 'bg-red-50/50' : 'hover:bg-slate-50/50'}
+                      >
                         <td className="px-5 py-4 text-xs font-bold text-slate-700">
                           {formatarData(linha.data)}
                         </td>
-                        <td className="px-5 py-4 text-right text-xs font-mono text-emerald-600">
+                        <td className="px-5 py-4 text-right text-xs font-mono font-semibold text-emerald-600">
                           +{formatarReal(linha.receber)}
                         </td>
-                        <td className="px-5 py-4 text-right text-xs font-mono text-slate-700">
+                        <td className="px-5 py-4 text-right text-xs font-mono font-semibold text-slate-700">
                           -{formatarReal(linha.pagar)}
                         </td>
                         <td
                           className={`px-5 py-4 text-right text-xs font-mono font-bold ${
-                            linha.saldoDia >= 0 ? 'text-emerald-600' : 'text-red-600'
+                            linha.resultado >= 0 ? 'text-emerald-600' : 'text-red-600'
                           }`}
                         >
-                          {formatarReal(linha.saldoDia)}
-                        </td>
-                        <td
-                          className={`px-5 py-4 text-right text-xs font-mono font-bold ${
-                            linha.saldoAcumulado >= 0 ? 'text-[#0F172A]' : 'text-red-600'
-                          }`}
-                        >
-                          {formatarReal(linha.saldoAcumulado)}
+                          {formatarReal(linha.resultado)}
                         </td>
                       </tr>
                     ))

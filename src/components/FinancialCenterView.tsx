@@ -579,8 +579,7 @@ export const FinancialCenterView: React.FC = () => {
         utilizado,
         disponivel:
           orcado -
-          comprometido -
-          utilizado,
+          comprometido,
         totalLancado:
           movimento.total,
         semCentro:
@@ -1300,173 +1299,155 @@ export const FinancialCenterView: React.FC = () => {
     }
   />
 
-  <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-  <div className="min-w-0">
-    <h1 className="text-2xl font-bold tracking-tight text-[#0F172A]">
-      Plano de Contas & Orçamentos
-    </h1>
+  <div className="space-y-5">
+    <div className="min-w-0">
+      <h1 className="text-2xl font-bold tracking-tight text-[#0F172A]">
+        Plano de Contas & Orçamentos
+      </h1>
+      <p className="mt-1 max-w-2xl text-xs text-slate-400">
+        Gerencie os planos, centros de custo e orçamentos por competência mensal.
+      </p>
+    </div>
 
-    <p className="mt-1 max-w-xl text-xs text-slate-400">
-      Gerencie os planos, centros de custo e orçamentos por
-      competência mensal.
-    </p>
-  </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <a
+        href="/modelos/modelo_importacao_plano_financeiro.xlsx"
+        download
+        className="inline-flex h-[40px] items-center justify-center gap-2 rounded-[12px] border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+      >
+        <Download className="h-4 w-4" />
+        Baixar Modelo
+      </a>
 
-  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
-    <div className="flex h-[42px] items-center gap-2 rounded-[12px] border border-slate-100 bg-white px-3 shadow-sm">
-  <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+      <button
+        type="button"
+        onClick={() => inputImportacaoRef.current?.click()}
+        className="inline-flex h-[40px] items-center justify-center gap-2 rounded-[12px] border border-blue-100 bg-blue-50 px-4 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100"
+      >
+        <Upload className="h-4 w-4" />
+        Importar Excel
+      </button>
 
-  <select
-    value={mes}
-    onChange={e => {
-      const novoMes = String(e.target.value).padStart(2, '0');
-      setCompetencia(`${ano}-${novoMes}`);
-    }}
-    className="border-0 bg-transparent p-0 pr-6 text-xs font-semibold text-slate-700 focus:ring-0"
-  >
-    {nomesMeses.map((nome, index) => (
-      <option key={nome} value={index + 1}>
-        {nome}
-      </option>
-    ))}
-  </select>
+      <button
+        type="button"
+        onClick={carregarOrcamentos}
+        disabled={carregandoOrcamentos}
+        className="inline-flex h-[40px] items-center justify-center gap-2 rounded-[12px] border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <RefreshCw className={`h-4 w-4 ${carregandoOrcamentos ? 'animate-spin' : ''}`} />
+        Atualizar
+      </button>
 
-  <div className="h-4 w-px bg-slate-200" />
+      <div className="hidden h-6 w-px bg-slate-200 sm:block" />
 
-  <select
-    value={ano}
-    onChange={e => {
-      const novoAno = Number(e.target.value);
-      setCompetencia(
-        `${novoAno}-${String(mes).padStart(2, '0')}`
-      );
-    }}
-    className="border-0 bg-transparent p-0 pr-6 text-xs font-semibold text-slate-700 focus:ring-0"
-  >
-    {Array.from({ length: 7 }, (_, index) => {
-      const anoOpcao = new Date().getFullYear() - 2 + index;
+      <button
+        type="button"
+        onClick={abrirNovoCentro}
+        disabled={planosFinanceiros.length === 0}
+        className="inline-flex h-[40px] items-center justify-center gap-2 rounded-[12px] border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Plus className="h-4 w-4" />
+        Novo Centro
+      </button>
 
-      return (
-        <option key={anoOpcao} value={anoOpcao}>
-          {anoOpcao}
-        </option>
-      );
-    })}
-  </select>
-</div>
+      <button
+        type="button"
+        onClick={() => abrirNovoOrcamento()}
+        disabled={planosFinanceiros.length === 0}
+        className="inline-flex h-[40px] items-center justify-center gap-2 rounded-[12px] bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <DollarSign className="h-4 w-4" />
+        Novo Orçamento
+      </button>
 
+      <button
+        type="button"
+        onClick={abrirNovoPlano}
+        className="inline-flex h-[40px] items-center justify-center gap-2 rounded-[12px] bg-[#0F172A] px-4 text-xs font-semibold text-[#D4AF37] shadow-sm transition hover:bg-[#1E293B]"
+      >
+        <Plus className="h-4 w-4" />
+        Novo Plano
+      </button>
+    </div>
 
-    <a
-      href="/modelos/modelo_importacao_plano_financeiro.xlsx"
-      download
-      className="inline-flex h-[42px] items-center justify-center gap-2 rounded-[12px] border border-slate-100 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-    >
-      <Download className="h-4 w-4" />
-      Baixar Modelo
-    </a>
+    <div className="rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+            Filtrar competência
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex h-[40px] items-center gap-2 rounded-[11px] border border-slate-200 bg-slate-50 px-3">
+              <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+              <select
+                value={mes}
+                onChange={e => {
+                  const novoMes = String(e.target.value).padStart(2, '0');
+                  setCompetencia(`${ano}-${novoMes}`);
+                }}
+                className="border-0 bg-transparent p-0 pr-6 text-xs font-semibold text-slate-700 focus:ring-0"
+              >
+                {nomesMeses.map((nome, index) => (
+                  <option key={nome} value={index + 1}>
+                    {nome}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-    <button
-      type="button"
-      onClick={() => inputImportacaoRef.current?.click()}
-      className="inline-flex h-[42px] items-center justify-center gap-2 rounded-[12px] border border-blue-100 bg-blue-50 px-4 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100"
-    >
-      <Upload className="h-4 w-4" />
-      Importar Excel
-    </button>
-
-    <button
-      type="button"
-      onClick={carregarOrcamentos}
-      disabled={carregandoOrcamentos}
-      className="inline-flex h-[42px] items-center justify-center gap-2 rounded-[12px] border border-slate-100 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      <RefreshCw
-        className={`h-4 w-4 ${
-          carregandoOrcamentos ? 'animate-spin' : ''
-        }`}
-      />
-      Atualizar
-    </button>
-
-    <button
-      type="button"
-      onClick={abrirNovoCentro}
-      disabled={planosFinanceiros.length === 0}
-      className="inline-flex h-[42px] items-center justify-center gap-2 rounded-[12px] border border-slate-100 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <Plus className="h-4 w-4" />
-      Novo Centro
-    </button>
-
-    <button
-      type="button"
-      onClick={() => abrirNovoOrcamento()}
-      disabled={planosFinanceiros.length === 0}
-      className="inline-flex h-[42px] items-center justify-center gap-2 rounded-[12px] bg-emerald-600 px-4 text-xs font-semibold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <DollarSign className="h-4 w-4" />
-      Novo Orçamento
-    </button>
-
-    <button
-      type="button"
-      onClick={abrirNovoPlano}
-      className="inline-flex h-[42px] items-center justify-center gap-2 rounded-[12px] bg-[#0F172A] px-4 text-xs font-semibold text-[#D4AF37] shadow-md transition hover:bg-[#1E293B]"
-    >
-      <Plus className="h-4 w-4" />
-      Novo Plano
-    </button>
-  </div>
-</div>
-
-      <div className="rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              Competência selecionada
-            </p>
-
-            <h2 className="mt-1 text-base font-bold text-[#0F172A]">
-              {labelCompetencia}
-            </h2>
+            <div className="flex h-[40px] items-center rounded-[11px] border border-slate-200 bg-slate-50 px-3">
+              <select
+                value={ano}
+                onChange={e => {
+                  const novoAno = Number(e.target.value);
+                  setCompetencia(`${novoAno}-${String(mes).padStart(2, '0')}`);
+                }}
+                className="border-0 bg-transparent p-0 pr-6 text-xs font-semibold text-slate-700 focus:ring-0"
+              >
+                {Array.from({ length: 7 }, (_, index) => {
+                  const anoOpcao = new Date().getFullYear() - 2 + index;
+                  return (
+                    <option key={anoOpcao} value={anoOpcao}>
+                      {anoOpcao}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
           </div>
+        </div>
 
-          <p className="text-xs text-slate-400">
-            Os valores abaixo pertencem somente a esta
-            competência.
+        <div className="lg:text-right">
+          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+            Competência selecionada
+          </p>
+          <p className="mt-1 text-base font-bold text-[#0F172A]">
+            {labelCompetencia}
           </p>
         </div>
       </div>
+    </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Indicador
-          titulo="Orçamento do mês"
-          valor={formatarReal(resumo.valorOrcado)}
-          icon={Wallet}
-        />
-
-        <Indicador
-          titulo="Comprometido"
-          valor={formatarReal(
-            resumo.valorComprometido
-          )}
-          icon={Clock3}
-        />
-
-        <Indicador
-          titulo="Utilizado"
-          valor={formatarReal(resumo.valorUtilizado)}
-          icon={CircleDollarSign}
-        />
-
-        <Indicador
-          titulo="Disponível"
-          valor={formatarReal(resumo.disponivel)}
-          icon={DollarSign}
-          destaque={resumo.disponivel >= 0}
-          alerta={resumo.disponivel < 0}
-        />
-      </div>
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <Indicador
+        titulo="Orçado"
+        valor={formatarReal(resumo.valorOrcado)}
+        icon={Wallet}
+      />
+      <Indicador
+        titulo="Comprometido"
+        valor={formatarReal(resumo.valorComprometido)}
+        icon={Clock3}
+      />
+      <Indicador
+        titulo="Disponível"
+        valor={formatarReal(resumo.disponivel)}
+        icon={DollarSign}
+        destaque={resumo.disponivel >= 0}
+        alerta={resumo.disponivel < 0}
+      />
+    </div>
+  </div>
 
       {sucesso && (
         <div className="flex items-center gap-2 rounded-[14px] border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700">
@@ -1491,7 +1472,7 @@ export const FinancialCenterView: React.FC = () => {
         </div>
       )}
 
-      <div className="max-w-[1180px] space-y-5">
+      <div className="w-full space-y-3">
         {planosFinanceiros.length === 0 ? (
           <div className="rounded-[18px] border border-slate-100 bg-white p-10 text-center shadow-sm">
             <Wallet className="mx-auto h-9 w-9 text-slate-300" />
@@ -1514,7 +1495,7 @@ export const FinancialCenterView: React.FC = () => {
                 planoId
             );
             const expandido =
-              planosExpandidos[planoId] ?? true;
+              planosExpandidos[planoId] ?? false;
             const orcamentoPlano =
               orcamentoPorPlano.get(planoId);
 
@@ -1536,72 +1517,65 @@ export const FinancialCenterView: React.FC = () => {
                 key={planoId}
                 className="overflow-hidden rounded-[18px] border border-slate-100 bg-white shadow-sm"
               >
-                <div className="p-5">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <button
                       type="button"
-                      onClick={() =>
-                        togglePlano(planoId)
-                      }
-                      className="flex flex-1 items-start gap-3 text-left"
+                      onClick={() => togglePlano(planoId)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
-                        <Wallet className="h-5 w-5 text-[#0F172A]" />
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                        <Wallet className="h-4 w-4 text-[#0F172A]" />
                       </div>
 
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-[#0F172A]">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <h3 className="truncate text-xs font-bold text-[#0F172A]">
                             {plano.nome}
                           </h3>
-
                           {expandido ? (
-                            <ChevronUp className="h-4 w-4 text-slate-400" />
+                            <ChevronUp className="h-4 w-4 shrink-0 text-slate-400" />
                           ) : (
-                            <ChevronDown className="h-4 w-4 text-slate-400" />
+                            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                           )}
                         </div>
-
-                        <p className="mt-1 text-[10px] text-slate-400">
-                          {plano.descricao ||
-                            'Plano financeiro sem descrição.'}
+                        <p className="mt-0.5 truncate text-[9px] text-slate-400">
+                          {centros.length} centro(s) • {valoresPlano.quantidade} lançamento(s) • {labelCompetencia}
                         </p>
-
-                        <p className="mt-2 text-[10px] font-semibold text-slate-500">
-                          {centros.length} centro(s) de
-                          custo • {labelCompetencia} •{' '}
-                          {valoresPlano.quantidade} lançamento(s)
-                        </p>
-
-                        {valoresPlano.semCentro > 0.001 && (
-                          <p className="mt-1 text-[9px] font-semibold text-amber-600">
-                            {formatarReal(
-                              valoresPlano.semCentro
-                            )}{' '}
-                            ainda está sem centro de custo.
-                          </p>
-                        )}
                       </div>
                     </button>
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="hidden min-w-0 flex-[1.6] grid-cols-3 gap-2 md:grid">
+                      <Metrica
+                        titulo="Orçado"
+                        valor={formatarReal(valoresPlano.orcado)}
+                      />
+                      <Metrica
+                        titulo="Comprometido"
+                        valor={formatarReal(valoresPlano.comprometido)}
+                      />
+                      <Metrica
+                        titulo="Disponível"
+                        valor={formatarReal(valoresPlano.disponivel)}
+                        destaque={valoresPlano.disponivel >= 0}
+                        alerta={valoresPlano.disponivel < 0}
+                      />
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() =>
-                          abrirNovoOrcamento(planoId)
-                        }
-                        className="flex h-9 items-center gap-1.5 rounded-xl bg-emerald-50 px-3 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                        onClick={() => abrirNovoOrcamento(planoId)}
+                        className="hidden h-8 items-center gap-1.5 rounded-xl bg-emerald-50 px-2.5 text-[9px] font-bold text-emerald-700 hover:bg-emerald-100 sm:flex"
                       >
                         <DollarSign className="h-3.5 w-3.5" />
-                        Orçamento do plano
+                        Orçamento
                       </button>
 
                       <button
                         type="button"
-                        onClick={() =>
-                          abrirEdicaoPlano(plano)
-                        }
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-100 bg-white hover:bg-slate-50"
+                        onClick={() => abrirEdicaoPlano(plano)}
+                        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-100 bg-white hover:bg-slate-50"
                         title="Editar plano"
                       >
                         <Pencil className="h-3.5 w-3.5 text-slate-600" />
@@ -1609,10 +1583,8 @@ export const FinancialCenterView: React.FC = () => {
 
                       <button
                         type="button"
-                        onClick={() =>
-                          handleExcluirPlano(planoId)
-                        }
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-red-50 hover:bg-red-100"
+                        onClick={() => handleExcluirPlano(planoId)}
+                        className="flex h-8 w-8 items-center justify-center rounded-xl border border-red-100 bg-red-50 hover:bg-red-100"
                         title="Excluir plano"
                       >
                         <Trash2 className="h-3.5 w-3.5 text-red-500" />
@@ -1620,41 +1592,22 @@ export const FinancialCenterView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Metrica
-                      titulo="Orçado"
-                      valor={formatarReal(
-                        valoresPlano.orcado
-                      )}
-                    />
-
-                    <Metrica
-                      titulo="Comprometido"
-                      valor={formatarReal(
-                        valoresPlano.comprometido
-                      )}
-                    />
-
-                    <Metrica
-                      titulo="Utilizado"
-                      valor={formatarReal(
-                        valoresPlano.utilizado
-                      )}
-                    />
-
+                  <div className="mt-3 grid grid-cols-3 gap-2 md:hidden">
+                    <Metrica titulo="Orçado" valor={formatarReal(valoresPlano.orcado)} />
+                    <Metrica titulo="Comprometido" valor={formatarReal(valoresPlano.comprometido)} />
                     <Metrica
                       titulo="Disponível"
-                      valor={formatarReal(
-                        valoresPlano.disponivel
-                      )}
-                      destaque={
-                        valoresPlano.disponivel >= 0
-                      }
-                      alerta={
-                        valoresPlano.disponivel < 0
-                      }
+                      valor={formatarReal(valoresPlano.disponivel)}
+                      destaque={valoresPlano.disponivel >= 0}
+                      alerta={valoresPlano.disponivel < 0}
                     />
                   </div>
+
+                  {valoresPlano.semCentro > 0.001 && (
+                    <p className="mt-2 text-[9px] font-semibold text-amber-600">
+                      {formatarReal(valoresPlano.semCentro)} ainda está sem centro de custo.
+                    </p>
+                  )}
                 </div>
 
                 {expandido && (
@@ -1679,7 +1632,7 @@ export const FinancialCenterView: React.FC = () => {
                         </button>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      <div className="space-y-2">
                         {centros.map((centro: any) => {
                           const centroId =
                             obterCentroId(centro);
@@ -1718,9 +1671,6 @@ export const FinancialCenterView: React.FC = () => {
                               valorOrcadoCentro -
                               numeroSeguro(
                                 movimentoCentro.comprometido
-                              ) -
-                              numeroSeguro(
-                                movimentoCentro.utilizado
                               ),
                             quantidade:
                               movimentoCentro.quantidade,
@@ -1809,41 +1759,22 @@ export const FinancialCenterView: React.FC = () => {
                                 </div>
                               </div>
 
-                              <div className="mt-4 grid grid-cols-2 gap-2">
+                              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                                 <Metrica
                                   titulo="Orçado"
-                                  valor={formatarReal(
-                                    valoresCentro.orcado
-                                  )}
-                                />
-
-                                <Metrica
-                                  titulo="Disponível"
-                                  valor={formatarReal(
-                                    valoresCentro.disponivel
-                                  )}
-                                  destaque={
-                                    valoresCentro.disponivel >=
-                                    0
-                                  }
-                                  alerta={
-                                    valoresCentro.disponivel <
-                                    0
-                                  }
+                                  valor={formatarReal(valoresCentro.orcado)}
                                 />
 
                                 <Metrica
                                   titulo="Comprometido"
-                                  valor={formatarReal(
-                                    valoresCentro.comprometido
-                                  )}
+                                  valor={formatarReal(valoresCentro.comprometido)}
                                 />
 
                                 <Metrica
-                                  titulo="Utilizado"
-                                  valor={formatarReal(
-                                    valoresCentro.utilizado
-                                  )}
+                                  titulo="Disponível"
+                                  valor={formatarReal(valoresCentro.disponivel)}
+                                  destaque={valoresCentro.disponivel >= 0}
+                                  alerta={valoresCentro.disponivel < 0}
                                 />
                               </div>
 

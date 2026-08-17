@@ -83,6 +83,7 @@ export const AccountsPayableView: React.FC = () => {
     fornecedores,
     empresas,
     planosFinanceiros,
+    centrosCustos,
     cadastrarPlanoFinanceiro,
     cadastrarFornecedor,
     criarNovaConta,
@@ -90,8 +91,6 @@ export const AccountsPayableView: React.FC = () => {
     registrarPagamento,
     desfazerUltimoPagamento,
     excluirProcesso,
-    setActiveProcessId,
-    setActiveView,
     recarregarDados,
     loadingFinanceiro,
   } = useFinance() as any;
@@ -135,6 +134,10 @@ export const AccountsPayableView: React.FC = () => {
     useState(false);
   const [menuAcoesId, setMenuAcoesId] =
     useState<string | null>(null);
+
+  // Detalhes da conta abertos diretamente em Contas a Pagar.
+  const [contaDetalhes, setContaDetalhes] =
+    useState<any | null>(null);
 
   // Exclusão individual e em massa
   const [processoExcluindo, setProcessoExcluindo] =
@@ -239,20 +242,10 @@ export const AccountsPayableView: React.FC = () => {
   );
 
   const contasAVencer = todasContas.filter(
-    (processo: any) => {
-      if (
-        contaPaga(processo) ||
-        !dataBase(processo)
-      ) {
-        return false;
-      }
-
-      const dias = diferencaDias(
-        dataBase(processo)
-      );
-
-      return dias >= 0 && dias <= 7;
-    }
+    (processo: any) =>
+      !contaPaga(processo) &&
+      Boolean(dataBase(processo)) &&
+      dataBase(processo) >= hoje
   );
 
   const totalEmAberto = todasContas
@@ -433,6 +426,32 @@ export const AccountsPayableView: React.FC = () => {
     contasVencidas,
     contasAVencer,
   ]);
+
+  const resumoFinanceiroFiltrado = useMemo(() => {
+    return contasFiltradas.reduce(
+      (resumo: { aVencer: number; vencido: number; pago: number; saldo: number }, processo: any) => {
+        const valorPago = obterValorPago(processo);
+        const saldo = obterSaldoPagar(processo);
+        const estaPaga = contaPaga(processo);
+        const vencimento = dataBase(processo);
+
+        resumo.pago += valorPago;
+
+        if (!estaPaga && saldo > 0.001) {
+          resumo.saldo += saldo;
+
+          if (vencimento && vencimento < hoje) {
+            resumo.vencido += saldo;
+          } else {
+            resumo.aVencer += saldo;
+          }
+        }
+
+        return resumo;
+      },
+      { aVencer: 0, vencido: 0, pago: 0, saldo: 0 }
+    );
+  }, [contasFiltradas, hoje]);
 
   const totalPaginas = Math.max(
     1,
@@ -1442,9 +1461,13 @@ export const AccountsPayableView: React.FC = () => {
     }
   };
 
-  const abrirProcesso = (id: string) => {
-    setActiveProcessId(id);
-    setActiveView('processos');
+  const abrirDetalhesConta = (processo: any) => {
+    setMenuAcoesId(null);
+    setContaDetalhes(processo);
+  };
+
+  const fecharDetalhesConta = () => {
+    setContaDetalhes(null);
   };
 
 
@@ -1816,7 +1839,7 @@ export const AccountsPayableView: React.FC = () => {
 
   return (
     <div
-      className="space-y-5 lg:space-y-8"
+      className="w-full space-y-5 lg:space-y-8"
       id="accounts-payable-view-container"
     >
       <input
@@ -1900,32 +1923,30 @@ export const AccountsPayableView: React.FC = () => {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Card
-          titulo="Em aberto"
-          valor={formatarReal(totalEmAberto)}
-          icon={Wallet}
-        />
-
-        <Card
-          titulo="Vencidas"
-          valor={formatarReal(totalVencido)}
-          icon={AlertTriangle}
-          classe="text-red-600 bg-red-50"
-        />
-
-        <Card
-          titulo="A vencer em 7 dias"
-          valor={formatarReal(totalAVencer)}
+          titulo="A vencer"
+          valor={formatarReal(resumoFinanceiroFiltrado.aVencer)}
           icon={Clock}
           classe="text-amber-600 bg-amber-50"
         />
 
         <Card
-          titulo="Pago no período"
-          valor={formatarReal(
-            totalPagoPeriodo
-          )}
+          titulo="Vencido"
+          valor={formatarReal(resumoFinanceiroFiltrado.vencido)}
+          icon={AlertTriangle}
+          classe="text-red-600 bg-red-50"
+        />
+
+        <Card
+          titulo="Pago"
+          valor={formatarReal(resumoFinanceiroFiltrado.pago)}
           icon={Check}
           classe="text-emerald-600 bg-emerald-50"
+        />
+
+        <Card
+          titulo="Saldo"
+          valor={formatarReal(resumoFinanceiroFiltrado.saldo)}
+          icon={Wallet}
         />
       </div>
 
@@ -1939,7 +1960,7 @@ export const AccountsPayableView: React.FC = () => {
               onChange={event =>
                 setBusca(event.target.value)
               }
-              placeholder="Processo, favorecido..."
+              placeholder="Processo, favorecido, nº da conta..."
               className="w-full border-0 bg-transparent py-2.5 text-xs focus:ring-0"
             />
           </div>
@@ -2161,25 +2182,19 @@ export const AccountsPayableView: React.FC = () => {
         </div>
       )}
 
-      <div className="hidden overflow-hidden rounded-[18px] border border-slate-100 bg-white shadow-sm lg:block">
+      <div className="hidden w-full overflow-visible rounded-[18px] border border-slate-100 bg-white shadow-sm lg:block">
         {contasFiltradas.length === 0 ? (
           <div className="p-12 text-center">
-            <p className="text-xs text-slate-400">
-              Nenhuma conta encontrada.
-            </p>
+            <p className="text-xs text-slate-400">Nenhuma conta encontrada.</p>
           </div>
         ) : (
           <div className="w-full">
-            <div className="grid grid-cols-[52px_1.05fr_1.25fr_0.8fr_1fr_1.35fr] items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+            <div className="grid w-full grid-cols-[34px_1.2fr_1.35fr_1.15fr_1.45fr_1fr_1.65fr] items-center gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 text-[8px] font-bold uppercase tracking-[0.08em] text-slate-400">
               <button
                 type="button"
                 onClick={alternarTodasContas}
                 className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200"
-                title={
-                  todasElegiveisSelecionadas
-                    ? 'Limpar seleção'
-                    : 'Selecionar todas as contas filtradas'
-                }
+                title={todasElegiveisSelecionadas ? 'Limpar seleção' : 'Selecionar contas em aberto'}
               >
                 {todasElegiveisSelecionadas ? (
                   <CheckSquare2 className="h-4 w-4 text-emerald-600" />
@@ -2189,278 +2204,233 @@ export const AccountsPayableView: React.FC = () => {
               </button>
 
               <span>Conta</span>
-              <span>Favorecido e descrição</span>
-              <span>Empresa e PIX</span>
-              <span>Valores e vencimento</span>
-              <span>Programação, pagamento e ações</span>
+              <span>Favorecido</span>
+              <span>Empresa</span>
+              <span>Financeiro</span>
+              <span>Vencimento</span>
+              <span className="text-right">Ações</span>
             </div>
 
             <div className="divide-y divide-slate-100">
-              {contasPaginadas.map((processo: any) => {
+              {contasPaginadas.map((processo: any, index: number) => {
                 const fornecedor = fornecedores.find(
-                  (item: any) =>
-                    item.id === processo.fornecedorId
+                  (item: any) => item.id === processo.fornecedorId
                 );
 
                 const empresa = empresas.find(
-                  (item: any) =>
-                    item.id === processo.empresaId
+                  (item: any) => item.id === processo.empresaId
                 );
 
                 const pago = contaPaga(processo);
-                const vencida =
-                  !pago &&
-                  dataBase(processo) &&
-                  dataBase(processo) < hoje;
+                const vencimento = dataBase(processo);
+                const vencida = !pago && Boolean(vencimento) && vencimento < hoje;
 
                 const favorecido =
                   processo.tipoPagamento === 'interno'
-                    ? processo.beneficiarioInterno ||
-                      'Pagamento interno'
+                    ? processo.beneficiarioInterno || 'Pagamento interno'
                     : fornecedor?.nome || '-';
+
+                const metodo = String(
+                  processo.metodoPagamento ||
+                    processo.formaPagamento ||
+                    '-'
+                ).toUpperCase();
+
+                const saldo = obterSaldoPagar(processo);
+                const valorPagoAtual = obterValorPago(processo);
 
                 return (
                   <div
                     key={processo.id}
-                    className={`grid grid-cols-[52px_1.05fr_1.25fr_0.8fr_1fr_1.35fr] items-start gap-3 px-4 py-4 transition hover:bg-slate-50/70 ${
+                    className={`relative grid w-full grid-cols-[34px_1.2fr_1.35fr_1.15fr_1.45fr_1fr_1.65fr] items-center gap-3 px-4 py-4 transition-colors hover:bg-slate-50/70 ${
                       contasSelecionadas.has(String(processo.id))
-                        ? 'bg-emerald-50/50'
-                        : ''
+                        ? 'bg-emerald-50/40'
+                        : index % 2 === 1
+                        ? 'bg-slate-50/20'
+                        : 'bg-white'
                     }`}
                   >
-                    <div className="flex flex-col items-center gap-2 pt-0.5">
-                      {!pago ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            alternarContaSelecionada(
-                              String(processo.id)
-                            )
-                          }
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-emerald-100"
-                          title="Selecionar para pagamento em massa"
-                        >
-                          {contasSelecionadas.has(
-                            String(processo.id)
-                          ) ? (
-                            <CheckSquare2 className="h-5 w-5 text-emerald-600" />
-                          ) : (
-                            <Square className="h-5 w-5" />
-                          )}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            alternarContaEstornoSelecionada(
-                              String(processo.id)
-                            )
-                          }
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-100"
-                          title="Selecionar para desfazer pagamento em massa"
-                        >
-                          {contasEstornoSelecionadas.has(
-                            String(processo.id)
-                          ) ? (
-                            <CheckSquare2 className="h-5 w-5 text-red-600" />
-                          ) : (
-                            <Square className="h-5 w-5 text-red-400" />
-                          )}
-                        </button>
-                      )}
-
-                      <Situacao
-                        pago={pago}
-                        vencida={Boolean(vencida)}
-                        programada={
-                          processo.statusProgramacao ===
-                          'programado'
+                    <div className="flex items-center justify-center">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          pago
+                            ? alternarContaEstornoSelecionada(String(processo.id))
+                            : alternarContaSelecionada(String(processo.id))
                         }
-                      />
+                        className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-transparent text-slate-400 transition hover:border-slate-200 hover:bg-white hover:text-slate-700"
+                        title={pago ? 'Selecionar para estorno' : 'Selecionar para pagamento'}
+                      >
+                        {(pago
+                          ? contasEstornoSelecionadas.has(String(processo.id))
+                          : contasSelecionadas.has(String(processo.id))) ? (
+                          <CheckSquare2
+                            className={`h-4 w-4 ${
+                              pago ? 'text-amber-600' : 'text-emerald-600'
+                            }`}
+                          />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                      </button>
                     </div>
 
                     <div className="min-w-0">
-                      <p className="break-all font-mono text-[10px] font-bold leading-relaxed text-slate-700">
+                      <p
+                        className="truncate font-mono text-[9px] font-bold text-slate-700"
+                        title={String(processo.id)}
+                      >
                         {processo.id}
                       </p>
-
-                      <p className="mt-2 text-[9px] font-bold uppercase text-slate-400">
-                        {processo.tipoPagamento === 'interno'
-                          ? 'Pagamento interno'
-                          : 'Fornecedor'}
+                      <p
+                        className="mt-1 truncate text-[9px] font-medium text-slate-400"
+                        title={processo.descricao || ''}
+                      >
+                        {processo.descricao ||
+                          (processo.tipoPagamento === 'interno'
+                            ? 'Pagamento interno'
+                            : 'Conta a pagar')}
                       </p>
                     </div>
 
                     <div className="min-w-0">
-                      <p className="text-xs font-bold leading-snug text-slate-800">
+                      <p
+                        className="truncate text-[10px] font-bold text-slate-800"
+                        title={favorecido}
+                      >
                         {favorecido}
                       </p>
-
-                      <p className="mt-1 break-words text-[10px] leading-relaxed text-slate-500">
-                        {processo.descricao || '-'}
+                      <p className="mt-1 truncate font-mono text-[8px] text-slate-400">
+                        {fornecedor?.cnpj ||
+                          fornecedor?.cnpjCpf ||
+                          'Documento não informado'}
                       </p>
                     </div>
 
                     <div className="min-w-0">
-                      <p className="break-words text-[10px] font-semibold leading-relaxed text-slate-600">
+                      <p
+                        className="truncate text-[9px] font-semibold text-slate-700"
+                        title={empresa?.nome || '-'}
+                      >
                         {empresa?.nome || '-'}
                       </p>
 
-                      <div className="mt-2">
-                        {processo.pixChave ? (
-                          <div className="flex items-start gap-1.5">
-                            <p className="min-w-0 flex-1 break-all font-mono text-[9px] leading-relaxed text-slate-500">
-                              {processo.pixChave}
-                            </p>
+                      <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[8px] font-semibold text-slate-400">
+                          {metodo}
+                        </span>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                copiarPix(
-                                  processo.id,
-                                  processo.pixChave
-                                )
-                              }
-                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                                pixCopiadoId === processo.id
-                                  ? 'bg-emerald-50 text-emerald-600'
-                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                              }`}
-                              title="Copiar PIX"
-                            >
-                              {pixCopiadoId === processo.id ? (
-                                <Check className="h-3.5 w-3.5" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-[9px] text-slate-400">
-                            PIX não informado
+                        {processo.pixChave ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copiarPix(processo.id, processo.pixChave)
+                            }
+                            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[7px] font-bold text-emerald-600 hover:bg-emerald-100"
+                            title={processo.pixChave}
+                          >
+                            {pixCopiadoId === processo.id ? (
+                              <Check className="h-2.5 w-2.5" />
+                            ) : (
+                              <Copy className="h-2.5 w-2.5" />
+                            )}
+                            PIX
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[7px] font-bold uppercase text-slate-400">
+                            Total
+                          </p>
+                          <p className="mt-1 truncate font-mono text-[9px] font-bold text-slate-800">
+                            {formatarReal(Number(processo.valor || 0))}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-[7px] font-bold uppercase text-slate-400">
+                            Pago
+                          </p>
+                          <p className="mt-1 truncate font-mono text-[9px] font-bold text-emerald-600">
+                            {formatarReal(valorPagoAtual)}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-[7px] font-bold uppercase text-slate-400">
+                            Saldo
+                          </p>
+                          <p
+                            className={`mt-1 truncate font-mono text-[9px] font-bold ${
+                              saldo > 0.001
+                                ? 'text-amber-600'
+                                : 'text-emerald-600'
+                            }`}
+                          >
+                            {formatarReal(saldo)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <p className="truncate font-mono text-[9px] font-semibold text-slate-700">
+                          {vencimento || '-'}
+                        </p>
+                      </div>
+
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-1 text-[7px] font-bold ${
+                            pago
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : vencida
+                              ? 'bg-red-50 text-red-700'
+                              : valorPagoAtual > 0.001
+                              ? 'bg-violet-50 text-violet-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}
+                        >
+                          {pago
+                            ? 'Paga'
+                            : vencida
+                            ? 'Vencida'
+                            : valorPagoAtual > 0.001
+                            ? 'Parcial'
+                            : 'A vencer'}
+                        </span>
+
+                        {processo.statusProgramacao === 'programado' && (
+                          <span className="truncate text-[7px] font-semibold text-blue-600">
+                            Programado
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="min-w-0 space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-bold uppercase text-slate-400">
-                          Total
-                        </span>
-                        <span className="font-mono text-[10px] font-bold text-slate-800">
-                          {formatarReal(processo.valor)}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-bold uppercase text-slate-400">
-                          Pago
-                        </span>
-                        <span className="font-mono text-[10px] font-semibold text-emerald-600">
-                          {formatarReal(
-                            obterValorPago(processo)
-                          )}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-bold uppercase text-slate-400">
-                          Saldo
-                        </span>
-                        <span className="font-mono text-[10px] font-bold text-amber-600">
-                          {formatarReal(
-                            obterSaldoPagar(processo)
-                          )}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2">
-                        <p className="text-[8px] font-bold uppercase text-slate-400">
-                          Vencimento
-                        </p>
-                        <p className="mt-1 font-mono text-[10px] font-semibold text-slate-600">
-                          {processo.prazo || '-'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="min-w-0 space-y-2">
-                      {pago ? (
-                        <div className="rounded-xl bg-emerald-50 p-2.5">
-                          <p className="font-mono text-[10px] font-semibold text-emerald-700">
-                            {processo.dataPagamento || 'Pago'}
-                          </p>
-                          <p className="mt-1 text-[8px] font-bold uppercase text-emerald-600">
-                            {processo.metodoPagamento ||
-                              processo.formaPagamento ||
-                              '-'}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <input
-                            id={`data-programacao-${processo.id}`}
-                            type="date"
-                            defaultValue={
-                              processo.dataProgramadaPagamento ||
-                              ''
-                            }
-                            className="min-w-[125px] flex-1 rounded-[9px] border-0 bg-slate-50 px-2 py-2 font-mono text-[9px]"
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              programar(processo.id)
-                            }
-                            className="rounded-[9px] bg-slate-100 px-2.5 py-2 text-[9px] font-bold text-slate-700 hover:bg-slate-200"
-                          >
-                            Programar
-                          </button>
-                        </div>
-                      )}
-
-                      {!pago && (
-                        <p className="text-[8px] text-slate-400">
-                          Pagamento aguardando registro
-                        </p>
-                      )}
-
-                      <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-0">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
-                          onClick={() =>
-                            abrirProcesso(processo.id)
-                          }
-                          className="rounded-[9px] border border-slate-200 bg-white px-3 py-2 text-[9px] font-bold text-slate-600 transition hover:bg-slate-50"
+                          onClick={() => abrirDetalhesConta(processo)}
+                          className="inline-flex h-8 items-center justify-center rounded-[9px] border border-slate-200 bg-white px-2.5 text-[8px] font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
                         >
                           Detalhes
                         </button>
 
-                        {processo.anexoUrl && (
-                          <a
-                            href={processo.anexoUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-1 rounded-[9px] bg-slate-100 px-3 py-2 text-[9px] font-bold text-slate-600 transition hover:bg-slate-200"
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            Anexo
-                          </a>
-                        )}
-
                         {!pago && (
                           <button
                             type="button"
-                            onClick={() =>
-                              abrirModalPagamento(processo)
-                            }
-                            className="rounded-[9px] bg-emerald-600 px-3 py-2 text-[9px] font-bold text-white transition hover:bg-emerald-700"
+                            onClick={() => abrirModalPagamento(processo)}
+                            className="inline-flex h-8 items-center justify-center rounded-[9px] bg-emerald-600 px-2.5 text-[8px] font-bold text-white shadow-sm transition hover:bg-emerald-700"
                           >
-                            {obterValorPago(processo) > 0
-                              ? 'Novo pagamento'
-                              : 'Registrar pagamento'}
+                            Pagar
                           </button>
                         )}
 
@@ -2473,57 +2443,64 @@ export const AccountsPayableView: React.FC = () => {
                                 : String(processo.id)
                             )
                           }
-                          className={`flex items-center gap-1.5 rounded-[9px] border px-3 py-2 text-[9px] font-bold transition ${
-                            menuAcoesId === String(processo.id)
-                              ? 'border-slate-300 bg-slate-100 text-slate-800'
-                              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                          }`}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-800"
+                          title="Mais ações"
                         >
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                          Ações
+                          <MoreHorizontal className="h-4 w-4" />
                         </button>
                       </div>
 
-                      {menuAcoesId === String(processo.id) && (
-                        <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2.5">
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {obterValorPago(processo) > 0.001 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMenuAcoesId(null);
-                                  abrirModalEstorno(processo);
-                                }}
-                                className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-2 text-[9px] font-bold text-amber-700 transition hover:bg-amber-50"
-                              >
-                                <RotateCcw className="h-3.5 w-3.5" />
-                                Desfazer pagamento
-                              </button>
-                            )}
+                      {!pago && (
+                        <div className="mt-2 flex items-center justify-end gap-1.5">
+                          <span className="text-[7px] font-bold uppercase tracking-wide text-slate-400">
+                            Programar
+                          </span>
+                          <input
+                            id={`data-programacao-${processo.id}`}
+                            type="date"
+                            defaultValue={processo.dataProgramadaPagamento || ''}
+                            className="h-7 w-[112px] rounded-[8px] border border-slate-200 bg-slate-50 px-1.5 font-mono text-[8px] text-slate-600 outline-none focus:border-slate-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => programar(processo.id)}
+                            className="h-7 rounded-[8px] bg-slate-100 px-2 text-[8px] font-bold text-slate-600 transition hover:bg-slate-200"
+                            title="Salvar programação"
+                          >
+                            Salvar
+                          </button>
+                        </div>
+                      )}
 
+                      {menuAcoesId === String(processo.id) && (
+                        <div className="absolute right-0 top-10 z-30 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                          {valorPagoAtual > 0.001 && (
                             <button
                               type="button"
-                              onClick={() =>
-                                alternarContaExclusaoSelecionada(
-                                  String(processo.id)
-                                )
-                              }
-                              className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[9px] font-bold transition ${
-                                contasExclusaoSelecionadas.has(String(processo.id))
-                                  ? 'border-red-200 bg-red-50 text-red-700'
-                                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                              }`}
+                              onClick={() => {
+                                setMenuAcoesId(null);
+                                abrirModalEstorno(processo);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[10px] font-bold text-amber-700 hover:bg-amber-50"
                             >
-                              {contasExclusaoSelecionadas.has(String(processo.id)) ? (
-                                <CheckSquare2 className="h-3.5 w-3.5" />
-                              ) : (
-                                <Square className="h-3.5 w-3.5" />
-                              )}
-                              {contasExclusaoSelecionadas.has(String(processo.id))
-                                ? 'Marcada para excluir'
-                                : 'Selecionar para exclusão'}
+                              <RotateCcw className="h-3.5 w-3.5" />
+                              Desfazer último pagamento
                             </button>
-                          </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuAcoesId(null);
+                              alternarContaExclusaoSelecionada(
+                                String(processo.id)
+                              );
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[10px] font-bold text-slate-600 hover:bg-slate-50"
+                          >
+                            <CheckSquare2 className="h-3.5 w-3.5" />
+                            Selecionar para exclusão
+                          </button>
 
                           <button
                             type="button"
@@ -2531,8 +2508,7 @@ export const AccountsPayableView: React.FC = () => {
                               setMenuAcoesId(null);
                               abrirModalExclusao(processo);
                             }}
-                            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-[9px] font-bold text-white transition hover:bg-red-700"
-                            title="Excluir esta conta permanentemente"
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[10px] font-bold text-red-600 hover:bg-red-50"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                             Excluir conta
@@ -2762,7 +2738,7 @@ export const AccountsPayableView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() =>
-                      abrirProcesso(processo.id)
+                      abrirDetalhesConta(processo)
                     }
                     className="rounded-xl bg-slate-100 py-3 text-[10px] font-bold text-slate-700"
                   >
@@ -3384,6 +3360,306 @@ export const AccountsPayableView: React.FC = () => {
         </div>
       )}
 
+
+      {contaDetalhes && (() => {
+        const fornecedorDetalhes = fornecedores.find(
+          (item: any) => item.id === contaDetalhes.fornecedorId
+        );
+
+        const empresaDetalhes = empresas.find(
+          (item: any) => item.id === contaDetalhes.empresaId
+        );
+
+        const planoDetalhes = planosFinanceiros?.find(
+          (item: any) =>
+            String(item.id ?? item.dbId ?? '') ===
+            String(
+              contaDetalhes.planoFinanceiroId ??
+              contaDetalhes.plano_financeiro_id ??
+              contaDetalhes.planoId ??
+              ''
+            )
+        );
+
+        const centroDetalhes = centrosCustos?.find(
+          (item: any) =>
+            String(item.id ?? item.dbId ?? '') ===
+            String(
+              contaDetalhes.centroCustoId ??
+              contaDetalhes.centro_custo_id ??
+              contaDetalhes.centroId ??
+              ''
+            )
+        );
+
+        const valorTotalDetalhes = Number(contaDetalhes.valor || 0);
+        const valorPagoDetalhes = obterValorPago(contaDetalhes);
+        const saldoDetalhes = obterSaldoPagar(contaDetalhes);
+        const pagaDetalhes = contaPaga(contaDetalhes);
+        const vencimentoDetalhes = dataBase(contaDetalhes);
+        const vencidaDetalhes =
+          !pagaDetalhes &&
+          Boolean(vencimentoDetalhes) &&
+          vencimentoDetalhes < hoje;
+
+        const favorecidoDetalhes =
+          contaDetalhes.tipoPagamento === 'interno'
+            ? contaDetalhes.beneficiarioInterno || 'Pagamento interno'
+            : fornecedorDetalhes?.nome || 'Não informado';
+
+        const metodoDetalhes = String(
+          contaDetalhes.metodoPagamento ||
+          contaDetalhes.formaPagamento ||
+          'Não informado'
+        ).toUpperCase();
+
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-[70] bg-slate-950/45 backdrop-blur-sm"
+              onClick={fecharDetalhesConta}
+            />
+
+            <div className="fixed inset-0 z-[71] flex items-center justify-center p-3 sm:p-5">
+              <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
+                <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-base font-bold text-[#0F172A]">
+                        Detalhes da conta
+                      </h2>
+
+                      <Situacao
+                        pago={pagaDetalhes}
+                        vencida={Boolean(vencidaDetalhes)}
+                        programada={contaDetalhes.statusProgramacao === 'programado'}
+                      />
+                    </div>
+
+                    <p className="mt-1 truncate font-mono text-[10px] text-slate-400">
+                      {contaDetalhes.id}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={fecharDetalhesConta}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    title="Fechar"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_.75fr]">
+                    <div className="space-y-4">
+                      <section className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                          Conta
+                        </p>
+
+                        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <DetalheItem
+                            label="Favorecido"
+                            value={favorecidoDetalhes}
+                          />
+                          <DetalheItem
+                            label="Empresa"
+                            value={empresaDetalhes?.nome || 'Não informada'}
+                          />
+                          <DetalheItem
+                            label="Descrição"
+                            value={contaDetalhes.descricao || 'Sem descrição'}
+                          />
+                          <DetalheItem
+                            label="Fornecedor / documento"
+                            value={
+                              fornecedorDetalhes?.cnpj ||
+                              fornecedorDetalhes?.cnpjCpf ||
+                              'Não informado'
+                            }
+                          />
+                          <DetalheItem
+                            label="Plano financeiro"
+                            value={planoDetalhes?.nome || 'Não informado'}
+                          />
+                          <DetalheItem
+                            label="Centro de custo"
+                            value={centroDetalhes?.nome || 'Não informado'}
+                          />
+                          <DetalheItem
+                            label="Parcela"
+                            value={
+                              String(
+                                contaDetalhes.parcela ??
+                                contaDetalhes.numeroParcela ??
+                                'Não informada'
+                              )
+                            }
+                          />
+                          <DetalheItem
+                            label="Origem"
+                            value={String(contaDetalhes.origem || 'Manual')}
+                          />
+                        </div>
+                      </section>
+
+                      <section className="rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                          Pagamento e vencimento
+                        </p>
+
+                        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <DetalheItem
+                            label="Vencimento"
+                            value={vencimentoDetalhes || 'Não informado'}
+                            mono
+                          />
+                          <DetalheItem
+                            label="Programação"
+                            value={
+                              contaDetalhes.dataProgramadaPagamento ||
+                              (contaDetalhes.statusProgramacao === 'programado'
+                                ? 'Programada'
+                                : 'Não programada')
+                            }
+                            mono={Boolean(contaDetalhes.dataProgramadaPagamento)}
+                          />
+                          <DetalheItem
+                            label="Forma de pagamento"
+                            value={metodoDetalhes}
+                          />
+                          <DetalheItem
+                            label="Data do pagamento"
+                            value={
+                              contaDetalhes.dataPagamento ||
+                              'Ainda não paga'
+                            }
+                            mono={Boolean(contaDetalhes.dataPagamento)}
+                          />
+                          <DetalheItem
+                            label="PIX"
+                            value={
+                              contaDetalhes.pixChave ||
+                              fornecedorDetalhes?.pix ||
+                              fornecedorDetalhes?.pixChave ||
+                              'Não informado'
+                            }
+                          />
+                          <DetalheItem
+                            label="Favorecido PIX"
+                            value={
+                              contaDetalhes.pixFavorecido ||
+                              favorecidoDetalhes
+                            }
+                          />
+                        </div>
+                      </section>
+
+                      <section className="rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                          Observações
+                        </p>
+
+                        <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">
+                          {contaDetalhes.observacao ||
+                            contaDetalhes.observacoes ||
+                            'Nenhuma observação cadastrada.'}
+                        </p>
+                      </section>
+                    </div>
+
+                    <div className="space-y-4">
+                      <section className="rounded-[18px] border border-slate-100 bg-[#0F172A] p-5 text-white shadow-lg">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">
+                          Resumo financeiro
+                        </p>
+
+                        <div className="mt-5 space-y-4">
+                          <div>
+                            <p className="text-[9px] uppercase text-white/45">
+                              Valor total
+                            </p>
+                            <p className="mt-1 font-mono text-xl font-bold">
+                              {formatarReal(valorTotalDetalhes)}
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="rounded-xl bg-white/10 p-3">
+                              <p className="text-[8px] uppercase text-white/45">
+                                Pago
+                              </p>
+                              <p className="mt-1 font-mono text-sm font-bold text-emerald-300">
+                                {formatarReal(valorPagoDetalhes)}
+                              </p>
+                            </div>
+
+                            <div className="rounded-xl bg-white/10 p-3">
+                              <p className="text-[8px] uppercase text-white/45">
+                                Saldo
+                              </p>
+                              <p className={`mt-1 font-mono text-sm font-bold ${
+                                saldoDetalhes > 0.001
+                                  ? 'text-amber-300'
+                                  : 'text-emerald-300'
+                              }`}>
+                                {formatarReal(saldoDetalhes)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+
+                      {!pagaDetalhes && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            fecharDetalhesConta();
+                            abrirModalPagamento(contaDetalhes);
+                          }}
+                          className="flex w-full items-center justify-center gap-2 rounded-[14px] bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+                        >
+                          <Check className="h-4 w-4" />
+                          Registrar pagamento
+                        </button>
+                      )}
+
+                      {valorPagoDetalhes > 0.001 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            fecharDetalhesConta();
+                            abrirModalEstorno(contaDetalhes);
+                          }}
+                          className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-700 hover:bg-amber-100"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          Desfazer último pagamento
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fecharDetalhesConta();
+                          abrirModalExclusao(contaDetalhes);
+                        }}
+                        className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600 hover:bg-red-100"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Excluir conta
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
       {modalImportacaoOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
           <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
@@ -3911,6 +4187,30 @@ export const AccountsPayableView: React.FC = () => {
     </div>
   );
 };
+
+
+const DetalheItem = ({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) => (
+  <div className="min-w-0">
+    <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">
+      {label}
+    </p>
+    <p
+      className={`mt-1 break-words text-[11px] font-semibold text-slate-700 ${
+        mono ? 'font-mono' : ''
+      }`}
+    >
+      {value || '—'}
+    </p>
+  </div>
+);
 
 const Card = ({
   titulo,

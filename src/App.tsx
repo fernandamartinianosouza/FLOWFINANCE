@@ -11,7 +11,6 @@ import {
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
-import { ProcessesView } from './components/ProcessesView';
 import { NewRequestView } from './components/NewRequestView';
 import { ApprovalsView } from './components/ApprovalsView';
 import { AccountsPayableView } from './components/AccountsPayableView';
@@ -37,62 +36,32 @@ import { AuthView } from './views/AuthView';
 import { useAuth } from './context/AuthContext';
 import { podeAcessar } from './config/permissions';
 
-/**
- * Detecta tanto o parâmetro personalizado usado pelo FlowFinance:
- *
- * ?definir-senha=1
- *
- * quanto o tipo enviado pelo Supabase:
- *
- * ?type=invite
- * #type=invite
- * #type=recovery
- */
 const verificarDefinicaoSenhaNaUrl = () => {
-  const url = new URL(
-    window.location.href
+  const url = new URL(window.location.href);
+
+  const hashParams = new URLSearchParams(
+    url.hash.replace(/^#/, '')
   );
 
-  const hashParams =
-    new URLSearchParams(
-      url.hash.replace(/^#/, '')
-    );
-
   const definirSenha =
-    url.searchParams.get(
-      'definir-senha'
-    ) === '1';
+    url.searchParams.get('definir-senha') === '1';
 
   const tipoAuth =
     url.searchParams.get('type') ||
     hashParams.get('type');
 
-  return (
-    definirSenha ||
-    tipoAuth === 'invite'
-  );
+  return definirSenha || tipoAuth === 'invite';
 };
 
-/**
- * Remove apenas os parâmetros usados na ativação.
- *
- * Não altera as rotas ou páginas do sistema.
- */
 const limparParametroDefinirSenha = () => {
-  const url = new URL(
-    window.location.href
-  );
+  const url = new URL(window.location.href);
 
-  url.searchParams.delete(
-    'definir-senha'
-  );
-
+  url.searchParams.delete('definir-senha');
   url.searchParams.delete('type');
 
-  const hashParams =
-    new URLSearchParams(
-      url.hash.replace(/^#/, '')
-    );
+  const hashParams = new URLSearchParams(
+    url.hash.replace(/^#/, '')
+  );
 
   hashParams.delete('type');
 
@@ -101,9 +70,7 @@ const limparParametroDefinirSenha = () => {
     : '';
 
   const novaUrl =
-    `${url.pathname}` +
-    `${url.search}` +
-    `${url.hash}`;
+    `${url.pathname}${url.search}${url.hash}`;
 
   window.history.replaceState(
     {},
@@ -131,13 +98,6 @@ const AppContent: React.FC = () => {
     verificarDefinicaoSenhaNaUrl()
   );
 
-  /**
-   * Atualiza a tela de ativação quando a URL
-   * for alterada pelo Supabase.
-   *
-   * O Supabase pode atualizar o hash depois
-   * que a aplicação já iniciou.
-   */
   useEffect(() => {
     const atualizarPelaUrl = () => {
       setDeveDefinirSenha(
@@ -171,13 +131,21 @@ const AppContent: React.FC = () => {
   }, []);
 
   /**
-   * Se o usuário tentar permanecer em uma
-   * página sem permissão, volta ao Dashboard.
+   * A antiga Central de Processos foi removida.
+   * Se algum estado salvo, link antigo ou notificação ainda tentar
+   * abrir "processos", o usuário é levado para Contas a Pagar.
    */
+  useEffect(() => {
+    if (activeView === 'processos') {
+      setActiveView('contas-pagar');
+    }
+  }, [activeView, setActiveView]);
+
   useEffect(() => {
     if (
       user &&
       perfil &&
+      activeView !== 'processos' &&
       !podeAcessar(
         perfil,
         activeView
@@ -192,26 +160,18 @@ const AppContent: React.FC = () => {
     setActiveView,
   ]);
 
-  const concluirDefinicaoSenha =
-    () => {
-      limparParametroDefinirSenha();
-      setDeveDefinirSenha(false);
-    };
+  const concluirDefinicaoSenha = () => {
+    limparParametroDefinirSenha();
+    setDeveDefinirSenha(false);
+  };
 
   const renderView = () => {
     switch (activeView) {
-      /**
-       * Administração de usuários,
-       * convites e acessos do sistema.
-       */
       case 'usuarios':
         return <UsersAdminView />;
 
       case 'dashboard':
         return <DashboardView />;
-
-      case 'processos':
-        return <ProcessesView />;
 
       case 'solicitacao':
         return <NewRequestView />;
@@ -226,33 +186,23 @@ const AppContent: React.FC = () => {
         return <ApprovalsView />;
 
       case 'planejamento-compras':
-        return (
-          <WeeklyPurchasingPlanView />
-        );
+        return <WeeklyPurchasingPlanView />;
 
       case 'nova-conta':
         return <NewAccountView />;
 
       case 'contas-pagar':
-        return (
-          <AccountsPayableView />
-        );
+        return <AccountsPayableView />;
 
       case 'programacao':
       case 'pagamentos-programados':
-        return (
-          <PaymentScheduleView />
-        );
+        return <PaymentScheduleView />;
 
       case 'conciliacao':
-        return (
-          <ReconciliationView />
-        );
+        return <ReconciliationView />;
 
       case 'centro-financeiro':
-        return (
-          <FinancialCenterView />
-        );
+        return <FinancialCenterView />;
 
       case 'calendario':
         return <CalendarView />;
@@ -269,6 +219,9 @@ const AppContent: React.FC = () => {
       case 'fornecedores':
         return <SuppliersView />;
 
+      case 'processos':
+        return <AccountsPayableView />;
+
       default:
         return <DashboardView />;
     }
@@ -282,24 +235,12 @@ const AppContent: React.FC = () => {
     );
   }
 
-  /**
-   * Esta verificação fica antes do login.
-   *
-   * Ao clicar no convite, o Supabase pode
-   * criar uma sessão temporária automaticamente.
-   * Mesmo autenticado, o usuário ainda precisa
-   * criar a própria senha.
-   */
   if (deveDefinirSenha) {
     return (
       <PasswordAccessView
         modo="definir-senha"
-        onVoltar={
-          concluirDefinicaoSenha
-        }
-        onConcluido={
-          concluirDefinicaoSenha
-        }
+        onVoltar={concluirDefinicaoSenha}
+        onConcluido={concluirDefinicaoSenha}
       />
     );
   }
@@ -308,12 +249,9 @@ const AppContent: React.FC = () => {
     return <AuthView />;
   }
 
-  /**
-   * Evita renderizar uma página sem permissão
-   * enquanto o redirecionamento ocorre.
-   */
   if (
     perfil &&
+    activeView !== 'processos' &&
     !podeAcessar(
       perfil,
       activeView
@@ -332,14 +270,12 @@ const AppContent: React.FC = () => {
       id="flow_app_layout"
     >
       <div className="pointer-events-none absolute left-[-12%] top-[-12%] z-0 h-[52%] w-[52%] rounded-full bg-[#3557FF]/12 blur-[130px]" />
-
       <div className="pointer-events-none absolute bottom-[-14%] right-[-10%] z-0 h-[62%] w-[62%] rounded-full bg-[#D4AF37]/14 blur-[140px]" />
-
       <div className="pointer-events-none absolute left-[28%] top-[32%] z-0 h-[38%] w-[38%] rounded-full bg-sky-200/22 blur-[150px]" />
 
       <div className="relative z-20 hidden h-screen w-72 min-w-72 shrink-0 lg:block">
-  <Sidebar />
-</div>
+        <Sidebar />
+      </div>
 
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <div className="hidden lg:block">
@@ -350,8 +286,8 @@ const AppContent: React.FC = () => {
 
         <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-28 sm:px-5 lg:h-screen lg:px-10 lg:py-8 lg:pb-8">
           <div className="ff-page-container relative z-10 mx-auto w-full max-w-[1600px]">
-  {renderView()}
-</div>
+            {renderView()}
+          </div>
         </main>
       </div>
 
