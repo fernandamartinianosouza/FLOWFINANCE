@@ -220,9 +220,13 @@ export const AccountsPayableView: React.FC = () => {
     );
 
   const dataBase = (processo: any) =>
-    processo.dataProgramadaPagamento ||
-    processo.prazo ||
-    '';
+    String(
+      processo.prazo ||
+      processo.vencimento ||
+      processo.dataVencimento ||
+      processo.data_vencimento ||
+      ''
+    ).slice(0, 10);
 
   const obterValorPago = (processo: any) =>
     Number(processo.valorPago || 0);
@@ -272,12 +276,15 @@ export const AccountsPayableView: React.FC = () => {
     .filter((item: any) => {
       if (!contaPaga(item)) return false;
 
-      const data =
-        item.dataPagamento || item.prazo || '';
+      const vencimentoOriginal = dataBase(item);
 
       return (
-        (!dataInicio || data >= dataInicio) &&
-        (!dataFim || data <= dataFim)
+        (!dataInicio ||
+          (vencimentoOriginal &&
+            vencimentoOriginal >= dataInicio)) &&
+        (!dataFim ||
+          (vencimentoOriginal &&
+            vencimentoOriginal <= dataFim))
       );
     })
     .reduce(
@@ -342,24 +349,21 @@ export const AccountsPayableView: React.FC = () => {
           return false;
         }
 
-        const data =
-          processo.dataPagamento ||
-          processo.dataProgramadaPagamento ||
-          processo.prazo ||
-          '';
+        const vencimentoOriginal =
+          dataBase(processo);
 
         if (
           dataInicio &&
-          data &&
-          data < dataInicio
+          (!vencimentoOriginal ||
+            vencimentoOriginal < dataInicio)
         ) {
           return false;
         }
 
         if (
           dataFim &&
-          data &&
-          data > dataFim
+          (!vencimentoOriginal ||
+            vencimentoOriginal > dataFim)
         ) {
           return false;
         }
