@@ -1601,9 +1601,7 @@ export const AccountsPayableView: React.FC = () => {
         }
       );
 
-      const chavesCriadas = new Set<string>();
       let criadas = 0;
-      let duplicadas = 0;
 
       for (const linha of validas) {
         const chavePlano =
@@ -1718,63 +1716,6 @@ export const AccountsPayableView: React.FC = () => {
           fornecedorExistente?.chavePix ||
           '';
 
-        const chaveDuplicidade = [
-          empresaImportacaoId,
-          fornecedorId,
-          planoId,
-          linha.vencimento,
-          linha.parcela,
-          linha.valor.toFixed(2),
-        ].join('|');
-
-        const duplicadaCarregada = processos.some(
-          (processo: any) => {
-            const parcelaProcesso = String(
-              processo.parcela ??
-                processo.numeroParcela ??
-                ''
-            ).trim();
-
-            return (
-              String(
-                processo.empresaId ??
-                  processo.empresa_id ??
-                  ''
-              ) === String(empresaImportacaoId) &&
-              String(
-                processo.fornecedorId ??
-                  processo.fornecedor_id ??
-                  ''
-              ) === String(fornecedorId) &&
-              String(
-                processo.planoFinanceiroId ??
-                  processo.plano_financeiro_id ??
-                  processo.planoId ??
-                  ''
-              ) === String(planoId) &&
-              String(
-                processo.prazo ??
-                  processo.vencimento ??
-                  ''
-              ).slice(0, 10) ===
-                linha.vencimento &&
-              parcelaProcesso === linha.parcela &&
-              Math.abs(
-                Number(processo.valor || 0) -
-                  linha.valor
-              ) < 0.001
-            );
-          }
-        );
-
-        if (
-          duplicadaCarregada ||
-          chavesCriadas.has(chaveDuplicidade)
-        ) {
-          duplicadas += 1;
-          continue;
-        }
-
         await criarNovaConta({
           organizacaoId:
             organizacaoAtivaId || undefined,
@@ -1800,7 +1741,6 @@ export const AccountsPayableView: React.FC = () => {
           observacao: `Importado do arquivo ${arquivoImportacaoNome}`,
         });
 
-        chavesCriadas.add(chaveDuplicidade);
         criadas += 1;
       }
 
@@ -1811,7 +1751,7 @@ export const AccountsPayableView: React.FC = () => {
       setArquivoImportacaoNome('');
 
       alert(
-        `${criadas} conta(s) criada(s). ${duplicadas} duplicada(s) ignorada(s).`
+        `${criadas} conta(s) importada(s) com sucesso. Registros repetidos também foram mantidos.`
       );
     } catch (error: any) {
       console.error(
