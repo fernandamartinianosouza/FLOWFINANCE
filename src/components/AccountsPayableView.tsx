@@ -433,17 +433,34 @@ export const AccountsPayableView: React.FC = () => {
 
   const resumoFinanceiroFiltrado = useMemo(() => {
     return contasFiltradas.reduce(
-      (resumo: { aVencer: number; vencido: number; pago: number; saldo: number }, processo: any) => {
+      (
+        resumo: {
+          aVencer: number;
+          vencido: number;
+          pago: number;
+          total: number;
+        },
+        processo: any
+      ) => {
+        const valorTotal = Math.max(
+          Number(processo.valor || 0),
+          0
+        );
         const valorPago = obterValorPago(processo);
         const saldo = obterSaldoPagar(processo);
         const estaPaga = contaPaga(processo);
         const vencimento = dataBase(processo);
 
+        // TOTAL = valor original de todas as contas que passaram
+        // pelos filtros, independentemente de estarem pagas,
+        // vencidas, parcialmente pagas ou a vencer.
+        resumo.total += valorTotal;
+
+        // PAGO = valor efetivamente pago nas contas filtradas.
         resumo.pago += valorPago;
 
+        // VENCIDO / A VENCER = somente saldo ainda pendente.
         if (!estaPaga && saldo > 0.001) {
-          resumo.saldo += saldo;
-
           if (vencimento && vencimento < hoje) {
             resumo.vencido += saldo;
           } else {
@@ -453,7 +470,12 @@ export const AccountsPayableView: React.FC = () => {
 
         return resumo;
       },
-      { aVencer: 0, vencido: 0, pago: 0, saldo: 0 }
+      {
+        aVencer: 0,
+        vencido: 0,
+        pago: 0,
+        total: 0,
+      }
     );
   }, [contasFiltradas, hoje]);
 
@@ -1888,8 +1910,8 @@ export const AccountsPayableView: React.FC = () => {
         />
 
         <Card
-          titulo="Saldo"
-          valor={formatarReal(resumoFinanceiroFiltrado.saldo)}
+          titulo="Total"
+          valor={formatarReal(resumoFinanceiroFiltrado.total)}
           icon={Wallet}
         />
       </div>
