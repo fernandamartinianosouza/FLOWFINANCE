@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 export interface ContaPagarImportPreview {
   linha: number;
   planoConta: string;
+  centroCusto: string;
   fornecedor: string;
   pix: string;
   vencimento: string;
@@ -39,9 +40,7 @@ const parseValor = (valor: unknown): number => {
   if (!texto) return 0;
 
   if (texto.includes(',') && texto.includes('.')) {
-    return Number(
-      texto.replace(/\./g, '').replace(',', '.')
-    );
+    return Number(texto.replace(/\./g, '').replace(',', '.'));
   }
 
   if (texto.includes(',')) {
@@ -53,65 +52,37 @@ const parseValor = (valor: unknown): number => {
 
 const dataIso = (valor: unknown): string => {
   if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
-    return `${valor.getFullYear()}-${String(
-      valor.getMonth() + 1
-    ).padStart(2, '0')}-${String(valor.getDate()).padStart(
-      2,
-      '0'
-    )}`;
+    return `${valor.getFullYear()}-${String(valor.getMonth() + 1).padStart(2, '0')}-${String(valor.getDate()).padStart(2, '0')}`;
   }
 
   if (typeof valor === 'number') {
     const data = XLSX.SSF.parse_date_code(valor);
-
     if (data) {
-      return `${data.y}-${String(data.m).padStart(
-        2,
-        '0'
-      )}-${String(data.d).padStart(2, '0')}`;
+      return `${data.y}-${String(data.m).padStart(2, '0')}-${String(data.d).padStart(2, '0')}`;
     }
   }
 
   const texto = String(valor ?? '').trim();
 
-  const br = texto.match(
-    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/
-  );
-
+  const br = texto.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (br) {
-    return `${br[3]}-${br[2].padStart(
-      2,
-      '0'
-    )}-${br[1].padStart(2, '0')}`;
+    return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`;
   }
 
-  const iso = texto.match(
-    /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/
-  );
-
+  const iso = texto.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
   if (iso) {
-    return `${iso[1]}-${iso[2].padStart(
-      2,
-      '0'
-    )}-${iso[3].padStart(2, '0')}`;
+    return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
   }
 
   return '';
 };
 
 export const contasPagarImportService = {
-  async lerArquivo(
-    arquivo: File
-  ): Promise<ContaPagarImportPreview[]> {
+  async lerArquivo(arquivo: File): Promise<ContaPagarImportPreview[]> {
     const nomeArquivo = arquivo.name.toLowerCase();
 
-    if (
-      !nomeArquivo.endsWith('.xlsx') &&
-      !nomeArquivo.endsWith('.xls')
-    ) {
-      throw new Error(
-        'Selecione uma planilha Excel nos formatos .xlsx ou .xls.'
-      );
+    if (!nomeArquivo.endsWith('.xlsx') && !nomeArquivo.endsWith('.xls')) {
+      throw new Error('Selecione uma planilha Excel nos formatos .xlsx ou .xls.');
     }
 
     const buffer = await arquivo.arrayBuffer();
@@ -141,28 +112,20 @@ export const contasPagarImportService = {
       });
     } catch (error: any) {
       console.error('Erro interno do XLSX:', error);
-
       throw new Error(
         'Não foi possível abrir esta planilha. Baixe novamente o modelo do sistema ou salve o arquivo no Excel como Pasta de Trabalho do Excel (.xlsx).'
       );
     }
 
     const nomeAba = workbook.SheetNames[0];
-
-    if (!nomeAba) {
-      throw new Error('A planilha não possui nenhuma aba.');
-    }
+    if (!nomeAba) throw new Error('A planilha não possui nenhuma aba.');
 
     const sheet = workbook.Sheets[nomeAba];
 
-    const linhas =
-      XLSX.utils.sheet_to_json<Record<string, unknown>>(
-        sheet,
-        {
-          defval: '',
-          raw: true,
-        }
-      );
+    const linhas = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: '',
+      raw: true,
+    });
 
     return linhas.map((linha, index) => {
       const dados: Record<string, unknown> = {};
@@ -176,6 +139,14 @@ export const contasPagarImportService = {
           dados['plano de contas'] ??
           dados['plano de conta'] ??
           dados['plano'] ??
+          ''
+      ).trim();
+
+      const centroCusto = String(
+        dados['centro de custo'] ??
+          dados['centro custo'] ??
+          dados['centro de custos'] ??
+          dados['centro'] ??
           ''
       ).trim();
 
@@ -213,29 +184,17 @@ export const contasPagarImportService = {
 
       const erros: string[] = [];
 
-      if (!planoConta) {
-        erros.push('Plano de contas não informado');
-      }
-
-      if (!fornecedor) {
-        erros.push('Fornecedor não informado');
-      }
-
-      if (!vencimento) {
-        erros.push('Vencimento inválido');
-      }
-
-      if (!parcela) {
-        erros.push('Parcela não informada');
-      }
-
-      if (!Number.isFinite(valor) || valor <= 0) {
-        erros.push('Valor inválido');
-      }
+      if (!planoConta) erros.push('Plano de contas não informado');
+      if (!centroCusto) erros.push('Centro de custo não informado');
+      if (!fornecedor) erros.push('Fornecedor não informado');
+      if (!vencimento) erros.push('Vencimento inválido');
+      if (!parcela) erros.push('Parcela não informada');
+      if (!Number.isFinite(valor) || valor <= 0) erros.push('Valor inválido');
 
       return {
         linha: index + 2,
         planoConta,
+        centroCusto,
         fornecedor,
         pix,
         vencimento,
@@ -260,14 +219,34 @@ export const contasPagarImportService = {
       .limit(1);
 
     if (params.organizacaoId) {
-      query = query.eq(
-        'organizacao_id',
-        params.organizacaoId
-      );
+      query = query.eq('organizacao_id', params.organizacaoId);
     }
 
     const { data, error } = await query.maybeSingle();
+    if (error) throw error;
 
+    return data?.id ? String(data.id) : null;
+  },
+
+  async buscarCentro(params: {
+    organizacaoId?: string;
+    empresaId: string;
+    planoFinanceiroId: string;
+    nome: string;
+  }): Promise<string | null> {
+    let query = supabase
+      .from('centros_custos')
+      .select('id')
+      .eq('empresa_id', params.empresaId)
+      .eq('plano_financeiro_id', params.planoFinanceiroId)
+      .ilike('nome', params.nome.trim())
+      .limit(1);
+
+    if (params.organizacaoId) {
+      query = query.eq('organizacao_id', params.organizacaoId);
+    }
+
+    const { data, error } = await query.maybeSingle();
     if (error) throw error;
 
     return data?.id ? String(data.id) : null;
@@ -286,14 +265,10 @@ export const contasPagarImportService = {
       .limit(1);
 
     if (params.organizacaoId) {
-      query = query.eq(
-        'organizacao_id',
-        params.organizacaoId
-      );
+      query = query.eq('organizacao_id', params.organizacaoId);
     }
 
     const { data, error } = await query.maybeSingle();
-
     if (error) throw error;
 
     return data?.id ? String(data.id) : null;

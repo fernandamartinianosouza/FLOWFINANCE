@@ -1566,11 +1566,12 @@ export const AccountsPayableView: React.FC = () => {
 
     if (
       typeof cadastrarPlanoFinanceiro !== 'function' ||
+      typeof cadastrarCentroCusto !== 'function' ||
       typeof cadastrarFornecedor !== 'function' ||
       typeof criarNovaConta !== 'function'
     ) {
       alert(
-        'O FinanceContext precisa disponibilizar cadastrarPlanoFinanceiro, cadastrarFornecedor e criarNovaConta.'
+        'O FinanceContext precisa disponibilizar cadastrarPlanoFinanceiro, cadastrarCentroCusto, cadastrarFornecedor e criarNovaConta.'
       );
       return;
     }
@@ -1605,6 +1606,24 @@ export const AccountsPayableView: React.FC = () => {
           }
         }
       );
+
+      const centrosMap = new Map<string, string>();
+
+      (centrosCustos || []).forEach((centro: any) => {
+        const id = String(centro.id ?? centro.dbId ?? '');
+        const planoId = String(
+          centro.planoFinanceiroId ??
+            centro.plano_financeiro_id ??
+            ''
+        );
+
+        if (id && planoId) {
+          centrosMap.set(
+            `${planoId}::${normalizarNomeImportacao(centro.nome || '')}`,
+            id
+          );
+        }
+      });
 
       const fornecedoresMap = new Map<string, string>();
 
@@ -1670,6 +1689,50 @@ export const AccountsPayableView: React.FC = () => {
           }
 
           planosMap.set(chavePlano, planoId);
+        }
+
+        const chaveCentro =
+          `${planoId}::${normalizarNomeImportacao(
+            linha.centroCusto
+          )}`;
+
+        let centroId = centrosMap.get(chaveCentro);
+
+        if (!centroId) {
+          const resultadoCentro =
+            await cadastrarCentroCusto({
+              nome: linha.centroCusto,
+              descricao:
+                'Criado automaticamente pela importação de contas a pagar.',
+              planoFinanceiroId: planoId,
+              orcamentoMensal: 0,
+              limiteMensal: 0,
+              tetoMensal: 0,
+              tetoAnual: 0,
+              utilizado: 0,
+              comprometido: 0,
+            } as any);
+
+          centroId = obterIdCadastro(resultadoCentro);
+
+          if (!centroId) {
+            centroId =
+              await contasPagarImportService.buscarCentro({
+                organizacaoId:
+                  organizacaoAtivaId || undefined,
+                empresaId: empresaImportacaoId,
+                planoFinanceiroId: planoId,
+                nome: linha.centroCusto,
+              });
+          }
+
+          if (!centroId) {
+            throw new Error(
+              `O centro "${linha.centroCusto}" foi criado, mas não foi possível localizar o ID no banco.`
+            );
+          }
+
+          centrosMap.set(chaveCentro, centroId);
         }
 
         const chaveFornecedor =
@@ -1749,6 +1812,8 @@ export const AccountsPayableView: React.FC = () => {
           fornecedorId,
           planoFinanceiroId: planoId,
           planoId,
+          centroCustoId: centroId,
+          centroId,
           descricao: `${linha.fornecedor} • Parcela ${linha.parcela}`,
           valor: linha.valor,
           prazo: linha.vencimento,
