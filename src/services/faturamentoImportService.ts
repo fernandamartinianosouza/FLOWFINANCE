@@ -277,14 +277,16 @@ export const faturamentoImportService = {
     empresaId: string,
     nomeArquivo: string
   ): Promise<{ importados: number; loteId: string }> {
-    const validas = linhas.filter(l => l.status === 'valido' && l.dataVencimento);
-    if (!validas.length) throw new Error('Não existem linhas válidas para importar.');
+    // Importa TODAS as linhas exibidas no preview.
+    // Status de atenção, erro e duplicado são apenas avisos e não bloqueiam a importação.
+    const linhasParaImportar = linhas;
+    if (!linhasParaImportar.length) throw new Error('Não existem linhas para importar.');
 
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError) throw authError;
     if (!authData.user) throw new Error('Usuário não autenticado.');
 
-    const total = validas.reduce((sum, l) => sum + l.valorOriginal, 0);
+    const total = linhasParaImportar.reduce((sum, l) => sum + Number(l.valorOriginal || 0), 0);
 
     const { data: lote, error: loteError } = await supabase
       .from('importacoes_faturamento')
@@ -293,7 +295,7 @@ export const faturamentoImportService = {
         empresa_id: empresaId,
         user_id: authData.user.id,
         nome_arquivo: nomeArquivo,
-        quantidade_registros: validas.length,
+        quantidade_registros: linhasParaImportar.length,
         valor_total: total,
         status: 'concluida',
       })
@@ -302,16 +304,16 @@ export const faturamentoImportService = {
 
     if (loteError) throw loteError;
 
-    const payload = validas.map(l => ({
+    const payload = linhasParaImportar.map(l => ({
       organizacao_id: organizacaoId,
       empresa_id: empresaId,
       user_id: authData.user!.id,
-      cliente_nome: l.clienteNome,
+      cliente_nome: l.clienteNome?.trim() || `NÃO INFORMADO - LINHA ${l.linha}`,
       cliente_documento: l.clienteDocumento || null,
       medicao: l.medicao || null,
-      numero_documento: l.numeroDocumento,
-      data_vencimento: l.dataVencimento,
-      valor_original: l.valorOriginal,
+      numero_documento: l.numeroDocumento?.trim() || `SEM DOCUMENTO - LINHA ${l.linha}`,
+      data_vencimento: l.dataVencimento || null,
+      valor_original: Number(l.valorOriginal || 0),
       valor_recebido: 0,
       status: 'previsto',
       origem: 'importacao_excel',
@@ -395,6 +397,53 @@ export const faturamentoImportService = {
 
     if (error) throw error;
     return mapConta(data);
+  },
+
+  async registrarRecebimentosEmMassa(
+    contas: ContaReceber[],
+    dataRecebimento: string,
+    formaRecebimento = 'transferencia'
+  ): Promise<number> {
+    const elegiveis = contas.filter(conta => Number(conta.saldo || 0) > 0);
+    if (!elegiveis.length) return 0;
+
+    const resultados = await Promise.all(
+      elegiveis.map(conta =>
+        this.registrarRecebimento(
+          conta,
+          Number(conta.saldo || 0),
+          dataRecebimento,
+          formaRecebimento
+        )
+      )
+    );
+
+    return resultados.length;
+  },
+
+  async excluirEmMassa(contas: ContaReceber[]): Promise<number> {
+    if (!contas.length) return 0;
+
+    const idsPorOrganizacao = new Map<string, string[]>();
+    contas.forEach(conta => {
+      const ids = idsPorOrganizacao.get(conta.organizacaoId) || [];
+      ids.push(conta.id);
+      idsPorOrganizacao.set(conta.organizacaoId, ids);
+    });
+
+    let excluidas = 0;
+    for (const [organizacaoId, ids] of idsPorOrganizacao.entries()) {
+      const { error } = await supabase
+        .from('contas_receber')
+        .delete()
+        .eq('organizacao_id', organizacaoId)
+        .in('id', ids);
+
+      if (error) throw error;
+      excluidas += ids.length;
+    }
+
+    return excluidas;
   },
 
   async excluir(conta: ContaReceber): Promise<void> {

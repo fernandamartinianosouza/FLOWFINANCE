@@ -83,6 +83,8 @@ export const CashFlowView: React.FC = () => {
 
   const [aba, setAba] = useState<Aba>('visao-geral');
   const [contas, setContas] = useState<ContaReceber[]>([]);
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
+  const [processandoMassa, setProcessandoMassa] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
   const [busca, setBusca] = useState('');
@@ -137,6 +139,7 @@ export const CashFlowView: React.FC = () => {
         empresaAtivaId
       );
       setContas(dados);
+      setSelecionadas(atual => new Set([...atual].filter(id => dados.some(conta => conta.id === id))));
     } catch (error: any) {
       console.error(error);
       setErro(error?.message || 'Não foi possível carregar as contas a receber.');
@@ -209,6 +212,32 @@ export const CashFlowView: React.FC = () => {
     const inicio = (paginaContas - 1) * itensPorPagina;
     return contasFiltradas.slice(inicio, inicio + itensPorPagina);
   }, [contasFiltradas, paginaContas]);
+
+  const contasSelecionadas = useMemo(
+    () => contasFiltradas.filter(conta => selecionadas.has(conta.id)),
+    [contasFiltradas, selecionadas]
+  );
+
+  const todasPaginaSelecionadas =
+    contasPaginadas.length > 0 && contasPaginadas.every(conta => selecionadas.has(conta.id));
+
+  const alternarSelecao = (id: string) => {
+    setSelecionadas(atual => {
+      const proximo = new Set(atual);
+      if (proximo.has(id)) proximo.delete(id);
+      else proximo.add(id);
+      return proximo;
+    });
+  };
+
+  const alternarPagina = () => {
+    setSelecionadas(atual => {
+      const proximo = new Set(atual);
+      if (todasPaginaSelecionadas) contasPaginadas.forEach(conta => proximo.delete(conta.id));
+      else contasPaginadas.forEach(conta => proximo.add(conta.id));
+      return proximo;
+    });
+  };
 
   const limparFiltrosContas = () => {
     setBusca('');
@@ -547,6 +576,72 @@ export const CashFlowView: React.FC = () => {
     }
   };
 
+  const pagarSelecionadas = async () => {
+    const elegiveis = contasSelecionadas.filter(conta => Number(conta.saldo || 0) > 0);
+    if (!elegiveis.length) {
+      alert('Selecione ao menos um título com saldo em aberto.');
+      return;
+    }
+
+    const total = elegiveis.reduce((soma, conta) => soma + Number(conta.saldo || 0), 0);
+    const confirmar = window.confirm(
+      `ATENÇÃO: deseja registrar como recebidos ${elegiveis.length} título(s), no valor total de ${formatarReal(total)}?\n\nA baixa será registrada com a data de hoje e forma Transferência.`
+    );
+    if (!confirmar) return;
+
+    const confirmarFinal = window.confirm(
+      'Confirma a baixa em massa? Esta ação altera o saldo e o status dos títulos selecionados.'
+    );
+    if (!confirmarFinal) return;
+
+    setProcessandoMassa(true);
+    try {
+      const quantidade = await faturamentoImportService.registrarRecebimentosEmMassa(
+        elegiveis,
+        hojeIso(),
+        'transferencia'
+      );
+      alert(`${quantidade} título(s) foram baixados com sucesso.`);
+      setSelecionadas(new Set());
+      await carregar();
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.message || 'Erro ao registrar os recebimentos em massa.');
+    } finally {
+      setProcessandoMassa(false);
+    }
+  };
+
+  const excluirSelecionadas = async () => {
+    if (!contasSelecionadas.length) {
+      alert('Selecione ao menos um título para excluir.');
+      return;
+    }
+
+    const confirmar = window.confirm(
+      `ATENÇÃO: você selecionou ${contasSelecionadas.length} título(s) para EXCLUSÃO PERMANENTE. Deseja continuar?`
+    );
+    if (!confirmar) return;
+
+    const confirmarFinal = window.confirm(
+      'CONFIRMAÇÃO FINAL: os títulos selecionados serão apagados do Contas a Receber. Esta ação não pode ser desfeita.'
+    );
+    if (!confirmarFinal) return;
+
+    setProcessandoMassa(true);
+    try {
+      const quantidade = await faturamentoImportService.excluirEmMassa(contasSelecionadas);
+      alert(`${quantidade} título(s) excluído(s) com sucesso.`);
+      setSelecionadas(new Set());
+      await carregar();
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.message || 'Erro ao excluir os títulos selecionados.');
+    } finally {
+      setProcessandoMassa(false);
+    }
+  };
+
   const excluirConta = async (conta: ContaReceber) => {
     if (!window.confirm(`Excluir o título ${conta.numeroDocumento}?`)) return;
 
@@ -877,11 +972,57 @@ export const CashFlowView: React.FC = () => {
               </div>
             </div>
 
+            <div className="px-4 py-3 border-b border-slate-100 bg-white flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-slate-600">
+                  {selecionadas.size} selecionado{selecionadas.size === 1 ? '' : 's'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelecionadas(new Set(contasFiltradas.map(conta => conta.id)))}
+                  disabled={!contasFiltradas.length}
+                  className="h-9 px-3 rounded-[10px] border border-slate-200 bg-white text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  Selecionar filtradas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelecionadas(new Set())}
+                  disabled={!selecionadas.size}
+                  className="h-9 px-3 rounded-[10px] border border-slate-200 bg-white text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  Limpar seleção
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={pagarSelecionadas}
+                  disabled={processandoMassa || contasSelecionadas.filter(conta => Number(conta.saldo || 0) > 0).length === 0}
+                  className="h-9 px-4 rounded-[10px] bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {processandoMassa ? 'Processando...' : 'Pagar selecionadas'}
+                </button>
+                <button
+                  type="button"
+                  onClick={excluirSelecionadas}
+                  disabled={processandoMassa || contasSelecionadas.length === 0}
+                  className="h-9 px-4 rounded-[10px] bg-red-50 border border-red-100 text-red-600 text-[10px] font-bold hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Excluir selecionadas
+                </button>
+              </div>
+            </div>
+
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1120px]">
+              <table className="w-full min-w-[1180px]">
                 <thead className="bg-[#F8FAFC] border-b border-slate-200">
                   <tr className="text-left text-[9px] uppercase tracking-[0.08em] text-slate-500">
-                    <th className="px-5 py-3.5 font-bold">Cliente</th>
+                    <th className="pl-5 pr-2 py-3.5 w-10">
+                      <input type="checkbox" checked={todasPaginaSelecionadas} onChange={alternarPagina} aria-label="Selecionar página" />
+                    </th>
+                    <th className="px-4 py-3.5 font-bold">Cliente</th>
                     <th className="px-4 py-3.5 font-bold">Documento</th>
                     <th className="px-4 py-3.5 font-bold text-center">Medição</th>
                     <th className="px-4 py-3.5 font-bold">Vencimento</th>
@@ -896,14 +1037,14 @@ export const CashFlowView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {carregando ? (
                     <tr>
-                      <td colSpan={9} className="px-5 py-16 text-center text-xs text-slate-400">
+                      <td colSpan={10} className="px-5 py-16 text-center text-xs text-slate-400">
                         <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-3" />
                         Carregando contas a receber...
                       </td>
                     </tr>
                   ) : contasFiltradas.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-5 py-16 text-center">
+                      <td colSpan={10} className="px-5 py-16 text-center">
                         <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
                           <FileSpreadsheet className="w-7 h-7 text-slate-300" />
                         </div>
@@ -923,7 +1064,15 @@ export const CashFlowView: React.FC = () => {
                           index % 2 === 1 ? 'bg-slate-50/30' : 'bg-white'
                         }`}
                       >
-                        <td className="px-5 py-4">
+                        <td className="pl-5 pr-2 py-4 w-10">
+                          <input
+                            type="checkbox"
+                            checked={selecionadas.has(conta.id)}
+                            onChange={() => alternarSelecao(conta.id)}
+                            aria-label={`Selecionar ${conta.numeroDocumento}`}
+                          />
+                        </td>
+                        <td className="px-4 py-4">
                           <p
                             className="text-xs font-bold text-slate-800 max-w-[250px] truncate"
                             title={conta.clienteNome}
@@ -1227,7 +1376,7 @@ export const CashFlowView: React.FC = () => {
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-slate-800 truncate">{arquivoNome}</p>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    Corrija os vencimentos sinalizados antes de importar.
+                    Avisos e divergências são exibidos para conferência, mas todos os registros serão importados.
                   </p>
                 </div>
               </div>
@@ -1276,8 +1425,7 @@ export const CashFlowView: React.FC = () => {
                         <input
                           type="date"
                           value={linha.dataVencimento}
-                          disabled={linha.status === 'duplicado'}
-                          onChange={e => corrigirDataPreview(linha.linha, e.target.value)}
+                                                    onChange={e => corrigirDataPreview(linha.linha, e.target.value)}
                           className={`h-9 rounded-[10px] px-2 text-xs border ${
                             linha.status === 'atencao'
                               ? 'border-amber-300 bg-amber-50'
@@ -1305,7 +1453,7 @@ export const CashFlowView: React.FC = () => {
               <div className="flex flex-col items-end gap-1">
                 <button
                   type="button"
-                  disabled={importando || resumoImportacao.validos === 0}
+                  disabled={importando || resumoImportacao.total === 0}
                   onClick={confirmarImportacao}
                   className="h-10 px-5 rounded-[12px] bg-[#0F172A] text-white text-xs font-bold flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -1314,17 +1462,15 @@ export const CashFlowView: React.FC = () => {
                   ) : (
                     <Upload className="w-4 h-4" />
                   )}
-                  Importar {resumoImportacao.validos} títulos válidos
+                  Importar todos os {resumoImportacao.total} títulos
                 </button>
 
                 {(resumoImportacao.atencao > 0 ||
                   resumoImportacao.erros > 0 ||
                   resumoImportacao.duplicados > 0) && (
-                  <p className="text-[10px] text-slate-400 text-right">
-                    {resumoImportacao.atencao +
-                      resumoImportacao.erros +
-                      resumoImportacao.duplicados}{' '}
-                    registro(s) serão ignorados nesta importação.
+                  <p className="text-[10px] text-amber-600 text-right max-w-md">
+                    Existem registros com avisos/divergências, mas nenhum será descartado.
+                    Duplicados também serão importados.
                   </p>
                 )}
               </div>
