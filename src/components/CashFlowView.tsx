@@ -255,12 +255,20 @@ export const CashFlowView: React.FC = () => {
   );
 
   const totalRecebidoMes = useMemo(
-    () =>
-      contas
-        .filter(c => c.dataRecebimento?.slice(0, 7) === mesAtual())
-        .reduce((sum, c) => sum + c.valorRecebido, 0),
-    [contas]
-  );
+  () =>
+    contas
+      .filter(
+        c =>
+          c.dataVencimento?.slice(0, 7) === mesAtual() &&
+          Number(c.valorRecebido || 0) > 0
+      )
+      .reduce(
+        (sum, c) =>
+          sum + Number(c.valorRecebido || 0),
+        0
+      ),
+  [contas]
+);
 
   const totalVencido = useMemo(
     () =>
