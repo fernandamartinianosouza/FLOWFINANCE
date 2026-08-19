@@ -321,79 +321,24 @@ export const FinancialCenterView: React.FC = () => {
   };
 
   const obterValoresProcesso = (processo: any) => {
-  /*
-   * REGRA DO PLANO FINANCEIRO
-   *
-   * Comprometido = valor TOTAL da conta na competência,
-   * independentemente de ela estar:
-   *
-   * - em aberto
-   * - vencida
-   * - parcialmente paga
-   * - totalmente paga
-   * - conciliada
-   * - finalizada
-   *
-   * O pagamento não reduz o comprometido da competência.
-   */
+    /*
+     * REGRA DO PLANO FINANCEIRO
+     *
+     * Comprometido = valor TOTAL da conta na competência,
+     * independentemente de ela estar em aberto, vencida,
+     * parcialmente paga, totalmente paga, conciliada ou finalizada.
+     *
+     * O pagamento não reduz o comprometido da competência.
+     */
 
-  const valorTotal = Math.max(
-    numeroSeguro(
-      processo?.valor ??
-      processo?.valorTotal ??
-      processo?.valor_total
-    ),
-    0
-  );
-
-  let valorPago = Math.max(
-    numeroSeguro(
-      processo?.valorPago ??
-      processo?.valor_pago
-    ),
-    0
-  );
-
-  /*
-   * Compatibilidade com contas antigas.
-   * Algumas contas quitadas podem não possuir
-   * valorPago preenchido.
-   */
-  const status = String(
-    processo?.status ?? ''
-  ).toLowerCase();
-
-  if (
-    valorPago <= 0.001 &&
-    ['conciliacao', 'finalizado'].includes(status)
-  ) {
-    valorPago = valorTotal;
-  }
-
-  valorPago = Math.min(
-    valorPago,
-    valorTotal
-  );
-
-  const saldo = Math.max(
-    valorTotal - valorPago,
-    0
-  );
-
-  return {
-    valorTotal,
-
-    // Apenas informativo: quanto já foi efetivamente pago.
-    utilizado: valorPago,
-
-    // REGRA PRINCIPAL:
-    // toda conta da competência compromete seu valor integral.
-    comprometido: valorTotal,
-
-    // Pode ser utilizado futuramente para exibir saldo em aberto.
-    saldo,
-  };
-};
+    const valorTotal = Math.max(
+      numeroSeguro(
+        processo?.valor ??
+          processo?.valorTotal ??
+          processo?.valor_total
+      ),
+      0
+    );
 
     let valorPago = Math.max(
       numeroSeguro(
@@ -405,8 +350,7 @@ export const FinancialCenterView: React.FC = () => {
 
     /*
      * Compatibilidade com contas antigas:
-     * algumas contas finalizadas/conciliadas podem não ter valorPago
-     * preenchido, embora já estejam quitadas.
+     * algumas contas quitadas podem não possuir valorPago preenchido.
      */
     const status = String(
       processo?.status ?? ''
@@ -432,7 +376,8 @@ export const FinancialCenterView: React.FC = () => {
     return {
       valorTotal,
       utilizado: valorPago,
-      comprometido: saldo,
+      comprometido: valorTotal,
+      saldo,
     };
   };
 
