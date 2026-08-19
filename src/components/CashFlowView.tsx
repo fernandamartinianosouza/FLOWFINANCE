@@ -203,6 +203,78 @@ export const CashFlowView: React.FC = () => {
     setPaginaContas(1);
   }, [busca, statusFiltro, inicioFiltro, fimFiltro, empresaAtivaId]);
 
+  /**
+   * RESUMO DA ABA CONTAS A RECEBER
+   *
+   * Regra:
+   * - sem filtros: considera todas as contas;
+   * - com filtros: considera somente as contas que passaram pelos filtros;
+   * - o período é sempre baseado no vencimento original;
+   * - a data da baixa não define a competência;
+   * - recebido soma valorRecebido das contas filtradas;
+   * - vencido soma somente o saldo ainda em aberto das contas vencidas;
+   * - a vencer soma somente o saldo ainda em aberto das contas não vencidas;
+   * - saldo a receber soma todo o saldo ainda pendente das contas filtradas.
+   */
+  const resumoContasReceber = useMemo(() => {
+    return contasFiltradas.reduce(
+      (
+        resumo,
+        conta: any
+      ) => {
+        const saldo = Math.max(
+          Number(conta.saldo || 0),
+          0
+        );
+
+        const recebido = Math.max(
+          Number(conta.valorRecebido || 0),
+          0
+        );
+
+        const cancelada =
+          String(conta.status) === 'cancelado';
+
+        const recebida =
+          String(conta.status) === 'recebido';
+
+        const emAberto =
+          !cancelada &&
+          !recebida &&
+          saldo > 0.001;
+
+        if (emAberto) {
+          resumo.titulosAbertos += 1;
+          resumo.saldoReceber += saldo;
+
+          if (
+            conta.statusVisual === 'vencido'
+          ) {
+            resumo.vencido += saldo;
+          } else {
+            resumo.aVencer += saldo;
+          }
+        }
+
+        if (
+          !cancelada &&
+          recebido > 0
+        ) {
+          resumo.recebido += recebido;
+        }
+
+        return resumo;
+      },
+      {
+        titulosAbertos: 0,
+        saldoReceber: 0,
+        aVencer: 0,
+        vencido: 0,
+        recebido: 0,
+      }
+    );
+  }, [contasFiltradas]);
+
   const totalPaginasContas = Math.max(
     1,
     Math.ceil(contasFiltradas.length / itensPorPagina)
@@ -764,7 +836,7 @@ export const CashFlowView: React.FC = () => {
             <Kpi
               titulo="Recebido no mês"
               valor={formatarReal(totalRecebidoMes)}
-              detalhe="Baixas registradas no mês atual"
+              detalhe="Recebido de títulos com vencimento no mês atual"
               icon={CheckCircle2}
               destaque="emerald"
             />
@@ -859,35 +931,74 @@ export const CashFlowView: React.FC = () => {
 
       {aba === 'contas-receber' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
             <Kpi
               titulo="Títulos em aberto"
               valor={String(
-                contas.filter(c => !['recebido', 'cancelado'].includes(c.status)).length
+                resumoContasReceber.titulosAbertos
               )}
-              detalhe="Quantidade de contas pendentes"
+              detalhe={
+                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                  ? 'Quantidade de contas pendentes nos filtros aplicados'
+                  : 'Quantidade total de contas pendentes'
+              }
               icon={FileSpreadsheet}
               destaque="default"
             />
+
             <Kpi
-              titulo="Saldo a receber"
-              valor={formatarReal(totalAReceber)}
-              detalhe="Valor total ainda não recebido"
-              icon={ArrowUpRight}
-              destaque="emerald"
+              titulo="A vencer"
+              valor={formatarReal(
+                resumoContasReceber.aVencer
+              )}
+              detalhe={
+                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                  ? 'Saldo a vencer nos filtros aplicados'
+                  : 'Saldo total de títulos a vencer'
+              }
+              icon={CalendarDays}
+              destaque="default"
             />
+
             <Kpi
-              titulo="Total vencido"
-              valor={formatarReal(totalVencido)}
-              detalhe="Títulos com vencimento em atraso"
+              titulo="Vencido"
+              valor={formatarReal(
+                resumoContasReceber.vencido
+              )}
+              detalhe={
+                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                  ? 'Saldo vencido nos filtros aplicados'
+                  : 'Saldo total de títulos vencidos'
+              }
               icon={AlertTriangle}
               destaque="red"
             />
+
             <Kpi
-              titulo="Recebido no mês"
-              valor={formatarReal(totalRecebidoMes)}
-              detalhe="Baixas registradas no mês atual"
+              titulo="Recebido"
+              valor={formatarReal(
+                resumoContasReceber.recebido
+              )}
+              detalhe={
+                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                  ? 'Recebido das contas dentro dos filtros'
+                  : 'Valor total recebido'
+              }
               icon={CheckCircle2}
+              destaque="emerald"
+            />
+
+            <Kpi
+              titulo="Saldo a receber"
+              valor={formatarReal(
+                resumoContasReceber.saldoReceber
+              )}
+              detalhe={
+                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                  ? 'Saldo pendente nos filtros aplicados'
+                  : 'Saldo total ainda não recebido'
+              }
+              icon={ArrowUpRight}
               destaque="emerald"
             />
           </div>
