@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useFinance } from '../context/FinanceContext';
 import { formatarReal } from '../utils';
 import {
@@ -18,6 +19,9 @@ import {
   CheckCircle2,
   Download,
   FileSpreadsheet,
+  FileText,
+  Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -28,6 +32,7 @@ import {
 } from 'lucide-react';
 import {
   ContaReceber,
+  ContaReceberDocumento,
   faturamentoImportService,
   LinhaFaturamentoPreview,
 } from '../services/faturamentoImportService';
@@ -123,6 +128,41 @@ export const CashFlowView: React.FC = () => {
     data: hojeIso(),
     forma: 'transferencia',
   });
+
+  const detalheArquivoRef =
+    useRef<HTMLInputElement>(null);
+
+  const [contaDetalhes, setContaDetalhes] =
+    useState<ContaReceber | null>(null);
+  const [editandoContaDetalhes, setEditandoContaDetalhes] =
+    useState(false);
+  const [salvandoContaDetalhes, setSalvandoContaDetalhes] =
+    useState(false);
+  const [formContaDetalhes, setFormContaDetalhes] =
+    useState({
+      clienteNome: '',
+      clienteDocumento: '',
+      medicao: '',
+      numeroDocumento: '',
+      dataVencimento: '',
+      valorOriginal: '',
+      observacao: '',
+    });
+
+  const [documentosContaReceber, setDocumentosContaReceber] =
+    useState<ContaReceberDocumento[]>([]);
+  const [
+    carregandoDocumentosContaReceber,
+    setCarregandoDocumentosContaReceber,
+  ] = useState(false);
+  const [
+    enviandoDocumentoContaReceber,
+    setEnviandoDocumentoContaReceber,
+  ] = useState(false);
+  const [
+    excluindoDocumentoContaReceberId,
+    setExcluindoDocumentoContaReceberId,
+  ] = useState<string | null>(null);
 
   const carregar = async () => {
     if (!organizacaoAtivaId || !empresaAtivaId) {
@@ -722,6 +762,239 @@ export const CashFlowView: React.FC = () => {
     }
   };
 
+  const montarFormContaDetalhes = (
+    conta: ContaReceber
+  ) => ({
+    clienteNome: conta.clienteNome || '',
+    clienteDocumento:
+      conta.clienteDocumento || '',
+    medicao: conta.medicao || '',
+    numeroDocumento:
+      conta.numeroDocumento || '',
+    dataVencimento:
+      conta.dataVencimento || '',
+    valorOriginal: String(
+      Number(conta.valorOriginal || 0)
+    ),
+    observacao: conta.observacao || '',
+  });
+
+  const carregarDocumentosContaReceber = async (
+    conta: ContaReceber
+  ) => {
+    try {
+      setCarregandoDocumentosContaReceber(true);
+
+      const documentos =
+        await faturamentoImportService.listarDocumentosConta(
+          conta
+        );
+
+      setDocumentosContaReceber(documentos);
+    } catch (error: any) {
+      console.error(
+        'Erro ao carregar anexos da conta a receber:',
+        error
+      );
+      setDocumentosContaReceber([]);
+    } finally {
+      setCarregandoDocumentosContaReceber(false);
+    }
+  };
+
+  const abrirDetalhesContaReceber = (
+    conta: ContaReceber
+  ) => {
+    setContaDetalhes(conta);
+    setFormContaDetalhes(
+      montarFormContaDetalhes(conta)
+    );
+    setEditandoContaDetalhes(false);
+    setDocumentosContaReceber([]);
+    carregarDocumentosContaReceber(conta);
+  };
+
+  const fecharDetalhesContaReceber = () => {
+    if (
+      salvandoContaDetalhes ||
+      enviandoDocumentoContaReceber ||
+      Boolean(
+        excluindoDocumentoContaReceberId
+      )
+    ) {
+      return;
+    }
+
+    setContaDetalhes(null);
+    setEditandoContaDetalhes(false);
+    setDocumentosContaReceber([]);
+
+    if (detalheArquivoRef.current) {
+      detalheArquivoRef.current.value = '';
+    }
+  };
+
+  const salvarContaReceberEditada = async () => {
+    if (!contaDetalhes) return;
+
+    const valorOriginal = Number(
+      String(
+        formContaDetalhes.valorOriginal
+      ).replace(',', '.')
+    );
+
+    if (
+      !formContaDetalhes.clienteNome.trim() ||
+      !formContaDetalhes.numeroDocumento.trim() ||
+      !formContaDetalhes.dataVencimento ||
+      !Number.isFinite(valorOriginal) ||
+      valorOriginal <= 0
+    ) {
+      alert(
+        'Preencha cliente, documento, vencimento e valor válido.'
+      );
+      return;
+    }
+
+    if (
+      valorOriginal + 0.001 <
+      Number(contaDetalhes.valorRecebido || 0)
+    ) {
+      alert(
+        `O valor original não pode ser menor que o valor já recebido (${formatarReal(
+          contaDetalhes.valorRecebido
+        )}).`
+      );
+      return;
+    }
+
+    try {
+      setSalvandoContaDetalhes(true);
+
+      const atualizada =
+        await faturamentoImportService.editar(
+          contaDetalhes,
+          {
+            clienteNome:
+              formContaDetalhes.clienteNome,
+            clienteDocumento:
+              formContaDetalhes.clienteDocumento,
+            medicao:
+              formContaDetalhes.medicao,
+            numeroDocumento:
+              formContaDetalhes.numeroDocumento,
+            dataVencimento:
+              formContaDetalhes.dataVencimento,
+            valorOriginal,
+            observacao:
+              formContaDetalhes.observacao,
+          }
+        );
+
+      setContaDetalhes(atualizada);
+      setFormContaDetalhes(
+        montarFormContaDetalhes(atualizada)
+      );
+      setEditandoContaDetalhes(false);
+
+      await carregar();
+
+      alert('Conta a receber atualizada com sucesso.');
+    } catch (error: any) {
+      console.error(
+        'Erro ao editar conta a receber:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível salvar as alterações.'
+      );
+    } finally {
+      setSalvandoContaDetalhes(false);
+    }
+  };
+
+  const anexarArquivoContaReceber = async (
+    arquivo?: File
+  ) => {
+    if (!arquivo || !contaDetalhes) return;
+
+    try {
+      setEnviandoDocumentoContaReceber(true);
+
+      await faturamentoImportService.anexarDocumentoConta(
+        contaDetalhes,
+        arquivo
+      );
+
+      await carregarDocumentosContaReceber(
+        contaDetalhes
+      );
+
+      alert('Arquivo anexado com sucesso.');
+    } catch (error: any) {
+      console.error(
+        'Erro ao anexar arquivo:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível anexar o arquivo.'
+      );
+    } finally {
+      setEnviandoDocumentoContaReceber(false);
+
+      if (detalheArquivoRef.current) {
+        detalheArquivoRef.current.value = '';
+      }
+    }
+  };
+
+  const excluirArquivoContaReceber = async (
+    documento: ContaReceberDocumento
+  ) => {
+    if (!contaDetalhes) return;
+
+    const confirmou = window.confirm(
+      `Deseja realmente excluir o anexo "${documento.nome}"?\n\n` +
+        'O arquivo será removido permanentemente.'
+    );
+
+    if (!confirmou) return;
+
+    try {
+      setExcluindoDocumentoContaReceberId(
+        documento.id
+      );
+
+      await faturamentoImportService.excluirDocumentoConta(
+        documento
+      );
+
+      await carregarDocumentosContaReceber(
+        contaDetalhes
+      );
+
+      alert('Anexo excluído com sucesso.');
+    } catch (error: any) {
+      console.error(
+        'Erro ao excluir anexo:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível excluir o anexo.'
+      );
+    } finally {
+      setExcluindoDocumentoContaReceberId(
+        null
+      );
+    }
+  };
+
   const excluirConta = async (conta: ContaReceber) => {
     if (!window.confirm(`Excluir o título ${conta.numeroDocumento}?`)) return;
 
@@ -731,6 +1004,265 @@ export const CashFlowView: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       alert(error?.message || 'Erro ao excluir a conta.');
+    }
+  };
+
+  const formatarDataExcel = (valor?: string | null) => {
+    const data = normalizarDataIso(valor);
+
+    if (!data) return '';
+
+    const [ano, mes, dia] = data.split('-');
+    return `${dia}/${mes}/${ano}`;
+  };
+
+  const ajustarLarguraPlanilha = (
+    sheet: XLSX.WorkSheet,
+    larguras: number[]
+  ) => {
+    sheet['!cols'] = larguras.map(wch => ({
+      wch,
+    }));
+  };
+
+  const exportarExcelAbaAtual = () => {
+    try {
+      const workbook = XLSX.utils.book_new();
+
+      if (aba === 'visao-geral') {
+        const resumo = [
+          {
+            Indicador: 'A receber',
+            Valor: totalAReceber,
+          },
+          {
+            Indicador: 'Recebido no mês',
+            Valor: totalRecebidoMes,
+          },
+          {
+            Indicador: 'Recebimentos vencidos',
+            Valor: totalVencido,
+          },
+          {
+            Indicador: 'Total a pagar',
+            Valor: totalSaidasPlanejadas,
+          },
+          {
+            Indicador: 'Saldo atual',
+            Valor: saldoAtual,
+          },
+          {
+            Indicador: 'Saldo projetado',
+            Valor: saldoPrevisto,
+          },
+        ];
+
+        const sheetResumo =
+          XLSX.utils.json_to_sheet(resumo);
+
+        ajustarLarguraPlanilha(
+          sheetResumo,
+          [28, 18]
+        );
+
+        XLSX.utils.book_append_sheet(
+          workbook,
+          sheetResumo,
+          'Resumo'
+        );
+
+        const previsao = conciliacao.map(
+          linha => ({
+            Data: formatarDataExcel(linha.data),
+            'A receber': linha.receber,
+            'A pagar': linha.pagar,
+            'Saldo do dia': linha.saldoDia,
+            'Saldo acumulado':
+              linha.saldoAcumulado,
+          })
+        );
+
+        const sheetPrevisao =
+          XLSX.utils.json_to_sheet(previsao);
+
+        ajustarLarguraPlanilha(
+          sheetPrevisao,
+          [14, 18, 18, 18, 20]
+        );
+
+        XLSX.utils.book_append_sheet(
+          workbook,
+          sheetPrevisao,
+          'Previsão de liquidez'
+        );
+      }
+
+      if (aba === 'contas-receber') {
+        if (contasFiltradas.length === 0) {
+          alert(
+            'Não há contas a receber para exportar com os filtros atuais.'
+          );
+          return;
+        }
+
+        const linhas = contasFiltradas.map(
+          (conta: any) => ({
+            Cliente:
+              conta.clienteNome || '',
+            'CNPJ/CPF':
+              conta.clienteDocumento || '',
+            Documento:
+              conta.numeroDocumento || '',
+            Medição:
+              conta.medicao || '',
+            Vencimento:
+              formatarDataExcel(
+                conta.dataVencimento
+              ),
+            'Valor original':
+              Number(
+                conta.valorOriginal || 0
+              ),
+            Recebido:
+              Number(
+                conta.valorRecebido || 0
+              ),
+            Saldo:
+              Number(conta.saldo || 0),
+            Status:
+              String(
+                conta.statusVisual ??
+                  conta.status ??
+                  ''
+              ),
+            'Data do recebimento':
+              formatarDataExcel(
+                conta.dataRecebimento
+              ),
+            'Forma de recebimento':
+              conta.formaRecebimento || '',
+            Observação:
+              conta.observacao || '',
+          })
+        );
+
+        const sheet =
+          XLSX.utils.json_to_sheet(linhas);
+
+        ajustarLarguraPlanilha(
+          sheet,
+          [
+            32,
+            20,
+            20,
+            14,
+            14,
+            18,
+            18,
+            18,
+            18,
+            20,
+            22,
+            40,
+          ]
+        );
+
+        XLSX.utils.book_append_sheet(
+          workbook,
+          sheet,
+          'Contas a receber'
+        );
+      }
+
+      if (aba === 'conciliacao') {
+        if (conciliacaoFiltrada.length === 0) {
+          alert(
+            'Não há dados de conciliação para exportar no período selecionado.'
+          );
+          return;
+        }
+
+        const resumo = [
+          {
+            Indicador: 'Total a receber',
+            Valor: resumoConciliacao.receber,
+          },
+          {
+            Indicador: 'Total a pagar',
+            Valor: resumoConciliacao.pagar,
+          },
+          {
+            Indicador: 'Resultado',
+            Valor: resumoConciliacao.resultado,
+          },
+        ];
+
+        const sheetResumo =
+          XLSX.utils.json_to_sheet(resumo);
+
+        ajustarLarguraPlanilha(
+          sheetResumo,
+          [24, 18]
+        );
+
+        XLSX.utils.book_append_sheet(
+          workbook,
+          sheetResumo,
+          'Resumo'
+        );
+
+        const linhas =
+          conciliacaoFiltrada.map(linha => ({
+            Data: formatarDataExcel(
+              linha.data
+            ),
+            'A receber': linha.receber,
+            'A pagar': linha.pagar,
+            'Saldo do dia':
+              linha.resultado,
+          }));
+
+        const sheet =
+          XLSX.utils.json_to_sheet(linhas);
+
+        ajustarLarguraPlanilha(
+          sheet,
+          [14, 18, 18, 18]
+        );
+
+        XLSX.utils.book_append_sheet(
+          workbook,
+          sheet,
+          'Conciliação'
+        );
+      }
+
+      const sufixo =
+        aba === 'visao-geral'
+          ? 'visao_geral'
+          : aba === 'contas-receber'
+          ? 'contas_a_receber'
+          : 'conciliacao';
+
+      const dataArquivo =
+        new Date()
+          .toISOString()
+          .slice(0, 10);
+
+      XLSX.writeFile(
+        workbook,
+        `fluxo_de_caixa_${sufixo}_${dataArquivo}.xlsx`
+      );
+    } catch (error: any) {
+      console.error(
+        'Erro ao exportar Fluxo de Caixa em Excel:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível exportar os dados em Excel.'
+      );
     }
   };
 
@@ -782,6 +1314,22 @@ export const CashFlowView: React.FC = () => {
               <Upload className="w-4 h-4" />
             )}
             Importar faturamento
+          </button>
+
+          <button
+            type="button"
+            onClick={exportarExcelAbaAtual}
+            className="h-10 px-4 rounded-[12px] border border-emerald-100 bg-emerald-50 text-emerald-700 text-xs font-bold flex items-center gap-2 hover:bg-emerald-100"
+            title={
+              aba === 'visao-geral'
+                ? 'Exportar visão geral em Excel'
+                : aba === 'contas-receber'
+                ? 'Exportar contas a receber em Excel'
+                : 'Exportar conciliação em Excel'
+            }
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Excel
           </button>
 
           <button
@@ -1236,6 +1784,18 @@ export const CashFlowView: React.FC = () => {
 
                         <td className="px-5 py-4">
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                abrirDetalhesContaReceber(
+                                  conta
+                                )
+                              }
+                              className="h-9 px-3.5 rounded-[11px] border border-slate-200 bg-white text-slate-700 text-[10px] font-bold hover:bg-slate-50 whitespace-nowrap"
+                            >
+                              Detalhes
+                            </button>
+
                             {conta.saldo > 0 && (
                               <button
                                 type="button"
@@ -1617,6 +2177,435 @@ export const CashFlowView: React.FC = () => {
         </Modal>
       )}
 
+      {contaDetalhes && (
+        <Modal
+          title="Detalhes da conta a receber"
+          onClose={fecharDetalhesContaReceber}
+          maxWidth="max-w-4xl"
+        >
+          <div className="space-y-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-bold text-slate-800">
+                  {contaDetalhes.clienteNome}
+                </p>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  {contaDetalhes.numeroDocumento}
+                </p>
+              </div>
+
+              {!editandoContaDetalhes ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditandoContaDetalhes(true)
+                  }
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-[11px] bg-blue-50 px-3.5 text-[10px] font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Editar
+                </button>
+              ) : null}
+            </div>
+
+            {editandoContaDetalhes ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Campo
+                    label="Cliente *"
+                    value={formContaDetalhes.clienteNome}
+                    onChange={(valor: string) =>
+                      setFormContaDetalhes(v => ({
+                        ...v,
+                        clienteNome: valor,
+                      }))
+                    }
+                  />
+
+                  <Campo
+                    label="CNPJ/CPF"
+                    value={
+                      formContaDetalhes.clienteDocumento
+                    }
+                    onChange={(valor: string) =>
+                      setFormContaDetalhes(v => ({
+                        ...v,
+                        clienteDocumento: valor,
+                      }))
+                    }
+                  />
+
+                  <Campo
+                    label="Documento *"
+                    value={
+                      formContaDetalhes.numeroDocumento
+                    }
+                    onChange={(valor: string) =>
+                      setFormContaDetalhes(v => ({
+                        ...v,
+                        numeroDocumento: valor,
+                      }))
+                    }
+                  />
+
+                  <Campo
+                    label="Medição"
+                    value={formContaDetalhes.medicao}
+                    onChange={(valor: string) =>
+                      setFormContaDetalhes(v => ({
+                        ...v,
+                        medicao: valor,
+                      }))
+                    }
+                  />
+
+                  <Campo
+                    label="Vencimento *"
+                    type="date"
+                    value={
+                      formContaDetalhes.dataVencimento
+                    }
+                    onChange={(valor: string) =>
+                      setFormContaDetalhes(v => ({
+                        ...v,
+                        dataVencimento: valor,
+                      }))
+                    }
+                  />
+
+                  <Campo
+                    label="Valor original *"
+                    type="number"
+                    value={
+                      formContaDetalhes.valorOriginal
+                    }
+                    onChange={(valor: string) =>
+                      setFormContaDetalhes(v => ({
+                        ...v,
+                        valorOriginal: valor,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">
+                    Observação
+                  </label>
+                  <textarea
+                    value={formContaDetalhes.observacao}
+                    onChange={event =>
+                      setFormContaDetalhes(v => ({
+                        ...v,
+                        observacao:
+                          event.target.value,
+                      }))
+                    }
+                    className="min-h-[90px] w-full rounded-[12px] border-0 bg-slate-50 px-3 py-3 text-xs text-slate-700 outline-none"
+                  />
+                </div>
+
+                <div className="rounded-[14px] bg-slate-50 p-4 text-[10px] leading-5 text-slate-500">
+                  Valor recebido, saldo, status e data de recebimento são controlados pelas baixas e não são editados manualmente.
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={salvandoContaDetalhes}
+                    onClick={() => {
+                      setFormContaDetalhes(
+                        montarFormContaDetalhes(
+                          contaDetalhes
+                        )
+                      );
+                      setEditandoContaDetalhes(false);
+                    }}
+                    className="h-10 rounded-[11px] border border-slate-200 bg-white px-4 text-[10px] font-bold text-slate-600 disabled:opacity-40"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={salvandoContaDetalhes}
+                    onClick={salvarContaReceberEditada}
+                    className="inline-flex h-10 items-center gap-2 rounded-[11px] bg-blue-600 px-4 text-[10px] font-bold text-white disabled:opacity-40"
+                  >
+                    {salvandoContaDetalhes ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : null}
+                    {salvandoContaDetalhes
+                      ? 'Salvando...'
+                      : 'Salvar alterações'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <DetalheReceber
+                    label="Cliente"
+                    value={contaDetalhes.clienteNome}
+                  />
+                  <DetalheReceber
+                    label="CNPJ/CPF"
+                    value={
+                      contaDetalhes.clienteDocumento ||
+                      'Não informado'
+                    }
+                  />
+                  <DetalheReceber
+                    label="Documento"
+                    value={
+                      contaDetalhes.numeroDocumento
+                    }
+                    mono
+                  />
+                  <DetalheReceber
+                    label="Medição"
+                    value={
+                      contaDetalhes.medicao ||
+                      'Não informada'
+                    }
+                  />
+                  <DetalheReceber
+                    label="Vencimento"
+                    value={formatarData(
+                      contaDetalhes.dataVencimento
+                    )}
+                    mono
+                  />
+                  <DetalheReceber
+                    label="Valor original"
+                    value={formatarReal(
+                      contaDetalhes.valorOriginal
+                    )}
+                    mono
+                    destaque
+                  />
+                  <DetalheReceber
+                    label="Recebido"
+                    value={formatarReal(
+                      contaDetalhes.valorRecebido
+                    )}
+                    mono
+                  />
+                  <DetalheReceber
+                    label="Saldo"
+                    value={formatarReal(
+                      contaDetalhes.saldo
+                    )}
+                    mono
+                  />
+                  <DetalheReceber
+                    label="Status"
+                    value={
+                      <StatusBadge
+                        status={
+                          (contasComStatusCalculado.find(
+                            item =>
+                              item.id ===
+                              contaDetalhes.id
+                          ) as any)?.statusVisual ??
+                          contaDetalhes.status
+                        }
+                      />
+                    }
+                  />
+                  <DetalheReceber
+                    label="Data do recebimento"
+                    value={
+                      contaDetalhes.dataRecebimento
+                        ? formatarData(
+                            contaDetalhes.dataRecebimento
+                          )
+                        : 'Ainda não recebido'
+                    }
+                    mono
+                  />
+                  <DetalheReceber
+                    label="Forma de recebimento"
+                    value={
+                      contaDetalhes.formaRecebimento
+                        ? String(
+                            contaDetalhes.formaRecebimento
+                          ).toUpperCase()
+                        : 'Não informada'
+                    }
+                  />
+                  <DetalheReceber
+                    label="Origem"
+                    value={
+                      contaDetalhes.origem ===
+                      'importacao_excel'
+                        ? 'Importação Excel'
+                        : 'Cadastro manual'
+                    }
+                  />
+                </div>
+
+                <div className="rounded-[14px] bg-slate-50 p-4">
+                  <p className="text-[9px] font-bold uppercase text-slate-400">
+                    Observação
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-slate-600">
+                    {contaDetalhes.observacao ||
+                      'Nenhuma observação cadastrada.'}
+                  </p>
+                </div>
+              </>
+            )}
+
+            <section className="rounded-[16px] border border-slate-100 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Anexos
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Nota fiscal, boleto, comprovante, contrato ou outro documento.
+                  </p>
+                </div>
+
+                <div>
+                  <input
+                    ref={detalheArquivoRef}
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                    onChange={event =>
+                      anexarArquivoContaReceber(
+                        event.target.files?.[0]
+                      )
+                    }
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      detalheArquivoRef.current?.click()
+                    }
+                    disabled={
+                      enviandoDocumentoContaReceber ||
+                      Boolean(
+                        excluindoDocumentoContaReceberId
+                      )
+                    }
+                    className="inline-flex h-9 items-center gap-2 rounded-[11px] bg-blue-50 px-3.5 text-[10px] font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+                  >
+                    {enviandoDocumentoContaReceber ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {enviandoDocumentoContaReceber
+                      ? 'Enviando...'
+                      : 'Anexar arquivo'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                {carregandoDocumentosContaReceber ? (
+                  <div className="flex items-center justify-center gap-2 rounded-[12px] bg-slate-50 px-4 py-5 text-[10px] font-semibold text-slate-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando anexos...
+                  </div>
+                ) : documentosContaReceber.length ===
+                  0 ? (
+                  <div className="rounded-[12px] border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center">
+                    <FileText className="mx-auto h-5 w-5 text-slate-300" />
+                    <p className="mt-2 text-[10px] font-bold text-slate-500">
+                      Nenhum arquivo anexado
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {documentosContaReceber.map(
+                      documento => {
+                        const excluindo =
+                          excluindoDocumentoContaReceberId ===
+                          documento.id;
+
+                        return (
+                          <div
+                            key={documento.id}
+                            className="flex items-center gap-3 rounded-[12px] border border-slate-100 bg-slate-50/70 p-3"
+                          >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white text-blue-600">
+                              <FileText className="h-4 w-4" />
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className="truncate text-[10px] font-bold text-slate-700"
+                                title={documento.nome}
+                              >
+                                {documento.nome}
+                              </p>
+                              <p className="mt-1 text-[8px] text-slate-400">
+                                {formatarData(
+                                  documento.createdAt.slice(
+                                    0,
+                                    10
+                                  )
+                                )}
+                              </p>
+                            </div>
+
+                            <div className="flex shrink-0 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  window.open(
+                                    documento.url,
+                                    '_blank',
+                                    'noopener,noreferrer'
+                                  )
+                                }
+                                disabled={
+                                  excluindo ||
+                                  !documento.url
+                                }
+                                className="h-8 rounded-[9px] border border-slate-200 bg-white px-2.5 text-[9px] font-bold text-slate-600 disabled:opacity-40"
+                              >
+                                Abrir
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  excluirArquivoContaReceber(
+                                    documento
+                                  )
+                                }
+                                disabled={
+                                  excluindo ||
+                                  enviandoDocumentoContaReceber
+                                }
+                                className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-red-100 bg-red-50 px-2.5 text-[9px] font-bold text-red-600 disabled:opacity-40"
+                              >
+                                {excluindo ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3 w-3" />
+                                )}
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        </Modal>
+      )}
+
       {contaBaixa && (
         <Modal title="Registrar recebimento" onClose={() => setContaBaixa(null)}>
           <form onSubmit={confirmarBaixa} className="space-y-4">
@@ -1718,6 +2707,44 @@ const MiniResumo = ({ label, value, positivo, alerta, erro }: any) => (
   <div className="min-w-[62px]">
     <p className={`text-sm font-bold font-mono ${positivo ? 'text-emerald-600' : alerta ? 'text-amber-600' : erro ? 'text-red-600' : 'text-slate-700'}`}>{value}</p>
     <p className="text-[8px] uppercase text-slate-400">{label}</p>
+  </div>
+);
+
+const DetalheReceber = ({
+  label,
+  value,
+  mono = false,
+  destaque = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+  destaque?: boolean;
+}) => (
+  <div
+    className={`min-w-0 rounded-[14px] p-4 ${
+      destaque
+        ? 'bg-[#0F172A] text-white'
+        : 'bg-slate-50 text-slate-800'
+    }`}
+  >
+    <p
+      className={`text-[9px] font-bold uppercase ${
+        destaque
+          ? 'text-white/50'
+          : 'text-slate-400'
+      }`}
+    >
+      {label}
+    </p>
+
+    <div
+      className={`mt-2 break-words text-xs font-bold ${
+        mono ? 'font-mono' : ''
+      }`}
+    >
+      {value}
+    </div>
   </div>
 );
 

@@ -1,6 +1,8 @@
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 
+const BUCKET_ANEXOS_RECEBER = 'flowfinance-anexos';
+
 export type StatusContaReceber =
   | 'previsto'
   | 'recebido_parcial'
@@ -25,6 +27,18 @@ export type ContaReceber = {
   origem: 'manual' | 'importacao_excel';
   loteImportacaoId: string | null;
   observacao: string | null;
+  createdAt: string;
+};
+
+export type ContaReceberDocumento = {
+  id: string;
+  contaReceberId: string;
+  organizacaoId: string;
+  empresaId: string;
+  nome: string;
+  caminho: string;
+  url: string;
+  tipo: string | null;
   createdAt: string;
 };
 
@@ -103,6 +117,20 @@ const dataParaIso = (valor: unknown): string => {
 
   return '';
 };
+
+const mapDocumentoContaReceber = (
+  row: any
+): ContaReceberDocumento => ({
+  id: row.id,
+  contaReceberId: row.conta_receber_id,
+  organizacaoId: row.organizacao_id,
+  empresaId: row.empresa_id,
+  nome: row.nome,
+  caminho: row.caminho,
+  url: row.url ?? '',
+  tipo: row.tipo ?? null,
+  createdAt: row.created_at,
+});
 
 const mapConta = (row: any): ContaReceber => ({
   id: row.id,
@@ -369,6 +397,196 @@ export const faturamentoImportService = {
 
     if (error) throw error;
     return mapConta(data);
+  },
+
+  async editar(
+    conta: ContaReceber,
+    dados: {
+      clienteNome: string;
+      clienteDocumento?: string;
+      medicao?: string;
+      numeroDocumento: string;
+      dataVencimento: string;
+      valorOriginal: number;
+      observacao?: string;
+    }
+  ): Promise<ContaReceber> {
+    const valorOriginal = Number(dados.valorOriginal);
+
+    if (!dados.clienteNome.trim()) {
+      throw new Error('Informe o cliente.');
+    }
+
+    if (!dados.numeroDocumento.trim()) {
+      throw new Error('Informe o documento.');
+    }
+
+    if (!dados.dataVencimento) {
+      throw new Error('Informe o vencimento.');
+    }
+
+    if (!Number.isFinite(valorOriginal) || valorOriginal <= 0) {
+      throw new Error('Informe um valor válido.');
+    }
+
+    if (valorOriginal + 0.001 < Number(conta.valorRecebido || 0)) {
+      throw new Error(
+        'O valor original não pode ser menor que o valor já recebido.'
+      );
+    }
+
+    const { data, error } = await supabase
+      .from('contas_receber')
+      .update({
+        cliente_nome: dados.clienteNome.trim(),
+        cliente_documento:
+          dados.clienteDocumento?.trim() || null,
+        medicao: dados.medicao?.trim() || null,
+        numero_documento:
+          dados.numeroDocumento.trim().toUpperCase(),
+        data_vencimento: dados.dataVencimento,
+        valor_original: valorOriginal,
+        observacao:
+          dados.observacao?.trim() || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conta.id)
+      .eq('organizacao_id', conta.organizacaoId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return mapConta(data);
+  },
+
+  async listarDocumentosConta(
+    conta: ContaReceber
+  ): Promise<ContaReceberDocumento[]> {
+    const { data, error } = await supabase
+      .from('contas_receber_documentos')
+      .select('*')
+      .eq('conta_receber_id', conta.id)
+      .eq('organizacao_id', conta.organizacaoId)
+      .order('created_at', {
+        ascending: false,
+      });
+
+    if (error) throw error;
+
+    return (data ?? []).map(
+      mapDocumentoContaReceber
+    );
+  },
+
+  async anexarDocumentoConta(
+    conta: ContaReceber,
+    file: File
+  ): Promise<ContaReceberDocumento> {
+    if (!file) {
+      throw new Error('Selecione um arquivo.');
+    }
+
+    const limiteBytes = 15 * 1024 * 1024;
+
+    if (file.size > limiteBytes) {
+      throw new Error(
+        'O arquivo ultrapassa o limite de 15 MB.'
+      );
+    }
+
+    const { data: authData, error: authError } =
+      await supabase.auth.getUser();
+
+    if (authError) throw authError;
+
+    if (!authData.user) {
+      throw new Error('Usuário não autenticado.');
+    }
+
+    const nomeSeguro = file.name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    const caminho =
+      `contas-receber/${conta.organizacaoId}/` +
+      `${conta.empresaId}/${conta.id}/` +
+      `${Date.now()}_${nomeSeguro}`;
+
+    const { error: uploadError } =
+      await supabase.storage
+        .from(BUCKET_ANEXOS_RECEBER)
+        .upload(caminho, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType:
+            file.type ||
+            'application/octet-stream',
+        });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: publicData } =
+      supabase.storage
+        .from(BUCKET_ANEXOS_RECEBER)
+        .getPublicUrl(caminho);
+
+    const { data, error } = await supabase
+      .from('contas_receber_documentos')
+      .insert({
+        conta_receber_id: conta.id,
+        organizacao_id: conta.organizacaoId,
+        empresa_id: conta.empresaId,
+        user_id: authData.user.id,
+        nome: file.name,
+        caminho,
+        url: publicData.publicUrl,
+        tipo: file.type || null,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      await supabase.storage
+        .from(BUCKET_ANEXOS_RECEBER)
+        .remove([caminho]);
+
+      throw error;
+    }
+
+    return mapDocumentoContaReceber(data);
+  },
+
+  async excluirDocumentoConta(
+    documento: ContaReceberDocumento
+  ): Promise<void> {
+    const confirmouCaminho =
+      String(documento.caminho || '').trim();
+
+    if (confirmouCaminho) {
+      const { error: storageError } =
+        await supabase.storage
+          .from(BUCKET_ANEXOS_RECEBER)
+          .remove([confirmouCaminho]);
+
+      if (storageError) {
+        throw storageError;
+      }
+    }
+
+    const { error } = await supabase
+      .from('contas_receber_documentos')
+      .delete()
+      .eq('id', documento.id)
+      .eq(
+        'organizacao_id',
+        documento.organizacaoId
+      );
+
+    if (error) throw error;
   },
 
   async registrarRecebimento(

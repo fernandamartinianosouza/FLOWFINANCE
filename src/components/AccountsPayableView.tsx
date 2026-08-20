@@ -107,6 +107,8 @@ export const AccountsPayableView: React.FC = () => {
     useState<FiltroSituacao>('todas');
   const [empresaFiltro, setEmpresaFiltro] =
     useState('');
+  const [planoFiltro, setPlanoFiltro] =
+    useState('');
   const [formaFiltro, setFormaFiltro] =
     useState('');
   const [dataInicio, setDataInicio] =
@@ -356,6 +358,17 @@ export const AccountsPayableView: React.FC = () => {
         if (
           empresaFiltro &&
           processo.empresaId !== empresaFiltro
+        ) {
+          return false;
+        }
+
+        if (
+          planoFiltro &&
+          String(
+            processo.planoFinanceiroId ||
+              processo.planoId ||
+              ''
+          ) !== planoFiltro
         ) {
           return false;
         }
@@ -1494,6 +1507,7 @@ export const AccountsPayableView: React.FC = () => {
     setBusca('');
     setSituacao('todas');
     setEmpresaFiltro('');
+    setPlanoFiltro('');
     setFormaFiltro('');
     setDataInicio('');
     setDataFim('');
@@ -1837,11 +1851,6 @@ export const AccountsPayableView: React.FC = () => {
       return;
     }
 
-    if (!formDetalhes.centroCustoId) {
-      alert('Selecione o centro de custo.');
-      return;
-    }
-
     if (!formDetalhes.prazo) {
       alert('Informe o vencimento.');
       return;
@@ -1872,7 +1881,8 @@ export const AccountsPayableView: React.FC = () => {
             : formDetalhes.fornecedorId,
         planoFinanceiroId:
           formDetalhes.planoFinanceiroId,
-        centroCustoId: formDetalhes.centroCustoId,
+        centroCustoId:
+          formDetalhes.centroCustoId || null,
         descricao: formDetalhes.descricao.trim(),
         prazo: formDetalhes.prazo,
         valor,
@@ -2580,7 +2590,7 @@ export const AccountsPayableView: React.FC = () => {
       </div>
 
       <div className="rounded-[18px] border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-8">
           <div className="flex items-center gap-2 rounded-[12px] bg-slate-50 px-3.5">
             <Search className="h-4 w-4 text-slate-400" />
 
@@ -2643,6 +2653,27 @@ export const AccountsPayableView: React.FC = () => {
                 value={empresa.id}
               >
                 {empresa.nome}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={planoFiltro}
+            onChange={event =>
+              setPlanoFiltro(event.target.value)
+            }
+            className="rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+          >
+            <option value="">
+              Todos os planos
+            </option>
+
+            {planosFinanceiros.map((plano: any) => (
+              <option
+                key={plano.id ?? plano.dbId}
+                value={String(plano.id ?? plano.dbId)}
+              >
+                {plano.nome}
               </option>
             ))}
           </select>
@@ -2818,7 +2849,7 @@ export const AccountsPayableView: React.FC = () => {
           </div>
         ) : (
           <div className="w-full">
-            <div className="grid w-full grid-cols-[34px_1.35fr_1.55fr_.9fr_.9fr_1.35fr] items-center gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 text-[8px] font-bold uppercase tracking-[0.08em] text-slate-400">
+            <div className="grid w-full grid-cols-[34px_1.2fr_1.35fr_1.1fr_.8fr_.8fr_1.15fr] items-center gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 text-[8px] font-bold uppercase tracking-[0.08em] text-slate-400">
               <button
                 type="button"
                 onClick={alternarTodasContas}
@@ -2834,6 +2865,7 @@ export const AccountsPayableView: React.FC = () => {
 
               <span>Conta</span>
               <span>Favorecido</span>
+              <span>Plano de contas</span>
               <span>Vencimento</span>
               <span>Valor</span>
               <span className="text-right">Ações</span>
@@ -2847,6 +2879,16 @@ export const AccountsPayableView: React.FC = () => {
 
                 const empresa = empresas.find(
                   (item: any) => item.id === processo.empresaId
+                );
+
+                const plano = planosFinanceiros.find(
+                  (item: any) =>
+                    String(item.id ?? item.dbId ?? '') ===
+                    String(
+                      processo.planoFinanceiroId ??
+                        processo.planoId ??
+                        ''
+                    )
                 );
 
                 const pago = contaPaga(processo);
@@ -2870,7 +2912,7 @@ export const AccountsPayableView: React.FC = () => {
                 return (
                   <div
                     key={processo.id}
-                    className={`relative grid w-full grid-cols-[34px_1.35fr_1.55fr_.9fr_.9fr_1.35fr] items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50/70 ${
+                    className={`relative grid w-full grid-cols-[34px_1.2fr_1.35fr_1.1fr_.8fr_.8fr_1.15fr] items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50/70 ${
                       contasSelecionadas.has(String(processo.id))
                         ? 'bg-emerald-50/40'
                         : index % 2 === 1
@@ -2932,6 +2974,15 @@ export const AccountsPayableView: React.FC = () => {
                         {fornecedor?.cnpj ||
                           fornecedor?.cnpjCpf ||
                           'Documento não informado'}
+                      </p>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p
+                        className="truncate text-[9px] font-bold text-slate-700"
+                        title={plano?.nome || 'Plano não informado'}
+                      >
+                        {plano?.nome || 'Não informado'}
                       </p>
                     </div>
 
@@ -4187,7 +4238,7 @@ export const AccountsPayableView: React.FC = () => {
                           </label>
 
                           <label className="text-[9px] font-bold uppercase text-slate-400">
-                            Centro de custo
+                            Centro de custo (opcional)
                             <select
                               value={
                                 formDetalhes.centroCustoId
@@ -4201,7 +4252,7 @@ export const AccountsPayableView: React.FC = () => {
                               className={campoClass}
                             >
                               <option value="">
-                                Selecione
+                                Sem centro de custo
                               </option>
                               {centrosDisponiveis.map(
                                 (centro: any) => (
