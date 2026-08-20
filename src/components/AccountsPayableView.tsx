@@ -12,6 +12,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useFinance } from '../context/FinanceContext';
 import { formatarReal } from '../utils';
 import {
@@ -87,6 +88,10 @@ export const AccountsPayableView: React.FC = () => {
     cadastrarPlanoFinanceiro,
     cadastrarFornecedor,
     criarNovaConta,
+    editarProcesso,
+    getDocumentosProcesso,
+    anexarDocumentoProcesso,
+    excluirDocumentoProcesso,
     programarPagamento,
     registrarPagamento,
     desfazerUltimoPagamento,
@@ -138,6 +143,23 @@ export const AccountsPayableView: React.FC = () => {
   // Detalhes da conta abertos diretamente em Contas a Pagar.
   const [contaDetalhes, setContaDetalhes] =
     useState<any | null>(null);
+
+  const [editandoDetalhes, setEditandoDetalhes] =
+    useState(false);
+  const [salvandoDetalhes, setSalvandoDetalhes] =
+    useState(false);
+  const [formDetalhes, setFormDetalhes] =
+    useState<any>({});
+
+  // Anexos da conta exibidos dentro de Detalhes.
+  const inputAnexoContaRef = useRef<HTMLInputElement>(null);
+  const [documentosConta, setDocumentosConta] = useState<any[]>([]);
+  const [carregandoDocumentosConta, setCarregandoDocumentosConta] =
+    useState(false);
+  const [enviandoDocumentoConta, setEnviandoDocumentoConta] =
+    useState(false);
+  const [documentoExcluindoId, setDocumentoExcluindoId] =
+    useState<string | null>(null);
 
   // Exclusão individual e em massa
   const [processoExcluindo, setProcessoExcluindo] =
@@ -1210,6 +1232,191 @@ export const AccountsPayableView: React.FC = () => {
     }
   };
 
+  const exportarContasExcel = () => {
+    if (contasFiltradas.length === 0) {
+      alert(
+        'Não há contas para exportar com os filtros atuais.'
+      );
+      return;
+    }
+
+    try {
+      const linhas = contasFiltradas.map(
+        (processo: any) => {
+          const fornecedor = fornecedores.find(
+            (item: any) =>
+              String(item.id) ===
+              String(processo.fornecedorId)
+          );
+
+          const empresa = empresas.find(
+            (item: any) =>
+              String(item.id) ===
+              String(processo.empresaId)
+          );
+
+          const plano = planosFinanceiros.find(
+            (item: any) =>
+              String(item.id ?? item.dbId ?? '') ===
+              String(
+                processo.planoFinanceiroId ??
+                  processo.planoId ??
+                  ''
+              )
+          );
+
+          const centro = centrosCustos.find(
+            (item: any) =>
+              String(item.id ?? item.dbId ?? '') ===
+              String(
+                processo.centroCustoId ?? ''
+              )
+          );
+
+          const valorTotal = Number(
+            processo.valor || 0
+          );
+
+          const valorPago = Math.max(
+            Number(processo.valorPago || 0),
+            0
+          );
+
+          const saldo = Math.max(
+            Number(
+              processo.saldoPagar ??
+                valorTotal - valorPago
+            ),
+            0
+          );
+
+          const vencimento = String(
+            processo.prazo ??
+              processo.vencimento ??
+              ''
+          ).slice(0, 10);
+
+          const dataPagamento = String(
+            processo.dataPagamento ??
+              processo.data_pagamento ??
+              ''
+          ).slice(0, 10);
+
+          const pago = contaPaga(processo);
+
+          const vencido =
+            !pago &&
+            Boolean(vencimento) &&
+            vencimento < hoje;
+
+          const status = pago
+            ? 'Paga'
+            : valorPago > 0.001
+            ? 'Pagamento parcial'
+            : vencido
+            ? 'Vencida'
+            : processo.statusProgramacao ===
+              'programado'
+            ? 'Programada'
+            : 'A vencer';
+
+          const favorecido =
+            processo.tipoPagamento === 'interno'
+              ? processo.beneficiarioInterno ||
+                'Pagamento interno'
+              : fornecedor?.nome ||
+                'Não informado';
+
+          return {
+            Conta: processo.id || '',
+            Favorecido: favorecido,
+            Empresa: empresa?.nome || '',
+            'Plano de contas':
+              plano?.nome || '',
+            'Centro de custo':
+              centro?.nome || '',
+            Descrição: processo.descricao || '',
+            Vencimento: vencimento,
+            'Valor total': valorTotal,
+            'Valor pago': valorPago,
+            Saldo: saldo,
+            Status: status,
+            'Data de pagamento':
+              dataPagamento,
+            'Forma de pagamento': String(
+              processo.formaPagamento ??
+                processo.metodoPagamento ??
+                ''
+            ).toUpperCase(),
+            Parcela:
+              processo.parcela ??
+              processo.numeroParcela ??
+              '',
+            PIX: processo.pixChave || '',
+            'Favorecido PIX':
+              processo.pixFavorecido || '',
+            Observações:
+              processo.observacao ??
+              processo.observacoes ??
+              '',
+          };
+        }
+      );
+
+      const planilha =
+        XLSX.utils.json_to_sheet(linhas);
+
+      planilha['!cols'] = [
+        { wch: 24 }, // Conta
+        { wch: 30 }, // Favorecido
+        { wch: 26 }, // Empresa
+        { wch: 28 }, // Plano
+        { wch: 28 }, // Centro
+        { wch: 42 }, // Descrição
+        { wch: 14 }, // Vencimento
+        { wch: 16 }, // Valor
+        { wch: 16 }, // Pago
+        { wch: 16 }, // Saldo
+        { wch: 20 }, // Status
+        { wch: 18 }, // Data pagamento
+        { wch: 20 }, // Forma
+        { wch: 12 }, // Parcela
+        { wch: 28 }, // PIX
+        { wch: 28 }, // Favorecido PIX
+        { wch: 40 }, // Observações
+      ];
+
+      const workbook =
+        XLSX.utils.book_new();
+
+      XLSX.utils.book_append_sheet(
+        workbook,
+        planilha,
+        'Contas a Pagar'
+      );
+
+      const dataArquivo =
+        new Date()
+          .toISOString()
+          .slice(0, 10);
+
+      XLSX.writeFile(
+        workbook,
+        `contas_a_pagar_${dataArquivo}.xlsx`
+      );
+    } catch (error: any) {
+      console.error(
+        'Erro ao exportar contas a pagar em Excel:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível exportar as contas em Excel.'
+      );
+    }
+  };
+
   const gerarRelatorioPDF = () => {
     try {
       const empresaSelecionada = empresas.find(
@@ -1487,13 +1694,392 @@ export const AccountsPayableView: React.FC = () => {
     }
   };
 
+  const obterProcessoDbId = (processo: any) =>
+    String(
+      processo?.dbId ??
+        processo?.processoDbId ??
+        processo?.processo_id ??
+        ''
+    ).trim();
+
+  const carregarDocumentosConta = async (processo: any) => {
+    const processoDbId = obterProcessoDbId(processo);
+
+    if (!processoDbId) {
+      setDocumentosConta([]);
+      return;
+    }
+
+    if (typeof getDocumentosProcesso !== 'function') {
+      setDocumentosConta([]);
+      return;
+    }
+
+    try {
+      setCarregandoDocumentosConta(true);
+
+      const documentos =
+        await getDocumentosProcesso(processoDbId);
+
+      setDocumentosConta(
+        Array.isArray(documentos) ? documentos : []
+      );
+    } catch (error: any) {
+      console.error(
+        'Erro ao carregar anexos da conta:',
+        error
+      );
+      setDocumentosConta([]);
+    } finally {
+      setCarregandoDocumentosConta(false);
+    }
+  };
+
+  const montarFormDetalhes = (processo: any) => ({
+    empresaId: String(processo?.empresaId ?? ''),
+    fornecedorId: String(processo?.fornecedorId ?? ''),
+    planoFinanceiroId: String(
+      processo?.planoFinanceiroId ??
+        processo?.planoId ??
+        ''
+    ),
+    centroCustoId: String(
+      processo?.centroCustoId ?? ''
+    ),
+    descricao: String(processo?.descricao ?? ''),
+    prazo: String(
+      processo?.prazo ??
+        processo?.vencimento ??
+        ''
+    ).slice(0, 10),
+    valor: String(Number(processo?.valor ?? 0)),
+    formaPagamento: String(
+      processo?.formaPagamento ??
+        processo?.metodoPagamento ??
+        'boleto'
+    ),
+    pixChave: String(processo?.pixChave ?? ''),
+    pixFavorecido: String(
+      processo?.pixFavorecido ?? ''
+    ),
+    parcela: String(
+      processo?.parcela ??
+        processo?.numeroParcela ??
+        '1/1'
+    ),
+    observacao: String(
+      processo?.observacao ??
+        processo?.observacoes ??
+        ''
+    ),
+  });
+
   const abrirDetalhesConta = (processo: any) => {
     setMenuAcoesId(null);
     setContaDetalhes(processo);
+    setFormDetalhes(montarFormDetalhes(processo));
+    setEditandoDetalhes(false);
+    setDocumentosConta([]);
+    carregarDocumentosConta(processo);
   };
 
   const fecharDetalhesConta = () => {
+    if (enviandoDocumentoConta || salvandoDetalhes) return;
+
     setContaDetalhes(null);
+    setEditandoDetalhes(false);
+    setFormDetalhes({});
+    setDocumentosConta([]);
+
+    if (inputAnexoContaRef.current) {
+      inputAnexoContaRef.current.value = '';
+    }
+  };
+
+  const atualizarCampoDetalhes = (
+    campo: string,
+    valor: any
+  ) => {
+    setFormDetalhes((prev: any) => ({
+      ...prev,
+      [campo]: valor,
+    }));
+  };
+
+  const salvarEdicaoDetalhes = async () => {
+    if (!contaDetalhes) return;
+
+    const valor = Number(
+      String(formDetalhes.valor ?? '')
+        .replace(',', '.')
+    );
+
+    const valorJaPago = Math.max(
+      Number(contaDetalhes.valorPago ?? 0),
+      0
+    );
+
+    if (!formDetalhes.empresaId) {
+      alert('Selecione a empresa.');
+      return;
+    }
+
+    if (
+      contaDetalhes.tipoPagamento !== 'interno' &&
+      !formDetalhes.fornecedorId
+    ) {
+      alert('Selecione o favorecido.');
+      return;
+    }
+
+    if (!formDetalhes.planoFinanceiroId) {
+      alert('Selecione o plano de contas.');
+      return;
+    }
+
+    if (!formDetalhes.centroCustoId) {
+      alert('Selecione o centro de custo.');
+      return;
+    }
+
+    if (!formDetalhes.prazo) {
+      alert('Informe o vencimento.');
+      return;
+    }
+
+    if (!Number.isFinite(valor) || valor <= 0) {
+      alert('Informe um valor válido.');
+      return;
+    }
+
+    if (valor + 0.001 < valorJaPago) {
+      alert(
+        `O valor total não pode ser menor que o valor já pago (${formatarReal(
+          valorJaPago
+        )}).`
+      );
+      return;
+    }
+
+    try {
+      setSalvandoDetalhes(true);
+
+      const dadosAtualizados: any = {
+        empresaId: formDetalhes.empresaId,
+        fornecedorId:
+          contaDetalhes.tipoPagamento === 'interno'
+            ? contaDetalhes.fornecedorId
+            : formDetalhes.fornecedorId,
+        planoFinanceiroId:
+          formDetalhes.planoFinanceiroId,
+        centroCustoId: formDetalhes.centroCustoId,
+        descricao: formDetalhes.descricao.trim(),
+        prazo: formDetalhes.prazo,
+        valor,
+        formaPagamento: formDetalhes.formaPagamento,
+        metodoPagamento: formDetalhes.formaPagamento,
+        pixChave:
+          formDetalhes.pixChave.trim() || null,
+        pixFavorecido:
+          formDetalhes.pixFavorecido.trim() || null,
+        parcela:
+          formDetalhes.parcela.trim() || '1/1',
+        numeroParcela:
+          formDetalhes.parcela.trim() || '1/1',
+        observacao:
+          formDetalhes.observacao.trim(),
+        saldoPagar: Math.max(
+          valor - valorJaPago,
+          0
+        ),
+        pagamentoParcial:
+          valorJaPago > 0 &&
+          valorJaPago + 0.001 < valor,
+      };
+
+      await editarProcesso(
+        contaDetalhes.id,
+        dadosAtualizados
+      );
+
+      const contaAtualizada = {
+        ...contaDetalhes,
+        ...dadosAtualizados,
+      };
+
+      setContaDetalhes(contaAtualizada);
+      setFormDetalhes(
+        montarFormDetalhes(contaAtualizada)
+      );
+      setEditandoDetalhes(false);
+
+      await recarregarDados();
+
+      alert('Conta atualizada com sucesso.');
+    } catch (error: any) {
+      console.error(
+        'Erro ao editar conta:',
+        error
+      );
+      alert(
+        error?.message ||
+          'Não foi possível salvar as alterações.'
+      );
+    } finally {
+      setSalvandoDetalhes(false);
+    }
+  };
+
+  const anexarArquivoNaConta = async (
+    arquivo?: File
+  ) => {
+    if (!arquivo || !contaDetalhes) return;
+
+    const processoDbId =
+      obterProcessoDbId(contaDetalhes);
+
+    if (!processoDbId) {
+      alert(
+        'Esta conta não possui o identificador interno necessário para receber anexos. Atualize os dados e tente novamente.'
+      );
+      return;
+    }
+
+    if (typeof anexarDocumentoProcesso !== 'function') {
+      alert(
+        'A função de anexar documentos não está disponível.'
+      );
+      return;
+    }
+
+    const limiteBytes = 15 * 1024 * 1024;
+
+    if (arquivo.size > limiteBytes) {
+      alert(
+        'O arquivo ultrapassa o limite de 15 MB.'
+      );
+      return;
+    }
+
+    try {
+      setEnviandoDocumentoConta(true);
+
+      await anexarDocumentoProcesso({
+        processoDbId,
+        file: arquivo,
+        tipo: 'conta_pagar',
+        enviadoPor: 'Contas a Pagar',
+      });
+
+      await carregarDocumentosConta(contaDetalhes);
+
+      alert('Arquivo anexado com sucesso.');
+    } catch (error: any) {
+      console.error(
+        'Erro ao anexar arquivo na conta:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível anexar o arquivo.'
+      );
+    } finally {
+      setEnviandoDocumentoConta(false);
+
+      if (inputAnexoContaRef.current) {
+        inputAnexoContaRef.current.value = '';
+      }
+    }
+  };
+
+  const abrirDocumentoConta = (documento: any) => {
+    const url = String(
+      documento?.url ??
+        documento?.arquivoUrl ??
+        documento?.arquivo_url ??
+        documento?.publicUrl ??
+        ''
+    ).trim();
+
+    if (!url) {
+      alert(
+        'Este documento não possui uma URL disponível para abertura.'
+      );
+      return;
+    }
+
+    window.open(
+      url,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+
+  const excluirAnexoConta = async (
+    documento: any
+  ) => {
+    const documentoId = String(
+      documento?.id ?? ''
+    ).trim();
+
+    if (!documentoId) {
+      alert(
+        'Não foi possível identificar este anexo.'
+      );
+      return;
+    }
+
+    const nomeDocumento = String(
+      documento?.nome ??
+        documento?.nomeArquivo ??
+        documento?.nome_arquivo ??
+        'arquivo'
+    );
+
+    const confirmou = window.confirm(
+      `Deseja realmente excluir o anexo "${nomeDocumento}"?\n\n` +
+        'O arquivo será removido permanentemente. Esta ação não poderá ser desfeita.'
+    );
+
+    if (!confirmou) return;
+
+    try {
+      setDocumentoExcluindoId(documentoId);
+
+      await excluirDocumentoProcesso(
+        documentoId
+      );
+
+      setDocumentosConta(prev =>
+        prev.filter(
+          (item: any) =>
+            String(item?.id ?? '') !==
+            documentoId
+        )
+      );
+
+      if (contaDetalhes) {
+        await carregarDocumentosConta(
+          contaDetalhes
+        );
+      }
+
+      alert('Anexo excluído com sucesso.');
+    } catch (error: any) {
+      console.error(
+        'Erro ao excluir anexo:',
+        error
+      );
+
+      alert(
+        error?.message ||
+          'Não foi possível excluir o anexo.'
+      );
+    } finally {
+      setDocumentoExcluindoId(null);
+    }
   };
 
 
@@ -1940,6 +2526,18 @@ export const AccountsPayableView: React.FC = () => {
 
           <button
             type="button"
+            onClick={exportarContasExcel}
+            disabled={
+              contasFiltradas.length === 0
+            }
+            className="flex flex-1 items-center justify-center gap-2 rounded-[12px] bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 md:flex-none"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Excel
+          </button>
+
+          <button
+            type="button"
             onClick={gerarRelatorioPDF}
             disabled={
               contasFiltradas.length === 0
@@ -2220,7 +2818,7 @@ export const AccountsPayableView: React.FC = () => {
           </div>
         ) : (
           <div className="w-full">
-            <div className="grid w-full grid-cols-[34px_1.2fr_1.35fr_1.15fr_1.45fr_1fr_1.65fr] items-center gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 text-[8px] font-bold uppercase tracking-[0.08em] text-slate-400">
+            <div className="grid w-full grid-cols-[34px_1.35fr_1.55fr_.9fr_.9fr_1.35fr] items-center gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 text-[8px] font-bold uppercase tracking-[0.08em] text-slate-400">
               <button
                 type="button"
                 onClick={alternarTodasContas}
@@ -2236,9 +2834,8 @@ export const AccountsPayableView: React.FC = () => {
 
               <span>Conta</span>
               <span>Favorecido</span>
-              <span>Empresa</span>
-              <span>Financeiro</span>
               <span>Vencimento</span>
+              <span>Valor</span>
               <span className="text-right">Ações</span>
             </div>
 
@@ -2273,7 +2870,7 @@ export const AccountsPayableView: React.FC = () => {
                 return (
                   <div
                     key={processo.id}
-                    className={`relative grid w-full grid-cols-[34px_1.2fr_1.35fr_1.15fr_1.45fr_1fr_1.65fr] items-center gap-3 px-4 py-4 transition-colors hover:bg-slate-50/70 ${
+                    className={`relative grid w-full grid-cols-[34px_1.35fr_1.55fr_.9fr_.9fr_1.35fr] items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50/70 ${
                       contasSelecionadas.has(String(processo.id))
                         ? 'bg-emerald-50/40'
                         : index % 2 === 1
@@ -2339,76 +2936,6 @@ export const AccountsPayableView: React.FC = () => {
                     </div>
 
                     <div className="min-w-0">
-                      <p
-                        className="truncate text-[9px] font-semibold text-slate-700"
-                        title={empresa?.nome || '-'}
-                      >
-                        {empresa?.nome || '-'}
-                      </p>
-
-                      <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-[8px] font-semibold text-slate-400">
-                          {metodo}
-                        </span>
-
-                        {processo.pixChave ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copiarPix(processo.id, processo.pixChave)
-                            }
-                            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[7px] font-bold text-emerald-600 hover:bg-emerald-100"
-                            title={processo.pixChave}
-                          >
-                            {pixCopiadoId === processo.id ? (
-                              <Check className="h-2.5 w-2.5" />
-                            ) : (
-                              <Copy className="h-2.5 w-2.5" />
-                            )}
-                            PIX
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[7px] font-bold uppercase text-slate-400">
-                            Total
-                          </p>
-                          <p className="mt-1 truncate font-mono text-[9px] font-bold text-slate-800">
-                            {formatarReal(Number(processo.valor || 0))}
-                          </p>
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="text-[7px] font-bold uppercase text-slate-400">
-                            Pago
-                          </p>
-                          <p className="mt-1 truncate font-mono text-[9px] font-bold text-emerald-600">
-                            {formatarReal(valorPagoAtual)}
-                          </p>
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="text-[7px] font-bold uppercase text-slate-400">
-                            Saldo
-                          </p>
-                          <p
-                            className={`mt-1 truncate font-mono text-[9px] font-bold ${
-                              saldo > 0.001
-                                ? 'text-amber-600'
-                                : 'text-emerald-600'
-                            }`}
-                          >
-                            {formatarReal(saldo)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                         <p className="truncate font-mono text-[9px] font-semibold text-slate-700">
@@ -2416,7 +2943,7 @@ export const AccountsPayableView: React.FC = () => {
                         </p>
                       </div>
 
-                      <div className="mt-1.5 flex items-center gap-1.5">
+                      <div className="mt-1.5">
                         <span
                           className={`inline-flex rounded-full px-2 py-1 text-[7px] font-bold ${
                             pago
@@ -2436,13 +2963,16 @@ export const AccountsPayableView: React.FC = () => {
                             ? 'Parcial'
                             : 'A vencer'}
                         </span>
-
-                        {processo.statusProgramacao === 'programado' && (
-                          <span className="truncate text-[7px] font-semibold text-blue-600">
-                            Programado
-                          </span>
-                        )}
                       </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-[7px] font-bold uppercase text-slate-400">
+                        Valor
+                      </p>
+                      <p className="mt-1 truncate font-mono text-[10px] font-bold text-slate-800">
+                        {formatarReal(Number(processo.valor || 0))}
+                      </p>
                     </div>
 
                     <div className="relative min-w-0">
@@ -3394,40 +3924,59 @@ export const AccountsPayableView: React.FC = () => {
 
       {contaDetalhes && (() => {
         const fornecedorDetalhes = fornecedores.find(
-          (item: any) => item.id === contaDetalhes.fornecedorId
+          (item: any) =>
+            String(item.id) ===
+            String(contaDetalhes.fornecedorId)
         );
 
         const empresaDetalhes = empresas.find(
-          (item: any) => item.id === contaDetalhes.empresaId
+          (item: any) =>
+            String(item.id) ===
+            String(contaDetalhes.empresaId)
         );
 
-        const planoDetalhes = planosFinanceiros?.find(
+        const planoDetalhes = planosFinanceiros.find(
           (item: any) =>
             String(item.id ?? item.dbId ?? '') ===
             String(
               contaDetalhes.planoFinanceiroId ??
-              contaDetalhes.plano_financeiro_id ??
-              contaDetalhes.planoId ??
-              ''
+                contaDetalhes.planoId ??
+                ''
             )
         );
 
-        const centroDetalhes = centrosCustos?.find(
+        const centroDetalhes = centrosCustos.find(
           (item: any) =>
             String(item.id ?? item.dbId ?? '') ===
-            String(
-              contaDetalhes.centroCustoId ??
-              contaDetalhes.centro_custo_id ??
-              contaDetalhes.centroId ??
-              ''
-            )
+            String(contaDetalhes.centroCustoId ?? '')
         );
 
-        const valorTotalDetalhes = Number(contaDetalhes.valor || 0);
-        const valorPagoDetalhes = obterValorPago(contaDetalhes);
-        const saldoDetalhes = obterSaldoPagar(contaDetalhes);
+        const centrosDisponiveis = centrosCustos.filter(
+          (centro: any) =>
+            String(
+              centro.planoFinanceiroId ??
+                centro.planoId ??
+                centro.plano_financeiro_id ??
+                ''
+            ) ===
+            String(formDetalhes.planoFinanceiroId ?? '')
+        );
+
         const pagaDetalhes = contaPaga(contaDetalhes);
         const vencimentoDetalhes = dataBase(contaDetalhes);
+        const valorPagoDetalhes = Math.max(
+          Number(contaDetalhes.valorPago ?? 0),
+          0
+        );
+        const saldoDetalhes = Math.max(
+          Number(
+            contaDetalhes.saldoPagar ??
+              Number(contaDetalhes.valor || 0) -
+                valorPagoDetalhes
+          ),
+          0
+        );
+
         const vencidaDetalhes =
           !pagaDetalhes &&
           Boolean(vencimentoDetalhes) &&
@@ -3435,14 +3984,43 @@ export const AccountsPayableView: React.FC = () => {
 
         const favorecidoDetalhes =
           contaDetalhes.tipoPagamento === 'interno'
-            ? contaDetalhes.beneficiarioInterno || 'Pagamento interno'
-            : fornecedorDetalhes?.nome || 'Não informado';
+            ? contaDetalhes.beneficiarioInterno ||
+              'Pagamento interno'
+            : fornecedorDetalhes?.nome ||
+              'Não informado';
 
-        const metodoDetalhes = String(
-          contaDetalhes.metodoPagamento ||
-          contaDetalhes.formaPagamento ||
-          'Não informado'
-        ).toUpperCase();
+        const statusTexto = pagaDetalhes
+          ? 'Paga'
+          : valorPagoDetalhes > 0.001
+          ? 'Pagamento parcial'
+          : vencidaDetalhes
+          ? 'Vencida'
+          : contaDetalhes.statusProgramacao ===
+            'programado'
+          ? 'Programada'
+          : 'A vencer';
+
+        const formatarDataBR = (data?: string) => {
+          const valor = String(data || '').slice(0, 10);
+          if (!valor) return 'Não informado';
+          const [ano, mes, dia] = valor.split('-');
+          return ano && mes && dia
+            ? `${dia}/${mes}/${ano}`
+            : valor;
+        };
+
+        const dataPagamentoDetalhes =
+          String(
+            contaDetalhes.dataPagamento ??
+              contaDetalhes.data_pagamento ??
+              ''
+          ).slice(0, 10);
+
+        const campoClass =
+          'mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100';
+
+        const areaClass =
+          'mt-1.5 min-h-[88px] w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[11px] font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100';
 
         return (
           <>
@@ -3451,9 +4029,9 @@ export const AccountsPayableView: React.FC = () => {
               onClick={fecharDetalhesConta}
             />
 
-            <div className="fixed inset-0 z-[71] flex items-center justify-center p-3 sm:p-5">
-              <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
-                <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+            <div className="fixed inset-0 z-[71] flex items-center justify-center p-4">
+              <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
+                <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-base font-bold text-[#0F172A]">
@@ -3463,227 +4041,701 @@ export const AccountsPayableView: React.FC = () => {
                       <Situacao
                         pago={pagaDetalhes}
                         vencida={Boolean(vencidaDetalhes)}
-                        programada={contaDetalhes.statusProgramacao === 'programado'}
+                        programada={
+                          contaDetalhes.statusProgramacao ===
+                          'programado'
+                        }
                       />
                     </div>
 
-                    <p className="mt-1 truncate font-mono text-[10px] text-slate-400">
-                      {contaDetalhes.id}
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      {editandoDetalhes
+                        ? 'Edite os dados do lançamento e salve as alterações.'
+                        : 'Informações completas do lançamento financeiro.'}
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={fecharDetalhesConta}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"
-                    title="Fechar"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {!editandoDetalhes && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditandoDetalhes(true)
+                        }
+                        className="inline-flex h-9 items-center justify-center rounded-xl bg-blue-50 px-4 text-[10px] font-bold text-blue-700 transition hover:bg-blue-100"
+                      >
+                        Editar conta
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={fecharDetalhesConta}
+                      disabled={salvandoDetalhes}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 disabled:opacity-40"
+                      title="Fechar"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_.75fr]">
-                    <div className="space-y-4">
-                      <section className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
-                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                          Conta
+                <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                  {editandoDetalhes ? (
+                    <div className="space-y-5">
+                      <section>
+                        <p className="mb-3 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                          Identificação
                         </p>
 
-                        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <DetalheItem
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Empresa
+                            <select
+                              value={formDetalhes.empresaId}
+                              onChange={e =>
+                                atualizarCampoDetalhes(
+                                  'empresaId',
+                                  e.target.value
+                                )
+                              }
+                              className={campoClass}
+                            >
+                              <option value="">
+                                Selecione
+                              </option>
+                              {empresas.map((empresa: any) => (
+                                <option
+                                  key={empresa.id}
+                                  value={empresa.id}
+                                >
+                                  {empresa.nome}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          {contaDetalhes.tipoPagamento !==
+                            'interno' && (
+                            <label className="text-[9px] font-bold uppercase text-slate-400">
+                              Favorecido
+                              <select
+                                value={
+                                  formDetalhes.fornecedorId
+                                }
+                                onChange={e =>
+                                  atualizarCampoDetalhes(
+                                    'fornecedorId',
+                                    e.target.value
+                                  )
+                                }
+                                className={campoClass}
+                              >
+                                <option value="">
+                                  Selecione
+                                </option>
+                                {fornecedores.map(
+                                  (fornecedor: any) => (
+                                    <option
+                                      key={fornecedor.id}
+                                      value={fornecedor.id}
+                                    >
+                                      {fornecedor.nome}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                            </label>
+                          )}
+
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Plano de contas
+                            <select
+                              value={
+                                formDetalhes.planoFinanceiroId
+                              }
+                              onChange={e => {
+                                atualizarCampoDetalhes(
+                                  'planoFinanceiroId',
+                                  e.target.value
+                                );
+                                atualizarCampoDetalhes(
+                                  'centroCustoId',
+                                  ''
+                                );
+                              }}
+                              className={campoClass}
+                            >
+                              <option value="">
+                                Selecione
+                              </option>
+                              {planosFinanceiros.map(
+                                (plano: any) => (
+                                  <option
+                                    key={
+                                      plano.id ?? plano.dbId
+                                    }
+                                    value={
+                                      plano.id ?? plano.dbId
+                                    }
+                                  >
+                                    {plano.nome}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          </label>
+
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Centro de custo
+                            <select
+                              value={
+                                formDetalhes.centroCustoId
+                              }
+                              onChange={e =>
+                                atualizarCampoDetalhes(
+                                  'centroCustoId',
+                                  e.target.value
+                                )
+                              }
+                              className={campoClass}
+                            >
+                              <option value="">
+                                Selecione
+                              </option>
+                              {centrosDisponiveis.map(
+                                (centro: any) => (
+                                  <option
+                                    key={
+                                      centro.id ??
+                                      centro.dbId
+                                    }
+                                    value={
+                                      centro.id ??
+                                      centro.dbId
+                                    }
+                                  >
+                                    {centro.nome}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          </label>
+                        </div>
+                      </section>
+
+                      <section>
+                        <p className="mb-3 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                          Financeiro
+                        </p>
+
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Vencimento
+                            <input
+                              type="date"
+                              value={formDetalhes.prazo}
+                              onChange={e =>
+                                atualizarCampoDetalhes(
+                                  'prazo',
+                                  e.target.value
+                                )
+                              }
+                              className={campoClass}
+                            />
+                          </label>
+
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Valor total
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={formDetalhes.valor}
+                              onChange={e =>
+                                atualizarCampoDetalhes(
+                                  'valor',
+                                  e.target.value
+                                )
+                              }
+                              className={campoClass}
+                            />
+                          </label>
+
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Parcela
+                            <input
+                              type="text"
+                              value={formDetalhes.parcela}
+                              onChange={e =>
+                                atualizarCampoDetalhes(
+                                  'parcela',
+                                  e.target.value
+                                )
+                              }
+                              placeholder="1/1"
+                              className={campoClass}
+                            />
+                          </label>
+
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Forma de pagamento
+                            <select
+                              value={
+                                formDetalhes.formaPagamento
+                              }
+                              onChange={e =>
+                                atualizarCampoDetalhes(
+                                  'formaPagamento',
+                                  e.target.value
+                                )
+                              }
+                              className={campoClass}
+                            >
+                              <option value="boleto">
+                                Boleto
+                              </option>
+                              <option value="pix">
+                                PIX
+                              </option>
+                              <option value="ted">
+                                TED
+                              </option>
+                              <option value="dinheiro">
+                                Dinheiro
+                              </option>
+                              <option value="cartao">
+                                Cartão
+                              </option>
+                            </select>
+                          </label>
+
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Chave PIX
+                            <input
+                              type="text"
+                              value={formDetalhes.pixChave}
+                              onChange={e =>
+                                atualizarCampoDetalhes(
+                                  'pixChave',
+                                  e.target.value
+                                )
+                              }
+                              className={campoClass}
+                            />
+                          </label>
+
+                          <label className="text-[9px] font-bold uppercase text-slate-400">
+                            Favorecido PIX
+                            <input
+                              type="text"
+                              value={
+                                formDetalhes.pixFavorecido
+                              }
+                              onChange={e =>
+                                atualizarCampoDetalhes(
+                                  'pixFavorecido',
+                                  e.target.value
+                                )
+                              }
+                              className={campoClass}
+                            />
+                          </label>
+                        </div>
+                      </section>
+
+                      <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="text-[9px] font-bold uppercase text-slate-400">
+                          Descrição
+                          <textarea
+                            value={formDetalhes.descricao}
+                            onChange={e =>
+                              atualizarCampoDetalhes(
+                                'descricao',
+                                e.target.value
+                              )
+                            }
+                            className={areaClass}
+                          />
+                        </label>
+
+                        <label className="text-[9px] font-bold uppercase text-slate-400">
+                          Observações
+                          <textarea
+                            value={formDetalhes.observacao}
+                            onChange={e =>
+                              atualizarCampoDetalhes(
+                                'observacao',
+                                e.target.value
+                              )
+                            }
+                            className={areaClass}
+                          />
+                        </label>
+                      </section>
+
+                      <div className="rounded-[16px] border border-slate-100 bg-slate-50 p-4">
+                        <p className="text-[9px] font-bold uppercase text-slate-400">
+                          Dados de pagamento
+                        </p>
+                        <p className="mt-2 text-[10px] leading-5 text-slate-500">
+                          Status, valor pago, saldo e data de pagamento são calculados pelo histórico de pagamentos. Para preservar o financeiro, eles não são alterados manualmente nesta edição.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      <section>
+                        <p className="mb-3 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                          Informações da conta
+                        </p>
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          <DetalheConta
+                            label="Conta"
+                            value={
+                              contaDetalhes.id ||
+                              'Não informado'
+                            }
+                            mono
+                          />
+                          <DetalheConta
                             label="Favorecido"
                             value={favorecidoDetalhes}
                           />
-                          <DetalheItem
+                          <DetalheConta
                             label="Empresa"
-                            value={empresaDetalhes?.nome || 'Não informada'}
-                          />
-                          <DetalheItem
-                            label="Descrição"
-                            value={contaDetalhes.descricao || 'Sem descrição'}
-                          />
-                          <DetalheItem
-                            label="Fornecedor / documento"
                             value={
-                              fornecedorDetalhes?.cnpj ||
-                              fornecedorDetalhes?.cnpjCpf ||
+                              empresaDetalhes?.nome ||
+                              'Não informada'
+                            }
+                          />
+                          <DetalheConta
+                            label="Plano de contas"
+                            value={
+                              planoDetalhes?.nome ||
                               'Não informado'
                             }
                           />
-                          <DetalheItem
-                            label="Plano financeiro"
-                            value={planoDetalhes?.nome || 'Não informado'}
-                          />
-                          <DetalheItem
+                          <DetalheConta
                             label="Centro de custo"
-                            value={centroDetalhes?.nome || 'Não informado'}
-                          />
-                          <DetalheItem
-                            label="Parcela"
                             value={
-                              String(
-                                contaDetalhes.parcela ??
-                                contaDetalhes.numeroParcela ??
-                                'Não informada'
-                              )
+                              centroDetalhes?.nome ||
+                              'Não informado'
                             }
                           />
-                          <DetalheItem
-                            label="Origem"
-                            value={String(contaDetalhes.origem || 'Manual')}
-                          />
-                        </div>
-                      </section>
-
-                      <section className="rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
-                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                          Pagamento e vencimento
-                        </p>
-
-                        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                          <DetalheItem
+                          <DetalheConta
                             label="Vencimento"
-                            value={vencimentoDetalhes || 'Não informado'}
+                            value={formatarDataBR(
+                              vencimentoDetalhes
+                            )}
                             mono
                           />
-                          <DetalheItem
-                            label="Programação"
-                            value={
-                              contaDetalhes.dataProgramadaPagamento ||
-                              (contaDetalhes.statusProgramacao === 'programado'
-                                ? 'Programada'
-                                : 'Não programada')
-                            }
-                            mono={Boolean(contaDetalhes.dataProgramadaPagamento)}
+                          <DetalheConta
+                            label="Valor total"
+                            value={formatarReal(
+                              Number(
+                                contaDetalhes.valor || 0
+                              )
+                            )}
+                            mono
+                            destaque
                           />
-                          <DetalheItem
+                          <DetalheConta
+                            label="Valor pago"
+                            value={formatarReal(
+                              valorPagoDetalhes
+                            )}
+                            mono
+                          />
+                          <DetalheConta
+                            label="Saldo"
+                            value={formatarReal(
+                              saldoDetalhes
+                            )}
+                            mono
+                          />
+                          <DetalheConta
+                            label="Data de pagamento"
+                            value={
+                              dataPagamentoDetalhes
+                                ? formatarDataBR(
+                                    dataPagamentoDetalhes
+                                  )
+                                : 'Ainda não pago'
+                            }
+                            mono
+                          />
+                          <DetalheConta
+                            label="Status"
+                            value={statusTexto}
+                          />
+                          <DetalheConta
                             label="Forma de pagamento"
-                            value={metodoDetalhes}
+                            value={String(
+                              contaDetalhes.formaPagamento ??
+                                contaDetalhes.metodoPagamento ??
+                                'Não informada'
+                            ).toUpperCase()}
                           />
-                          <DetalheItem
-                            label="Data do pagamento"
+                          <DetalheConta
+                            label="Parcela"
                             value={
-                              contaDetalhes.dataPagamento ||
-                              'Ainda não paga'
+                              contaDetalhes.parcela ??
+                              contaDetalhes.numeroParcela ??
+                              '1/1'
                             }
-                            mono={Boolean(contaDetalhes.dataPagamento)}
                           />
-                          <DetalheItem
-                            label="PIX"
+                          <DetalheConta
+                            label="Chave PIX"
                             value={
                               contaDetalhes.pixChave ||
-                              fornecedorDetalhes?.pix ||
-                              fornecedorDetalhes?.pixChave ||
-                              'Não informado'
+                              'Não informada'
                             }
                           />
-                          <DetalheItem
+                          <DetalheConta
                             label="Favorecido PIX"
                             value={
                               contaDetalhes.pixFavorecido ||
-                              favorecidoDetalhes
+                              'Não informado'
                             }
                           />
                         </div>
                       </section>
 
-                      <section className="rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
-                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                          Observações
-                        </p>
+                      <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div className="rounded-[16px] bg-slate-50 p-4">
+                          <p className="text-[9px] font-bold uppercase text-slate-400">
+                            Descrição
+                          </p>
+                          <p className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-slate-600">
+                            {contaDetalhes.descricao ||
+                              'Nenhuma descrição cadastrada.'}
+                          </p>
+                        </div>
 
-                        <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">
-                          {contaDetalhes.observacao ||
-                            contaDetalhes.observacoes ||
-                            'Nenhuma observação cadastrada.'}
-                        </p>
-                      </section>
-                    </div>
-
-                    <div className="space-y-4">
-                      <section className="rounded-[18px] border border-slate-100 bg-[#0F172A] p-5 text-white shadow-lg">
-                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">
-                          Resumo financeiro
-                        </p>
-
-                        <div className="mt-5 space-y-4">
-                          <div>
-                            <p className="text-[9px] uppercase text-white/45">
-                              Valor total
-                            </p>
-                            <p className="mt-1 font-mono text-xl font-bold">
-                              {formatarReal(valorTotalDetalhes)}
-                            </p>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-xl bg-white/10 p-3">
-                              <p className="text-[8px] uppercase text-white/45">
-                                Pago
-                              </p>
-                              <p className="mt-1 font-mono text-sm font-bold text-emerald-300">
-                                {formatarReal(valorPagoDetalhes)}
-                              </p>
-                            </div>
-
-                            <div className="rounded-xl bg-white/10 p-3">
-                              <p className="text-[8px] uppercase text-white/45">
-                                Saldo
-                              </p>
-                              <p className={`mt-1 font-mono text-sm font-bold ${
-                                saldoDetalhes > 0.001
-                                  ? 'text-amber-300'
-                                  : 'text-emerald-300'
-                              }`}>
-                                {formatarReal(saldoDetalhes)}
-                              </p>
-                            </div>
-                          </div>
+                        <div className="rounded-[16px] bg-slate-50 p-4">
+                          <p className="text-[9px] font-bold uppercase text-slate-400">
+                            Observações
+                          </p>
+                          <p className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-slate-600">
+                            {contaDetalhes.observacao ||
+                              contaDetalhes.observacoes ||
+                              'Nenhuma observação cadastrada.'}
+                          </p>
                         </div>
                       </section>
+                    </div>
+                  )}
+
+                  <section className="mt-5 rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                          Anexos
+                        </p>
+                        <p className="mt-1 text-[10px] text-slate-400">
+                          Boleto, nota fiscal, contrato, comprovante ou outro documento.
+                        </p>
+                      </div>
+
+                      <div className="shrink-0">
+                        <input
+                          ref={inputAnexoContaRef}
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                          onChange={event =>
+                            anexarArquivoNaConta(
+                              event.target.files?.[0]
+                            )
+                          }
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            inputAnexoContaRef.current?.click()
+                          }
+                          disabled={
+                            enviandoDocumentoConta ||
+                            !obterProcessoDbId(
+                              contaDetalhes
+                            )
+                          }
+                          className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-blue-50 px-3.5 text-[10px] font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {enviandoDocumentoConta ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Upload className="h-3.5 w-3.5" />
+                          )}
+                          {enviandoDocumentoConta
+                            ? 'Enviando...'
+                            : 'Anexar arquivo'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      {carregandoDocumentosConta ? (
+                        <div className="flex items-center justify-center gap-2 rounded-xl bg-slate-50 px-4 py-5 text-[10px] font-semibold text-slate-400">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Carregando anexos...
+                        </div>
+                      ) : documentosConta.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center">
+                          <FileText className="mx-auto h-5 w-5 text-slate-300" />
+                          <p className="mt-2 text-[10px] font-bold text-slate-500">
+                            Nenhum arquivo anexado
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {documentosConta.map(
+                            (documento: any, index: number) => {
+                              const nomeDocumento = String(
+                                documento?.nome ??
+                                  documento?.nomeArquivo ??
+                                  documento?.nome_arquivo ??
+                                  documento?.fileName ??
+                                  documento?.filename ??
+                                  `Documento ${index + 1}`
+                              );
+
+                              return (
+                                <div
+                                  key={
+                                    documento?.id ??
+                                    documento?.caminho ??
+                                    documento?.url ??
+                                    `${nomeDocumento}-${index}`
+                                  }
+                                  className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3"
+                                >
+                                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm">
+                                    <FileText className="h-4 w-4" />
+                                  </div>
+
+                                  <p
+                                    className="min-w-0 flex-1 truncate text-[10px] font-bold text-slate-700"
+                                    title={nomeDocumento}
+                                  >
+                                    {nomeDocumento}
+                                  </p>
+
+                                  <div className="flex shrink-0 items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        abrirDocumentoConta(
+                                          documento
+                                        )
+                                      }
+                                      disabled={
+                                        documentoExcluindoId ===
+                                        String(documento?.id ?? '')
+                                      }
+                                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[9px] font-bold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      Abrir
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        excluirAnexoConta(
+                                          documento
+                                        )
+                                      }
+                                      disabled={
+                                        documentoExcluindoId ===
+                                          String(documento?.id ?? '') ||
+                                        enviandoDocumentoConta
+                                      }
+                                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-red-100 bg-red-50 px-2.5 text-[9px] font-bold text-red-600 transition hover:bg-red-100 disabled:opacity-40"
+                                    >
+                                      {documentoExcluindoId ===
+                                      String(documento?.id ?? '') ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-3 w-3" />
+                                      )}
+                                      Excluir
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+
+                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-slate-100 px-5 py-4">
+                  {editandoDetalhes ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormDetalhes(
+                            montarFormDetalhes(
+                              contaDetalhes
+                            )
+                          );
+                          setEditandoDetalhes(false);
+                        }}
+                        disabled={salvandoDetalhes}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        Cancelar
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={salvarEdicaoDetalhes}
+                        disabled={salvandoDetalhes}
+                        className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-[10px] font-bold text-white hover:bg-blue-700 disabled:opacity-40"
+                      >
+                        {salvandoDetalhes && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        )}
+                        {salvandoDetalhes
+                          ? 'Salvando...'
+                          : 'Salvar alterações'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={fecharDetalhesConta}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50"
+                      >
+                        Fechar
+                      </button>
 
                       {!pagaDetalhes && (
                         <button
                           type="button"
                           onClick={() => {
+                            const conta =
+                              contaDetalhes;
                             fecharDetalhesConta();
-                            abrirModalPagamento(contaDetalhes);
+                            abrirModalPagamento(
+                              conta
+                            );
                           }}
-                          className="flex w-full items-center justify-center gap-2 rounded-[14px] bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+                          className="rounded-xl bg-emerald-600 px-4 py-2.5 text-[10px] font-bold text-white hover:bg-emerald-700"
                         >
-                          <Check className="h-4 w-4" />
                           Registrar pagamento
                         </button>
                       )}
-
-                      {valorPagoDetalhes > 0.001 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            fecharDetalhesConta();
-                            abrirModalEstorno(contaDetalhes);
-                          }}
-                          className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-700 hover:bg-amber-100"
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                          Desfazer último pagamento
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          fecharDetalhesConta();
-                          abrirModalExclusao(contaDetalhes);
-                        }}
-                        className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600 hover:bg-red-100"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Excluir conta
-                      </button>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -4346,6 +5398,44 @@ const ResumoMobile = ({
     </p>
 
     <p className="mt-1 truncate font-mono text-[10px] font-bold">
+      {value}
+    </p>
+  </div>
+);
+
+
+const DetalheConta = ({
+  label,
+  value,
+  mono = false,
+  destaque = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+  destaque?: boolean;
+}) => (
+  <div
+    className={`min-w-0 rounded-[16px] p-4 ${
+      destaque
+        ? 'bg-[#0F172A] text-white'
+        : 'bg-slate-50 text-slate-800'
+    }`}
+  >
+    <p
+      className={`text-[9px] font-bold uppercase ${
+        destaque
+          ? 'text-white/50'
+          : 'text-slate-400'
+      }`}
+    >
+      {label}
+    </p>
+    <p
+      className={`mt-2 break-words text-xs font-bold ${
+        mono ? 'font-mono' : ''
+      }`}
+    >
       {value}
     </p>
   </div>

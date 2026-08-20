@@ -84,6 +84,10 @@ interface FinanceContextType {
     enviadoPor?: string;
   }) => Promise<any>;
 
+  excluirDocumentoProcesso: (
+    documentoId: string
+  ) => Promise<void>;
+
   criarSolicitacao: (dados: {
     tipoPagamento: 'fornecedor' | 'interno';
     fornecedorId: string | null;
@@ -427,6 +431,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ...params,
       organizacaoId: organizacaoAtivaIdState,
     });
+  };
+
+  const excluirDocumentoProcesso = async (
+    documentoId: string
+  ) => {
+    await financeService.excluirDocumentoProcesso(
+      documentoId
+    );
   };
 
   const criarSolicitacao = async (dados: {
@@ -1443,6 +1455,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         uploadAnexoProcesso,
         getDocumentosProcesso,
         anexarDocumentoProcesso,
+        excluirDocumentoProcesso,
 
         criarSolicitacao,
         criarNovaConta,

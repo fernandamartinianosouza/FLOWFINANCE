@@ -259,6 +259,81 @@ export const financeService = {
     }));
   },
 
+  async excluirDocumentoProcesso(documentoId: string) {
+    const id = String(documentoId || "").trim();
+
+    if (!id) {
+      throw new Error("Documento não informado.");
+    }
+
+    const { data: documento, error: buscaError } = await supabase
+      .from("processo_documentos")
+      .select("id, processo_id, nome, caminho, url")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (buscaError) {
+      console.error("Erro ao localizar documento:", buscaError);
+
+      throw new Error(
+        buscaError.message ||
+          "Não foi possível localizar o documento.",
+      );
+    }
+
+    if (!documento) {
+      throw new Error("Documento não encontrado.");
+    }
+
+    /*
+     * Primeiro remove o arquivo físico do Storage.
+     */
+    if (documento.caminho) {
+      const { error: storageError } = await supabase.storage
+        .from(BUCKET_ANEXOS)
+        .remove([String(documento.caminho)]);
+
+      if (storageError) {
+        console.error(
+          "Erro ao excluir arquivo do Storage:",
+          storageError,
+        );
+
+        throw new Error(
+          storageError.message ||
+            "Não foi possível excluir o arquivo do armazenamento.",
+        );
+      }
+    }
+
+    /*
+     * Depois remove o registro do banco.
+     */
+    const { error: deleteError } = await supabase
+      .from("processo_documentos")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      console.error(
+        "Erro ao excluir registro do documento:",
+        deleteError,
+      );
+
+      throw new Error(
+        deleteError.message ||
+          "Não foi possível excluir o registro do documento.",
+      );
+    }
+
+    return {
+      id: documento.id,
+      processoId: documento.processo_id,
+      nome: documento.nome,
+      caminho: documento.caminho,
+    };
+  },
+
   async carregarDados(organizacaoId?: string) {
     const orgId = await resolverOrganizacaoId(organizacaoId);
 
