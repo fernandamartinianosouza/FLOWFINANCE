@@ -286,17 +286,48 @@ export const faturamentoImportService = {
     });
   },
 
-  async listar(organizacaoId: string, empresaId: string): Promise<ContaReceber[]> {
-    const { data, error } = await supabase
-      .from('contas_receber')
-      .select('*')
-      .eq('organizacao_id', organizacaoId)
-      .eq('empresa_id', empresaId)
-      .neq('status', 'cancelado')
-      .order('data_vencimento', { ascending: true, nullsFirst: false });
+  async listar(
+    organizacaoId: string,
+    empresaId: string
+  ): Promise<ContaReceber[]> {
+    const todas: any[] = [];
+    const tamanhoPagina = 1000;
+    let inicio = 0;
 
-    if (error) throw error;
-    return (data ?? []).map(mapConta);
+    while (true) {
+      const fim = inicio + tamanhoPagina - 1;
+
+      const { data, error } = await supabase
+        .from('contas_receber')
+        .select('*')
+        .eq('organizacao_id', organizacaoId)
+        .eq('empresa_id', empresaId)
+        .neq('status', 'cancelado')
+        .order('data_vencimento', {
+          ascending: true,
+          nullsFirst: false,
+        })
+        .order('id', {
+          ascending: true,
+        })
+        .range(inicio, fim);
+
+      if (error) {
+        throw error;
+      }
+
+      const pagina = data ?? [];
+
+      todas.push(...pagina);
+
+      if (pagina.length < tamanhoPagina) {
+        break;
+      }
+
+      inicio += tamanhoPagina;
+    }
+
+    return todas.map(mapConta);
   },
 
   async importar(
