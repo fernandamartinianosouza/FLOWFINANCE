@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   Empresa,
   Fornecedor,
@@ -245,12 +245,71 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
-  const [planosFinanceiros, setPlanosFinanceiros] = useState<PlanoFinanceiro[]>([]);
-  const [centrosCustos, setCentrosCustos] = useState<CentroCusto[]>([]);
-  const [processos, setProcessos] = useState<ProcessoCompra[]>([]);
+  const [planosFinanceirosTodos, setPlanosFinanceirosTodos] = useState<PlanoFinanceiro[]>([]);
+  const [centrosCustosTodos, setCentrosCustosTodos] = useState<CentroCusto[]>([]);
+  const [processosTodos, setProcessosTodos] = useState<ProcessoCompra[]>([]);
   const [alertas, setAlertas] = useState<AlertaSistema[]>([]);
 
   const [empresaAtivaId, setEmpresaAtivaId] = useState<string>('');
+
+  const planosFinanceiros = useMemo(
+    () =>
+      empresaAtivaId
+        ? planosFinanceirosTodos.filter(
+            (plano: any) =>
+              String(plano.empresaId || '') ===
+              String(empresaAtivaId)
+          )
+        : [],
+    [planosFinanceirosTodos, empresaAtivaId]
+  );
+
+  const processos = useMemo(
+    () =>
+      empresaAtivaId
+        ? processosTodos.filter(
+            (processo: any) =>
+              String(processo.empresaId || '') ===
+              String(empresaAtivaId)
+          )
+        : [],
+    [processosTodos, empresaAtivaId]
+  );
+
+  const centrosCustos = useMemo(() => {
+    if (!empresaAtivaId) return [];
+
+    const planosIds = new Set(
+      planosFinanceiros.map((plano: any) =>
+        String(plano.id)
+      )
+    );
+
+    return centrosCustosTodos.filter(
+      (centro: any) => {
+        const empresaDoCentro = String(
+          centro.empresaId || ''
+        );
+
+        if (empresaDoCentro) {
+          return (
+            empresaDoCentro ===
+            String(empresaAtivaId)
+          );
+        }
+
+        return planosIds.has(
+          String(
+            centro.planoFinanceiroId || ''
+          )
+        );
+      }
+    );
+  }, [
+    centrosCustosTodos,
+    planosFinanceiros,
+    empresaAtivaId,
+  ]);
 
   const setOrganizacaoAtivaId = useCallback((id: string) => {
     setOrganizacaoAtivaIdState(id);
@@ -285,9 +344,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       setEmpresas(dados.empresas);
       setFornecedores(dados.fornecedores);
-      setPlanosFinanceiros(dados.planosFinanceiros);
-      setCentrosCustos(dados.centrosCustos);
-      setProcessos(dados.processos);
+      setPlanosFinanceirosTodos(dados.planosFinanceiros);
+      setCentrosCustosTodos(dados.centrosCustos);
+      setProcessosTodos(dados.processos);
       setAlertas(dados.alertas);
 
       setEmpresaAtivaId(atual => {
@@ -325,9 +384,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setOrganizacaoAtivaIdState('');
         setEmpresas([]);
         setFornecedores([]);
-        setPlanosFinanceiros([]);
-        setCentrosCustos([]);
-        setProcessos([]);
+        setPlanosFinanceirosTodos([]);
+        setCentrosCustosTodos([]);
+        setProcessosTodos([]);
         setAlertas([]);
         setEmpresaAtivaId('');
         setLoadingFinanceiro(false);
@@ -529,7 +588,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       const criado = await financeService.criarProcesso(novoProcesso);
 
-      setProcessos(prev => [criado, ...prev]);
+      setProcessosTodos(prev => [criado, ...prev]);
 
       const novoAlerta = await financeService.criarAlerta({
         organizacaoId: organizacaoAtivaIdState,
@@ -651,7 +710,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       novaConta
     );
 
-    setProcessos(prev => [criada, ...prev]);
+    setProcessosTodos(prev => [criada, ...prev]);
 
     return criada;
   };
@@ -669,7 +728,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       const salvo = await financeService.editarProcesso(id, atualizado);
 
-      setProcessos(prev =>
+      setProcessosTodos(prev =>
         prev.map(processo => (processo.id === id ? { ...processo, ...salvo } : processo))
       );
     } catch (error: any) {
@@ -682,7 +741,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       await financeService.excluirProcesso(id, organizacaoAtivaIdState);
 
-      setProcessos(prev => prev.filter(processo => processo.id !== id));
+      setProcessosTodos(prev => prev.filter(processo => processo.id !== id));
       setAlertas(prev => prev.filter(alerta => alerta.processoId !== id));
 
       if (activeProcessId === id) {
@@ -735,7 +794,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
       }
 
-      setProcessos(prev => prev.map(p => (p.id === id ? atualizado : p)));
+      setProcessosTodos(prev => prev.map(p => (p.id === id ? atualizado : p)));
 
       let alertaTipo: 'sucesso' | 'urgente' | 'info' | 'alerta' = 'info';
       let titulo = '';
@@ -823,7 +882,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
       }
 
-      setProcessos(prev => prev.map(p => (p.id === id ? atualizado : p)));
+      setProcessosTodos(prev => prev.map(p => (p.id === id ? atualizado : p)));
     } catch (error: any) {
       console.error('Erro ao programar pagamento:', error);
       alert(error.message || 'Erro ao programar pagamento.');
@@ -999,7 +1058,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
       }
 
-      setProcessos(prev =>
+      setProcessosTodos(prev =>
         prev.map(processo =>
           processo.id === id
             ? {
@@ -1239,7 +1298,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         organizacaoId: organizacaoAtivaIdState,
       });
 
-      setPlanosFinanceiros(prev => [...prev, novo]);
+      setPlanosFinanceirosTodos(prev => [...prev, novo]);
       return novo;
     } catch (error: any) {
       console.error('Erro ao cadastrar plano:', error);
@@ -1258,7 +1317,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         organizacaoId: organizacaoAtivaIdState,
       });
 
-      setPlanosFinanceiros(prev =>
+      setPlanosFinanceirosTodos(prev =>
         prev.map(p => (p.id === id ? atualizado : p))
       );
     } catch (error: any) {
@@ -1280,7 +1339,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     try {
       await financeService.excluirPlanoFinanceiro(id, organizacaoAtivaIdState);
-      setPlanosFinanceiros(prev => prev.filter(p => p.id !== id));
+      setPlanosFinanceirosTodos(prev => prev.filter(p => p.id !== id));
       return true;
     } catch (error: any) {
       console.error('Erro ao excluir plano:', error);
@@ -1294,7 +1353,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   ) => {
     try {
       const novo = await financeService.criarCentroCusto(dados);
-      setCentrosCustos(prev => [...prev, novo]);
+      setCentrosCustosTodos(prev => [...prev, novo]);
     } catch (error: any) {
       console.error('Erro ao cadastrar centro de custo:', error);
       alert(error.message || 'Erro ao cadastrar centro de custo.');
@@ -1307,7 +1366,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   ) => {
     try {
       const atualizado = await financeService.editarCentroCusto(id, dados);
-      setCentrosCustos(prev =>
+      setCentrosCustosTodos(prev =>
         prev.map(c => (c.id === id ? atualizado : c))
       );
     } catch (error: any) {
@@ -1324,7 +1383,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     try {
       await financeService.excluirCentroCusto(id);
-      setCentrosCustos(prev => prev.filter(c => c.id !== id));
+      setCentrosCustosTodos(prev => prev.filter(c => c.id !== id));
       return true;
     } catch (error: any) {
       console.error('Erro ao excluir centro de custo:', error);
