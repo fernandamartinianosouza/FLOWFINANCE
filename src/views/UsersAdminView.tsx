@@ -5,6 +5,8 @@ import React, {
 } from 'react';
 
 import {
+  Building2,
+  Check,
   CheckCircle2,
   Mail,
   RefreshCw,
@@ -16,6 +18,7 @@ import {
 } from 'lucide-react';
 
 import { useFinance } from '../context/FinanceContext';
+import { supabase } from '../lib/supabase';
 
 import {
   ConviteOrganizacao,
@@ -40,6 +43,7 @@ export const UsersAdminView: React.FC =
       organizacaoAtivaId,
       perfilOrganizacaoAtiva,
       organizacoes,
+      empresas,
     } = useFinance();
 
     const [usuarios, setUsuarios] =
@@ -67,6 +71,18 @@ export const UsersAdminView: React.FC =
 
     const [erro, setErro] =
       useState<string | null>(null);
+
+    const [usuarioEmpresas, setUsuarioEmpresas] =
+      useState<UsuarioOrganizacaoAdmin | null>(null);
+
+    const [empresasSelecionadas, setEmpresasSelecionadas] =
+      useState<string[]>([]);
+
+    const [carregandoEmpresas, setCarregandoEmpresas] =
+      useState(false);
+
+    const [salvandoEmpresas, setSalvandoEmpresas] =
+      useState(false);
 
     const organizacao =
       organizacoes.find(
@@ -218,6 +234,102 @@ export const UsersAdminView: React.FC =
         setSalvandoId(null);
       }
     };
+
+    const abrirEmpresasUsuario = async (
+      usuario: UsuarioOrganizacaoAdmin
+    ) => {
+      if (!organizacaoAtivaId) return;
+
+      try {
+        setUsuarioEmpresas(usuario);
+        setEmpresasSelecionadas([]);
+        setCarregandoEmpresas(true);
+        setErro(null);
+
+        const { data, error } = await supabase.rpc(
+          'listar_empresas_usuario',
+          {
+            p_user_id: usuario.userId,
+            p_organizacao_id:
+              organizacaoAtivaId,
+          }
+        );
+
+        if (error) throw error;
+
+        setEmpresasSelecionadas(
+          (data ?? [])
+            .filter(
+              (item: any) =>
+                item.ativo !== false
+            )
+            .map((item: any) =>
+              String(item.empresa_id)
+            )
+        );
+      } catch (error: any) {
+        setErro(
+          error?.message ||
+            'Erro ao carregar empresas do usuário.'
+        );
+      } finally {
+        setCarregandoEmpresas(false);
+      }
+    };
+
+    const alternarEmpresa = (
+      empresaId: string
+    ) => {
+      setEmpresasSelecionadas(prev =>
+        prev.includes(empresaId)
+          ? prev.filter(
+              id => id !== empresaId
+            )
+          : [...prev, empresaId]
+      );
+    };
+
+    const salvarEmpresasUsuario =
+      async () => {
+        if (
+          !usuarioEmpresas ||
+          !organizacaoAtivaId
+        ) {
+          return;
+        }
+
+        try {
+          setSalvandoEmpresas(true);
+          setErro(null);
+
+          const { error } = await supabase.rpc(
+            'definir_empresas_usuario',
+            {
+              p_user_id:
+                usuarioEmpresas.userId,
+              p_organizacao_id:
+                organizacaoAtivaId,
+              p_empresa_ids:
+                empresasSelecionadas,
+            }
+          );
+
+          if (error) throw error;
+
+          setUsuarioEmpresas(null);
+
+          alert(
+            'Empresas liberadas atualizadas com sucesso.'
+          );
+        } catch (error: any) {
+          setErro(
+            error?.message ||
+              'Erro ao salvar empresas do usuário.'
+          );
+        } finally {
+          setSalvandoEmpresas(false);
+        }
+      };
 
     if (
       perfilOrganizacaoAtiva !==
@@ -388,7 +500,7 @@ export const UsersAdminView: React.FC =
             {usuarios.map(usuario => (
               <div
                 key={usuario.id}
-                className="grid gap-4 p-5 md:grid-cols-[1fr_210px_150px] md:items-center"
+                className="grid gap-4 p-5 md:grid-cols-[1fr_210px_150px_150px] md:items-center"
               >
                 <div className="flex items-start gap-3">
                   <div
@@ -457,6 +569,22 @@ export const UsersAdminView: React.FC =
                     )
                   )}
                 </select>
+
+                <button
+                  type="button"
+                  disabled={
+                    salvandoId === usuario.id
+                  }
+                  onClick={() =>
+                    abrirEmpresasUsuario(
+                      usuario
+                    )
+                  }
+                  className="flex items-center justify-center gap-2 rounded-xl border border-blue-200 px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                >
+                  <Building2 size={16} />
+                  Empresas
+                </button>
 
                 <button
                   type="button"
@@ -585,6 +713,190 @@ export const UsersAdminView: React.FC =
               )}
           </div>
         </section>
+
+        {usuarioEmpresas && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-4"
+            onMouseDown={event => {
+              if (
+                event.target ===
+                  event.currentTarget &&
+                !salvandoEmpresas
+              ) {
+                setUsuarioEmpresas(null);
+              }
+            }}
+          >
+            <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between border-b p-5">
+                <div>
+                  <h3 className="font-bold text-slate-900">
+                    Empresas com acesso
+                  </h3>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    {usuarioEmpresas.nome}
+                  </p>
+
+                  <p className="text-xs text-slate-400">
+                    {usuarioEmpresas.email}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={salvandoEmpresas}
+                  onClick={() =>
+                    setUsuarioEmpresas(null)
+                  }
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 disabled:opacity-40"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              <div className="p-5">
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={
+                      carregandoEmpresas ||
+                      empresas.length === 0
+                    }
+                    onClick={() =>
+                      setEmpresasSelecionadas(
+                        empresas.map(item =>
+                          String(item.id)
+                        )
+                      )
+                    }
+                    className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+                  >
+                    Marcar todas
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={
+                      carregandoEmpresas ||
+                      empresasSelecionadas.length ===
+                        0
+                    }
+                    onClick={() =>
+                      setEmpresasSelecionadas([])
+                    }
+                    className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-40"
+                  >
+                    Limpar
+                  </button>
+
+                  <span className="ml-auto text-xs font-semibold text-slate-400">
+                    {empresasSelecionadas.length} de{' '}
+                    {empresas.length}
+                  </span>
+                </div>
+
+                <div className="max-h-[360px] overflow-y-auto rounded-xl border">
+                  {carregandoEmpresas ? (
+                    <div className="p-8 text-center text-sm text-slate-500">
+                      Carregando empresas...
+                    </div>
+                  ) : empresas.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-slate-500">
+                      Nenhuma empresa cadastrada.
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {empresas.map(empresa => {
+                        const marcada =
+                          empresasSelecionadas.includes(
+                            String(empresa.id)
+                          );
+
+                        return (
+                          <button
+                            key={empresa.id}
+                            type="button"
+                            onClick={() =>
+                              alternarEmpresa(
+                                String(
+                                  empresa.id
+                                )
+                              )
+                            }
+                            className={`flex w-full items-center gap-3 p-4 text-left transition ${
+                              marcada
+                                ? 'bg-blue-50'
+                                : 'bg-white hover:bg-slate-50'
+                            }`}
+                          >
+                            <span
+                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                                marcada
+                                  ? 'border-blue-600 bg-blue-600 text-white'
+                                  : 'border-slate-300 bg-white text-transparent'
+                              }`}
+                            >
+                              <Check size={14} />
+                            </span>
+
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-slate-800">
+                                {empresa.nome}
+                              </span>
+
+                              <span className="mt-0.5 block text-xs text-slate-400">
+                                {marcada
+                                  ? 'Acesso liberado'
+                                  : 'Sem acesso'}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {empresasSelecionadas.length ===
+                  0 && (
+                  <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                    Nenhuma empresa selecionada. Este login não terá acesso aos dados de nenhuma empresa.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 border-t bg-slate-50 p-4">
+                <button
+                  type="button"
+                  disabled={salvandoEmpresas}
+                  onClick={() =>
+                    setUsuarioEmpresas(null)
+                  }
+                  className="rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 disabled:opacity-40"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    salvandoEmpresas ||
+                    carregandoEmpresas
+                  }
+                  onClick={
+                    salvarEmpresasUsuario
+                  }
+                  className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  {salvandoEmpresas
+                    ? 'Salvando...'
+                    : 'Salvar empresas'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
