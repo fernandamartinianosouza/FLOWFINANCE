@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useFinance } from '../context/FinanceContext';
+import { usePermissions } from '../context/PermissionsContext';
 import { formatarReal } from '../utils';
 import {
   Area,
@@ -17,6 +18,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   CheckCircle2,
+  Clock3,
   Download,
   FileSpreadsheet,
   FileText,
@@ -33,6 +35,7 @@ import {
 import {
   ContaReceber,
   ContaReceberDocumento,
+  ContaReceberHistorico,
   faturamentoImportService,
   LinhaFaturamentoPreview,
 } from '../services/faturamentoImportService';
@@ -76,6 +79,7 @@ const normalizarDataIso = (data?: string | null) => {
 };
 
 export const CashFlowView: React.FC = () => {
+  const { temPermissao } = usePermissions();
   const {
     empresas,
     processos,
@@ -94,6 +98,8 @@ export const CashFlowView: React.FC = () => {
   const [erro, setErro] = useState('');
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('todos');
+  const [encargosFiltro, setEncargosFiltro] =
+    useState<'todos' | 'com_encargos' | 'sem_encargos'>('todos');
   const [inicioFiltro, setInicioFiltro] = useState('');
   const [fimFiltro, setFimFiltro] = useState('');
   const [paginaContas, setPaginaContas] = useState(1);
@@ -125,6 +131,8 @@ export const CashFlowView: React.FC = () => {
   const [contaBaixa, setContaBaixa] = useState<ContaReceber | null>(null);
   const [baixa, setBaixa] = useState({
     valor: '',
+    juros: '0',
+    multa: '0',
     data: hojeIso(),
     forma: 'transferencia',
   });
@@ -163,6 +171,13 @@ export const CashFlowView: React.FC = () => {
     excluindoDocumentoContaReceberId,
     setExcluindoDocumentoContaReceberId,
   ] = useState<string | null>(null);
+
+  const [historicoContaReceber, setHistoricoContaReceber] =
+    useState<ContaReceberHistorico[]>([]);
+  const [
+    carregandoHistoricoContaReceber,
+    setCarregandoHistoricoContaReceber,
+  ] = useState(false);
 
   const carregar = async () => {
     if (!organizacaoAtivaId || !empresaAtivaId) {
@@ -226,7 +241,18 @@ export const CashFlowView: React.FC = () => {
         conta.clienteDocumento.toLowerCase().includes(termo);
 
       const correspondeStatus =
-        statusFiltro === 'todos' || conta.statusVisual === statusFiltro;
+        statusFiltro === 'todos' ||
+        conta.statusVisual === statusFiltro;
+
+      const possuiEncargos =
+        Number(conta.jurosRecebidos || 0) > 0.001 ||
+        Number(conta.multaRecebida || 0) > 0.001;
+
+      const correspondeEncargos =
+        encargosFiltro === 'todos' ||
+        (encargosFiltro === 'com_encargos'
+          ? possuiEncargos
+          : !possuiEncargos);
 
       const correspondeInicio =
         !inicioFiltro ||
@@ -235,13 +261,33 @@ export const CashFlowView: React.FC = () => {
       const correspondeFim =
         !fimFiltro || Boolean(conta.dataVencimento && conta.dataVencimento <= fimFiltro);
 
-      return correspondeBusca && correspondeStatus && correspondeInicio && correspondeFim;
+      return (
+        correspondeBusca &&
+        correspondeStatus &&
+        correspondeEncargos &&
+        correspondeInicio &&
+        correspondeFim
+      );
     });
-  }, [contasComStatusCalculado, busca, statusFiltro, inicioFiltro, fimFiltro]);
+  }, [
+    contasComStatusCalculado,
+    busca,
+    statusFiltro,
+    encargosFiltro,
+    inicioFiltro,
+    fimFiltro,
+  ]);
 
   useEffect(() => {
     setPaginaContas(1);
-  }, [busca, statusFiltro, inicioFiltro, fimFiltro, empresaAtivaId]);
+  }, [
+    busca,
+    statusFiltro,
+    encargosFiltro,
+    inicioFiltro,
+    fimFiltro,
+    empresaAtivaId,
+  ]);
 
   /**
    * RESUMO DA ABA CONTAS A RECEBER
@@ -354,6 +400,7 @@ export const CashFlowView: React.FC = () => {
   const limparFiltrosContas = () => {
     setBusca('');
     setStatusFiltro('todos');
+    setEncargosFiltro('todos');
     setInicioFiltro('');
     setFimFiltro('');
   };
@@ -376,7 +423,10 @@ export const CashFlowView: React.FC = () => {
       )
       .reduce(
         (sum, c) =>
-          sum + Number(c.valorRecebido || 0),
+          sum +
+          Number(c.valorRecebido || 0) +
+          Number(c.jurosRecebidos || 0) +
+          Number(c.multaRecebida || 0),
         0
       ),
   [contas]
@@ -442,71 +492,240 @@ export const CashFlowView: React.FC = () => {
   }, [contas, processos, empresaAtivaId, saldoAtual]);
 
   const conciliacaoCompleta = useMemo<LinhaConciliacaoPeriodo[]>(() => {
-    const mapa = new Map<string, { receber: number; pagar: number }>();
+    const receberPorData = new Map<string, number>();
+    const pagarPorData = new Map<string, number>();
+
+    const adicionarDiasIso = (
+      dataIso: string,
+      dias: number
+    ) => {
+      const [ano, mes, dia] = dataIso
+        .split('-')
+        .map(Number);
+
+      const data = new Date(
+        ano,
+        mes - 1,
+        dia
+      );
+
+      data.setDate(
+        data.getDate() + dias
+      );
+
+      return [
+        data.getFullYear(),
+        String(
+          data.getMonth() + 1
+        ).padStart(2, '0'),
+        String(
+          data.getDate()
+        ).padStart(2, '0'),
+      ].join('-');
+    };
+
+    /*
+     * DISPONIBILIDADE DE CAIXA
+     *
+     * O valor recebido em D-1 é o recurso disponível
+     * para pagar as contas de D.
+     *
+     * Exemplo:
+     * Receber de 13/08 -> disponível em 14/08
+     * Pagar de 14/08   -> comparado na linha 14/08
+     */
 
     // CONTAS A RECEBER:
-    // considera apenas o saldo ainda não recebido na data de vencimento.
+    // considera somente o saldo ainda não recebido,
+    // na data de vencimento original.
     contas
       .filter(conta => {
-        const saldo = Number(conta.saldo || 0);
+        const saldo = Number(
+          conta.saldo || 0
+        );
+
         return (
-          !['recebido', 'cancelado'].includes(String(conta.status)) &&
+          !['recebido', 'cancelado'].includes(
+            String(conta.status)
+          ) &&
           saldo > 0.001 &&
           Boolean(conta.dataVencimento)
         );
       })
       .forEach(conta => {
-        const data = normalizarDataIso(conta.dataVencimento);
-        if (!data) return;
+        const dataReceber =
+          normalizarDataIso(
+            conta.dataVencimento
+          );
 
-        const atual = mapa.get(data) || { receber: 0, pagar: 0 };
-        atual.receber += Number(conta.saldo || 0);
-        mapa.set(data, atual);
+        if (!dataReceber) return;
+
+        receberPorData.set(
+          dataReceber,
+          (
+            receberPorData.get(
+              dataReceber
+            ) || 0
+          ) +
+            Number(
+              conta.saldo || 0
+            )
+        );
       });
 
     // CONTAS A PAGAR:
-    // replica a regra da tela Contas a Pagar. Uma conta é realmente elegível
-    // quando está em pagamento/conciliacao/finalizado e ainda possui saldo.
+    // considera o saldo ainda não pago,
+    // usando a data programada quando existir;
+    // caso contrário, usa o vencimento.
     processos
       .filter((processo: any) => {
-        if (String(processo.empresaId) !== String(empresaAtivaId)) return false;
+        if (
+          String(
+            processo.empresaId
+          ) !==
+          String(
+            empresaAtivaId
+          )
+        ) {
+          return false;
+        }
 
-        const status = String(processo.status || '');
-        if (!['pagamento', 'conciliacao', 'finalizado'].includes(status)) return false;
+        const status = String(
+          processo.status || ''
+        );
 
-        const valor = Number(processo.valor || 0);
-        const valorPago = Number(processo.valorPago || 0);
-        const saldo = Math.max(valor - valorPago, 0);
+        if (
+          ![
+            'pagamento',
+            'conciliacao',
+            'finalizado',
+          ].includes(status)
+        ) {
+          return false;
+        }
+
+        const valor = Number(
+          processo.valor || 0
+        );
+
+        const valorPago = Number(
+          processo.valorPago || 0
+        );
+
+        const saldo = Math.max(
+          valor - valorPago,
+          0
+        );
 
         const contaPaga =
-          saldo <= 0.001 || ['conciliacao', 'finalizado'].includes(status);
+          saldo <= 0.001 ||
+          [
+            'conciliacao',
+            'finalizado',
+          ].includes(status);
 
-        return !contaPaga && saldo > 0.001;
+        return (
+          !contaPaga &&
+          saldo > 0.001
+        );
       })
       .forEach((processo: any) => {
-        const data = normalizarDataIso(
-          processo.dataProgramadaPagamento || processo.prazo || processo.vencimento
+        const dataPagar =
+          normalizarDataIso(
+            processo
+              .dataProgramadaPagamento ||
+              processo.prazo ||
+              processo.vencimento
+          );
+
+        if (!dataPagar) return;
+
+        const valor = Number(
+          processo.valor || 0
         );
-        if (!data) return;
 
-        const valor = Number(processo.valor || 0);
-        const valorPago = Number(processo.valorPago || 0);
-        const saldo = Math.max(valor - valorPago, 0);
+        const valorPago = Number(
+          processo.valorPago || 0
+        );
 
-        const atual = mapa.get(data) || { receber: 0, pagar: 0 };
-        atual.pagar += saldo;
-        mapa.set(data, atual);
+        const saldo = Math.max(
+          valor - valorPago,
+          0
+        );
+
+        pagarPorData.set(
+          dataPagar,
+          (
+            pagarPorData.get(
+              dataPagar
+            ) || 0
+          ) + saldo
+        );
       });
 
-    return Array.from(mapa.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([data, valores]) => ({
-        data,
-        receber: valores.receber,
-        pagar: valores.pagar,
-        resultado: valores.receber - valores.pagar,
-      }));
-  }, [contas, processos, empresaAtivaId]);
+    /*
+     * Datas exibidas:
+     * - todo dia que tenha valor a pagar;
+     * - todo dia seguinte a um recebimento.
+     *
+     * Assim, um recebimento de 13/08 gera disponibilidade
+     * na linha de 14/08, mesmo que 14/08 não tenha recebimento próprio.
+     */
+    const datas = new Set<string>();
+
+    pagarPorData.forEach(
+      (_, data) => {
+        datas.add(data);
+      }
+    );
+
+    receberPorData.forEach(
+      (_, dataReceber) => {
+        datas.add(
+          adicionarDiasIso(
+            dataReceber,
+            1
+          )
+        );
+      }
+    );
+
+    return Array.from(datas)
+      .sort((a, b) =>
+        a.localeCompare(b)
+      )
+      .map(dataAtual => {
+        const dataAnterior =
+          adicionarDiasIso(
+            dataAtual,
+            -1
+          );
+
+        const receber =
+          receberPorData.get(
+            dataAnterior
+          ) || 0;
+
+        const pagar =
+          pagarPorData.get(
+            dataAtual
+          ) || 0;
+
+        return {
+          data: dataAtual,
+          dataReceber:
+            dataAnterior,
+          receber,
+          pagar,
+          resultado:
+            receber - pagar,
+        };
+      });
+  }, [
+    contas,
+    processos,
+    empresaAtivaId,
+  ]);
 
   const conciliacaoFiltrada = useMemo(() => {
     return conciliacaoCompleta.filter(linha => {
@@ -606,6 +825,7 @@ export const CashFlowView: React.FC = () => {
   };
 
   const confirmarImportacao = async () => {
+    if (!temPermissao('contas_receber', 'importar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!organizacaoAtivaId || !empresaAtivaId) return;
 
     setImportando(true);
@@ -671,12 +891,42 @@ export const CashFlowView: React.FC = () => {
   };
 
   const confirmarBaixa = async (event: React.FormEvent) => {
+    if (!temPermissao('contas_receber', 'receber')) { alert('Você não tem permissão para esta ação.'); return; }
     event.preventDefault();
     if (!contaBaixa) return;
 
-    const valor = Number(baixa.valor.replace(',', '.'));
-    if (!Number.isFinite(valor) || valor <= 0 || valor > contaBaixa.saldo) {
-      alert(`Informe um valor entre R$ 0,01 e ${formatarReal(contaBaixa.saldo)}.`);
+    const valor = Number(
+      baixa.valor.replace(',', '.')
+    );
+    const juros = Number(
+      baixa.juros.replace(',', '.')
+    );
+    const multa = Number(
+      baixa.multa.replace(',', '.')
+    );
+
+    if (
+      !Number.isFinite(valor) ||
+      valor <= 0 ||
+      valor > contaBaixa.saldo
+    ) {
+      alert(
+        `Informe um valor entre R$ 0,01 e ${formatarReal(
+          contaBaixa.saldo
+        )}.`
+      );
+      return;
+    }
+
+    if (
+      !Number.isFinite(juros) ||
+      juros < 0 ||
+      !Number.isFinite(multa) ||
+      multa < 0
+    ) {
+      alert(
+        'Juros e multa precisam ser valores iguais ou maiores que zero.'
+      );
       return;
     }
 
@@ -685,10 +935,18 @@ export const CashFlowView: React.FC = () => {
         contaBaixa,
         valor,
         baixa.data,
-        baixa.forma
+        baixa.forma,
+        juros,
+        multa
       );
       setContaBaixa(null);
-      setBaixa({ valor: '', data: hojeIso(), forma: 'transferencia' });
+      setBaixa({
+        valor: '',
+        juros: '0',
+        multa: '0',
+        data: hojeIso(),
+        forma: 'transferencia',
+      });
       await carregar();
     } catch (error: any) {
       console.error(error);
@@ -733,6 +991,7 @@ export const CashFlowView: React.FC = () => {
   };
 
   const excluirSelecionadas = async () => {
+    if (!temPermissao('contas_receber', 'excluir')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!contasSelecionadas.length) {
       alert('Selecione ao menos um título para excluir.');
       return;
@@ -802,6 +1061,110 @@ export const CashFlowView: React.FC = () => {
     }
   };
 
+
+  const carregarHistoricoContaReceber = async (
+    conta: ContaReceber
+  ) => {
+    try {
+      setCarregandoHistoricoContaReceber(true);
+      const historico =
+        await faturamentoImportService.listarHistoricoConta(
+          conta
+        );
+      setHistoricoContaReceber(historico);
+    } catch (error: any) {
+      console.error(
+        'Erro ao carregar histórico da conta a receber:',
+        error
+      );
+      setHistoricoContaReceber([]);
+    } finally {
+      setCarregandoHistoricoContaReceber(false);
+    }
+  };
+
+  const labelCampoHistorico = (campo: string) => {
+    const labels: Record<string, string> = {
+      cliente_nome: 'Cliente',
+      cliente_documento: 'CNPJ/CPF',
+      medicao: 'Medição',
+      numero_documento: 'Documento',
+      data_vencimento: 'Vencimento',
+      valor_original: 'Valor original',
+      observacao: 'Observação',
+      status: 'Status',
+      valor_recebido: 'Valor recebido',
+      juros_recebidos: 'Juros recebidos',
+      multa_recebida: 'Multa recebida',
+      data_recebimento: 'Data de recebimento',
+      forma_recebimento: 'Forma de recebimento',
+    };
+    return labels[campo] || campo;
+  };
+
+  const formatarValorHistoricoReceber = (
+    campo: string,
+    valor: string | null
+  ) => {
+    if (valor == null || valor === '') {
+      return 'Não informado';
+    }
+
+    if (
+      ['data_vencimento', 'data_recebimento'].includes(
+        campo
+      )
+    ) {
+      return formatarData(String(valor).slice(0, 10));
+    }
+
+    if (
+      [
+        'valor_original',
+        'valor_recebido',
+        'juros_recebidos',
+        'multa_recebida',
+      ].includes(campo)
+    ) {
+      return formatarReal(Number(valor || 0));
+    }
+
+    return String(valor);
+  };
+
+  const formatarDataHoraHistoricoReceber = (
+    valor?: string | null
+  ) => {
+    if (!valor) return 'Data não informada';
+    const data = new Date(valor);
+    if (Number.isNaN(data.getTime())) {
+      return String(valor);
+    }
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(data);
+  };
+
+  const vencimentoOriginalContaReceber = (
+    conta: ContaReceber
+  ) => {
+    const alteracoes = historicoContaReceber
+      .filter(
+        item => item.campo === 'data_vencimento'
+      )
+      .sort((a, b) =>
+        String(a.createdAt).localeCompare(
+          String(b.createdAt)
+        )
+      );
+
+    return (
+      alteracoes[0]?.valorAnterior ||
+      conta.dataVencimento
+    );
+  };
+
   const abrirDetalhesContaReceber = (
     conta: ContaReceber
   ) => {
@@ -811,7 +1174,9 @@ export const CashFlowView: React.FC = () => {
     );
     setEditandoContaDetalhes(false);
     setDocumentosContaReceber([]);
+    setHistoricoContaReceber([]);
     carregarDocumentosContaReceber(conta);
+    carregarHistoricoContaReceber(conta);
   };
 
   const fecharDetalhesContaReceber = () => {
@@ -828,6 +1193,7 @@ export const CashFlowView: React.FC = () => {
     setContaDetalhes(null);
     setEditandoContaDetalhes(false);
     setDocumentosContaReceber([]);
+    setHistoricoContaReceber([]);
 
     if (detalheArquivoRef.current) {
       detalheArquivoRef.current.value = '';
@@ -835,6 +1201,7 @@ export const CashFlowView: React.FC = () => {
   };
 
   const salvarContaReceberEditada = async () => {
+    if (!temPermissao('contas_receber', 'editar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!contaDetalhes) return;
 
     const valorOriginal = Number(
@@ -897,7 +1264,10 @@ export const CashFlowView: React.FC = () => {
       );
       setEditandoContaDetalhes(false);
 
-      await carregar();
+      await Promise.all([
+        carregar(),
+        carregarHistoricoContaReceber(atualizada),
+      ]);
 
       alert('Conta a receber atualizada com sucesso.');
     } catch (error: any) {
@@ -918,6 +1288,7 @@ export const CashFlowView: React.FC = () => {
   const anexarArquivoContaReceber = async (
     arquivo?: File
   ) => {
+    if (!temPermissao('contas_receber', 'anexar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!arquivo || !contaDetalhes) return;
 
     try {
@@ -955,6 +1326,7 @@ export const CashFlowView: React.FC = () => {
   const excluirArquivoContaReceber = async (
     documento: ContaReceberDocumento
   ) => {
+    if (!temPermissao('contas_receber', 'excluir_anexo')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!contaDetalhes) return;
 
     const confirmou = window.confirm(
@@ -996,6 +1368,7 @@ export const CashFlowView: React.FC = () => {
   };
 
   const excluirConta = async (conta: ContaReceber) => {
+    if (!temPermissao('contas_receber', 'excluir')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!window.confirm(`Excluir o título ${conta.numeroDocumento}?`)) return;
 
     try {
@@ -1026,6 +1399,8 @@ export const CashFlowView: React.FC = () => {
   };
 
   const exportarExcelAbaAtual = () => {
+    const moduloExportacao = aba === 'contas-receber' ? 'contas_receber' : aba === 'conciliacao' ? 'conciliacao' : 'dashboard';
+    if (!temPermissao(moduloExportacao as any, 'exportar')) { alert('Você não tem permissão para exportar.'); return; }
     try {
       const workbook = XLSX.utils.book_new();
 
@@ -1074,9 +1449,10 @@ export const CashFlowView: React.FC = () => {
         const previsao = conciliacao.map(
           linha => ({
             Data: formatarDataExcel(linha.data),
-            'A receber': linha.receber,
-            'A pagar': linha.pagar,
-            'Saldo do dia': linha.saldoDia,
+            'A receber (dia anterior)': linha.receber,
+            'Data do recebimento': (linha as any).dataReceber,
+            'A pagar (dia atual)': linha.pagar,
+            'Disponibilidade do dia': linha.saldoDia,
             'Saldo acumulado':
               linha.saldoAcumulado,
           })
@@ -1126,6 +1502,24 @@ export const CashFlowView: React.FC = () => {
             Recebido:
               Number(
                 conta.valorRecebido || 0
+              ),
+            Juros:
+              Number(
+                conta.jurosRecebidos || 0
+              ),
+            Multa:
+              Number(
+                conta.multaRecebida || 0
+              ),
+            'Total recebido com encargos':
+              Number(
+                conta.valorRecebido || 0
+              ) +
+              Number(
+                conta.jurosRecebidos || 0
+              ) +
+              Number(
+                conta.multaRecebida || 0
               ),
             Saldo:
               Number(conta.saldo || 0),
@@ -1184,7 +1578,7 @@ export const CashFlowView: React.FC = () => {
 
         const resumo = [
           {
-            Indicador: 'Total a receber',
+            Indicador: 'Total disponível de recebimentos do dia anterior',
             Valor: resumoConciliacao.receber,
           },
           {
@@ -1192,7 +1586,7 @@ export const CashFlowView: React.FC = () => {
             Valor: resumoConciliacao.pagar,
           },
           {
-            Indicador: 'Resultado',
+            Indicador: 'Disponibilidade líquida',
             Valor: resumoConciliacao.resultado,
           },
         ];
@@ -1486,7 +1880,11 @@ export const CashFlowView: React.FC = () => {
                 resumoContasReceber.titulosAbertos
               )}
               detalhe={
-                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                inicioFiltro ||
+                fimFiltro ||
+                busca ||
+                statusFiltro !== 'todos' ||
+                encargosFiltro !== 'todos'
                   ? 'Quantidade de contas pendentes nos filtros aplicados'
                   : 'Quantidade total de contas pendentes'
               }
@@ -1500,7 +1898,11 @@ export const CashFlowView: React.FC = () => {
                 resumoContasReceber.aVencer
               )}
               detalhe={
-                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                inicioFiltro ||
+                fimFiltro ||
+                busca ||
+                statusFiltro !== 'todos' ||
+                encargosFiltro !== 'todos'
                   ? 'Saldo a vencer nos filtros aplicados'
                   : 'Saldo total de títulos a vencer'
               }
@@ -1514,7 +1916,11 @@ export const CashFlowView: React.FC = () => {
                 resumoContasReceber.vencido
               )}
               detalhe={
-                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                inicioFiltro ||
+                fimFiltro ||
+                busca ||
+                statusFiltro !== 'todos' ||
+                encargosFiltro !== 'todos'
                   ? 'Saldo vencido nos filtros aplicados'
                   : 'Saldo total de títulos vencidos'
               }
@@ -1528,7 +1934,11 @@ export const CashFlowView: React.FC = () => {
                 resumoContasReceber.recebido
               )}
               detalhe={
-                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                inicioFiltro ||
+                fimFiltro ||
+                busca ||
+                statusFiltro !== 'todos' ||
+                encargosFiltro !== 'todos'
                   ? 'Recebido das contas dentro dos filtros'
                   : 'Valor total recebido'
               }
@@ -1542,7 +1952,11 @@ export const CashFlowView: React.FC = () => {
                 resumoContasReceber.saldoReceber
               )}
               detalhe={
-                inicioFiltro || fimFiltro || busca || statusFiltro !== 'todos'
+                inicioFiltro ||
+                fimFiltro ||
+                busca ||
+                statusFiltro !== 'todos' ||
+                encargosFiltro !== 'todos'
                   ? 'Saldo pendente nos filtros aplicados'
                   : 'Saldo total ainda não recebido'
               }
@@ -1571,7 +1985,7 @@ export const CashFlowView: React.FC = () => {
             </div>
 
             <div className="p-4 bg-slate-50/60 border-b border-slate-100">
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.4fr)_minmax(170px,.7fr)_minmax(155px,.65fr)_minmax(155px,.65fr)_auto] gap-3 items-end">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.25fr)_minmax(155px,.7fr)_minmax(155px,.7fr)_minmax(145px,.65fr)_minmax(145px,.65fr)_auto] gap-3 items-end">
                 <div>
                   <label className="text-[9px] font-bold uppercase tracking-wide text-slate-400 block mb-1.5">
                     Buscar
@@ -1602,6 +2016,32 @@ export const CashFlowView: React.FC = () => {
                     <option value="vencido">Vencido</option>
                     <option value="recebido_parcial">Recebido parcialmente</option>
                     <option value="recebido">Recebido</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-400 block mb-1.5">
+                    Encargos
+                  </label>
+                  <select
+                    value={encargosFiltro}
+                    onChange={e =>
+                      setEncargosFiltro(
+                        e.target.value as
+                          | 'todos'
+                          | 'com_encargos'
+                          | 'sem_encargos'
+                      )
+                    }
+                    className="w-full h-10 bg-white border border-slate-200 rounded-[12px] px-3 text-xs text-slate-700 outline-none focus:border-slate-400"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="com_encargos">
+                      Com juros ou multa
+                    </option>
+                    <option value="sem_encargos">
+                      Sem encargos
+                    </option>
                   </select>
                 </div>
 
@@ -1774,6 +2214,32 @@ export const CashFlowView: React.FC = () => {
                           {formatarReal(conta.valorRecebido)}
                         </td>
 
+                        <td className="px-4 py-4 text-right text-[11px] font-mono font-semibold text-amber-600 whitespace-nowrap">
+                          {formatarReal(
+                            conta.jurosRecebidos || 0
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 text-right text-[11px] font-mono font-semibold text-orange-600 whitespace-nowrap">
+                          {formatarReal(
+                            conta.multaRecebida || 0
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 text-right text-[11px] font-mono font-bold text-emerald-700 whitespace-nowrap">
+                          {formatarReal(
+                            Number(
+                              conta.valorRecebido || 0
+                            ) +
+                              Number(
+                                conta.jurosRecebidos || 0
+                              ) +
+                              Number(
+                                conta.multaRecebida || 0
+                              )
+                          )}
+                        </td>
+
                         <td className="px-4 py-4 text-right text-[11px] font-mono font-bold text-slate-900 whitespace-nowrap">
                           {formatarReal(conta.saldo)}
                         </td>
@@ -1803,6 +2269,8 @@ export const CashFlowView: React.FC = () => {
                                   setContaBaixa(conta);
                                   setBaixa({
                                     valor: conta.saldo.toFixed(2),
+                                    juros: '0',
+                                    multa: '0',
                                     data: hojeIso(),
                                     forma: 'transferencia',
                                   });
@@ -1960,21 +2428,21 @@ export const CashFlowView: React.FC = () => {
             <Kpi
               titulo="Total a receber"
               valor={formatarReal(resumoConciliacao.receber)}
-              detalhe="Saldo em aberto com vencimento no período"
+              detalhe="Recebimentos do dia anterior disponíveis para o período"
               icon={ArrowUpRight}
               destaque="emerald"
             />
             <Kpi
               titulo="Total a pagar"
               valor={formatarReal(resumoConciliacao.pagar)}
-              detalhe="Saldo de contas ainda não pagas no período"
+              detalhe="Contas a pagar na data atual do período"
               icon={ArrowDownRight}
               destaque="default"
             />
             <Kpi
               titulo="Resultado do período"
               valor={formatarReal(resumoConciliacao.resultado)}
-              detalhe="A receber menos a pagar, sem acumular dias anteriores"
+              detalhe="Disponibilidade do dia anterior menos pagamentos do dia atual"
               icon={TrendingUp}
               destaque={resumoConciliacao.resultado >= 0 ? 'emerald' : 'red'}
             />
@@ -1983,9 +2451,9 @@ export const CashFlowView: React.FC = () => {
           <div className="bg-white rounded-[18px] border border-slate-100 shadow-sm overflow-hidden">
             <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h2 className="text-sm font-bold text-[#0F172A]">Conciliação por vencimento</h2>
+                <h2 className="text-sm font-bold text-[#0F172A]">Conciliação por disponibilidade</h2>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Cada dia é calculado de forma independente: a receber menos a pagar.
+                  O valor a receber do dia anterior é comparado com o valor a pagar da data atual.
                 </p>
               </div>
 
@@ -2000,9 +2468,9 @@ export const CashFlowView: React.FC = () => {
                 <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
                   <tr>
                     <th className="px-5 py-3 text-left">Data</th>
-                    <th className="px-5 py-3 text-right">A receber</th>
-                    <th className="px-5 py-3 text-right">A pagar</th>
-                    <th className="px-5 py-3 text-right">Resultado do dia</th>
+                    <th className="px-5 py-3 text-right">A receber (dia anterior)</th>
+                    <th className="px-5 py-3 text-right">A pagar (dia atual)</th>
+                    <th className="px-5 py-3 text-right">Disponibilidade do dia</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -2021,8 +2489,15 @@ export const CashFlowView: React.FC = () => {
                         <td className="px-5 py-4 text-xs font-bold text-slate-700">
                           {formatarData(linha.data)}
                         </td>
-                        <td className="px-5 py-4 text-right text-xs font-mono font-semibold text-emerald-600">
-                          +{formatarReal(linha.receber)}
+                        <td className="px-5 py-4 text-right">
+                          <div className="text-xs font-mono font-semibold text-emerald-600">
+                            +{formatarReal(linha.receber)}
+                          </div>
+                          <div className="mt-0.5 text-[9px] font-medium text-slate-400">
+                            ref. {formatarData(
+                              (linha as any).dataReceber
+                            )}
+                          </div>
                         </td>
                         <td className="px-5 py-4 text-right text-xs font-mono font-semibold text-slate-700">
                           -{formatarReal(linha.pagar)}
@@ -2370,9 +2845,18 @@ export const CashFlowView: React.FC = () => {
                     }
                   />
                   <DetalheReceber
-                    label="Vencimento"
+                    label="Vencimento atual"
                     value={formatarData(
                       contaDetalhes.dataVencimento
+                    )}
+                    mono
+                  />
+                  <DetalheReceber
+                    label="Vencimento original"
+                    value={formatarData(
+                      vencimentoOriginalContaReceber(
+                        contaDetalhes
+                      )
                     )}
                     mono
                   />
@@ -2456,6 +2940,91 @@ export const CashFlowView: React.FC = () => {
                 </div>
               </>
             )}
+
+            <section className="rounded-[16px] border border-slate-100 bg-white p-4 shadow-sm">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Histórico de alterações
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Mudanças feitas na conta, com valor anterior, novo valor, usuário e data.
+                  </p>
+                </div>
+                <Clock3 className="h-4 w-4 shrink-0 text-slate-300" />
+              </div>
+
+              {carregandoHistoricoContaReceber ? (
+                <div className="flex items-center justify-center gap-2 rounded-[14px] bg-slate-50 px-4 py-6 text-[10px] text-slate-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando histórico...
+                </div>
+              ) : historicoContaReceber.length === 0 ? (
+                <div className="rounded-[14px] bg-slate-50 px-4 py-6 text-center">
+                  <p className="text-[10px] text-slate-400">
+                    Nenhuma alteração registrada para esta conta.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {historicoContaReceber.map(item => (
+                    <div
+                      key={item.id}
+                      className="rounded-[14px] border border-blue-100 bg-blue-50/40 p-3.5"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-700">
+                            {labelCampoHistorico(item.campo)}
+                          </p>
+                          <p className="mt-1 text-[9px] text-slate-400">
+                            Alterado por{' '}
+                            <span className="font-semibold text-slate-500">
+                              {item.usuarioNome}
+                            </span>
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-[9px] font-medium text-slate-400">
+                          {formatarDataHoraHistoricoReceber(
+                            item.createdAt
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                        <div className="rounded-xl bg-white px-3 py-2.5">
+                          <p className="text-[8px] font-bold uppercase text-slate-400">
+                            Antes
+                          </p>
+                          <p className="mt-1 break-words text-[10px] font-semibold text-slate-600">
+                            {formatarValorHistoricoReceber(
+                              item.campo,
+                              item.valorAnterior
+                            )}
+                          </p>
+                        </div>
+
+                        <span className="hidden text-center text-slate-300 sm:block">
+                          →
+                        </span>
+
+                        <div className="rounded-xl bg-white px-3 py-2.5">
+                          <p className="text-[8px] font-bold uppercase text-slate-400">
+                            Depois
+                          </p>
+                          <p className="mt-1 break-words text-[10px] font-semibold text-blue-700">
+                            {formatarValorHistoricoReceber(
+                              item.campo,
+                              item.valorNovo
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
 
             <section className="rounded-[16px] border border-slate-100 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2615,8 +3184,83 @@ export const CashFlowView: React.FC = () => {
                 {contaBaixa.numeroDocumento} · Saldo {formatarReal(contaBaixa.saldo)}
               </p>
             </div>
-            <Campo label="Valor recebido *" type="number" value={baixa.valor} onChange={valor => setBaixa(v => ({ ...v, valor }))} />
-            <Campo label="Data do recebimento *" type="date" value={baixa.data} onChange={valor => setBaixa(v => ({ ...v, data: valor }))} />
+            <Campo
+              label="Valor principal recebido *"
+              type="number"
+              value={baixa.valor}
+              onChange={valor =>
+                setBaixa(v => ({
+                  ...v,
+                  valor,
+                }))
+              }
+            />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Campo
+                label="Juros"
+                type="number"
+                value={baixa.juros}
+                onChange={valor =>
+                  setBaixa(v => ({
+                    ...v,
+                    juros: valor,
+                  }))
+                }
+              />
+
+              <Campo
+                label="Multa"
+                type="number"
+                value={baixa.multa}
+                onChange={valor =>
+                  setBaixa(v => ({
+                    ...v,
+                    multa: valor,
+                  }))
+                }
+              />
+            </div>
+
+            <div className="rounded-[14px] border border-emerald-100 bg-emerald-50 p-4">
+              <p className="text-[9px] font-bold uppercase text-emerald-600">
+                Total que entrará no caixa
+              </p>
+              <p className="mt-1 font-mono text-base font-bold text-emerald-700">
+                {formatarReal(
+                  Math.max(
+                    Number(
+                      baixa.valor.replace(',', '.')
+                    ) || 0,
+                    0
+                  ) +
+                    Math.max(
+                      Number(
+                        baixa.juros.replace(',', '.')
+                      ) || 0,
+                      0
+                    ) +
+                    Math.max(
+                      Number(
+                        baixa.multa.replace(',', '.')
+                      ) || 0,
+                      0
+                    )
+                )}
+              </p>
+            </div>
+
+            <Campo
+              label="Data do recebimento *"
+              type="date"
+              value={baixa.data}
+              onChange={valor =>
+                setBaixa(v => ({
+                  ...v,
+                  data: valor,
+                }))
+              }
+            />
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">Forma de recebimento</label>
               <select value={baixa.forma} onChange={e => setBaixa(v => ({ ...v, forma: e.target.value }))} className="w-full h-10 bg-slate-50 border-0 rounded-[12px] px-3 text-xs">

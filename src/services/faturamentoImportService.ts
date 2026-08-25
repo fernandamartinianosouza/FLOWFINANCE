@@ -20,6 +20,9 @@ export type ContaReceber = {
   dataVencimento: string | null;
   valorOriginal: number;
   valorRecebido: number;
+  jurosRecebidos: number;
+  multaRecebida: number;
+  totalRecebidoComEncargos: number;
   saldo: number;
   status: StatusContaReceber;
   dataRecebimento: string | null;
@@ -39,6 +42,19 @@ export type ContaReceberDocumento = {
   caminho: string;
   url: string;
   tipo: string | null;
+  createdAt: string;
+};
+
+export type ContaReceberHistorico = {
+  id: string;
+  contaReceberId: string;
+  organizacaoId: string;
+  empresaId: string;
+  campo: string;
+  valorAnterior: string | null;
+  valorNovo: string | null;
+  usuarioId: string | null;
+  usuarioNome: string;
   createdAt: string;
 };
 
@@ -132,6 +148,29 @@ const mapDocumentoContaReceber = (
   createdAt: row.created_at,
 });
 
+const mapHistoricoContaReceber = (
+  row: any
+): ContaReceberHistorico => ({
+  id: row.id,
+  contaReceberId: row.conta_receber_id,
+  organizacaoId: row.organizacao_id,
+  empresaId: row.empresa_id,
+  campo: row.campo,
+  valorAnterior:
+    row.valor_anterior == null
+      ? null
+      : String(row.valor_anterior),
+  valorNovo:
+    row.valor_novo == null
+      ? null
+      : String(row.valor_novo),
+  usuarioId: row.usuario_id ?? null,
+  usuarioNome:
+    row.usuario_nome ||
+    'Usuário não identificado',
+  createdAt: row.created_at,
+});
+
 const mapConta = (row: any): ContaReceber => ({
   id: row.id,
   organizacaoId: row.organizacao_id,
@@ -143,6 +182,12 @@ const mapConta = (row: any): ContaReceber => ({
   dataVencimento: row.data_vencimento,
   valorOriginal: Number(row.valor_original ?? 0),
   valorRecebido: Number(row.valor_recebido ?? 0),
+  jurosRecebidos: Number(row.juros_recebidos ?? 0),
+  multaRecebida: Number(row.multa_recebida ?? 0),
+  totalRecebidoComEncargos:
+    Number(row.valor_recebido ?? 0) +
+    Number(row.juros_recebidos ?? 0) +
+    Number(row.multa_recebida ?? 0),
   saldo: Number(row.saldo ?? 0),
   status: row.status,
   dataRecebimento: row.data_recebimento,
@@ -374,6 +419,8 @@ export const faturamentoImportService = {
       data_vencimento: l.dataVencimento || null,
       valor_original: Number(l.valorOriginal || 0),
       valor_recebido: 0,
+      juros_recebidos: 0,
+      multa_recebida: 0,
       status: 'previsto',
       origem: 'importacao_excel',
       lote_importacao_id: lote.id,
@@ -419,6 +466,8 @@ export const faturamentoImportService = {
         data_vencimento: dados.dataVencimento,
         valor_original: dados.valorOriginal,
         valor_recebido: 0,
+        juros_recebidos: 0,
+        multa_recebida: 0,
         status: 'previsto',
         origem: 'manual',
         observacao: dados.observacao?.trim() || null,
@@ -489,6 +538,25 @@ export const faturamentoImportService = {
     if (error) throw error;
 
     return mapConta(data);
+  },
+
+  async listarHistoricoConta(
+    conta: ContaReceber
+  ): Promise<ContaReceberHistorico[]> {
+    const { data, error } = await supabase
+      .from('contas_receber_historico')
+      .select('*')
+      .eq('conta_receber_id', conta.id)
+      .eq('organizacao_id', conta.organizacaoId)
+      .order('created_at', {
+        ascending: false,
+      });
+
+    if (error) throw error;
+
+    return (data ?? []).map(
+      mapHistoricoContaReceber
+    );
   },
 
   async listarDocumentosConta(
@@ -624,16 +692,38 @@ export const faturamentoImportService = {
     conta: ContaReceber,
     valor: number,
     dataRecebimento: string,
-    formaRecebimento: string
+    formaRecebimento: string,
+    juros = 0,
+    multa = 0
   ): Promise<ContaReceber> {
-    const novoRecebido = Math.min(conta.valorOriginal, conta.valorRecebido + valor);
+    const valorPrincipal = Number(valor || 0);
+    const valorJuros = Math.max(Number(juros || 0), 0);
+    const valorMulta = Math.max(Number(multa || 0), 0);
+
+    const novoRecebido = Math.min(
+      conta.valorOriginal,
+      conta.valorRecebido + valorPrincipal
+    );
+
+    const novosJuros =
+      Number(conta.jurosRecebidos || 0) +
+      valorJuros;
+
+    const novaMulta =
+      Number(conta.multaRecebida || 0) +
+      valorMulta;
+
     const novoStatus: StatusContaReceber =
-      novoRecebido >= conta.valorOriginal ? 'recebido' : 'recebido_parcial';
+      novoRecebido >= conta.valorOriginal
+        ? 'recebido'
+        : 'recebido_parcial';
 
     const { data, error } = await supabase
       .from('contas_receber')
       .update({
         valor_recebido: novoRecebido,
+        juros_recebidos: novosJuros,
+        multa_recebida: novaMulta,
         status: novoStatus,
         data_recebimento: dataRecebimento,
         forma_recebimento: formaRecebimento,
@@ -645,6 +735,7 @@ export const faturamentoImportService = {
       .single();
 
     if (error) throw error;
+
     return mapConta(data);
   },
 

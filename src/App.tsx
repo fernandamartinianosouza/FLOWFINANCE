@@ -35,6 +35,7 @@ import { AuthView } from './views/AuthView';
 
 import { useAuth } from './context/AuthContext';
 import { podeAcessar } from './config/permissions';
+import { PermissionsProvider } from './context/PermissionsContext';
 
 const verificarDefinicaoSenhaNaUrl = () => {
   const url = new URL(window.location.href);
@@ -299,7 +300,9 @@ const AppContent: React.FC = () => {
 export default function App() {
   return (
     <FinanceProvider>
-      <AppContent />
+      <PermissionsProvider>
+        <AppContent />
+      </PermissionsProvider>
     </FinanceProvider>
   );
 }

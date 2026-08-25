@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Mail,
   RefreshCw,
+  Settings2,
   ShieldCheck,
   UserCog,
   UserPlus,
@@ -26,6 +27,8 @@ import {
   PerfilOrganizacao,
   UsuarioOrganizacaoAdmin,
 } from '../services/organizacaoUsuariosService';
+import { MODULOS_PERMISSOES, ACAO_LABELS, permissoesPadraoPerfil, ModuloPermissao, AcaoPermissao } from '../config/actionPermissions';
+import { permissoesService, PermissaoUsuario } from '../services/permissoesService';
 
 const perfilLabels:
   Record<PerfilOrganizacao, string> = {
@@ -83,6 +86,11 @@ export const UsersAdminView: React.FC =
 
     const [salvandoEmpresas, setSalvandoEmpresas] =
       useState(false);
+
+    const [usuarioPermissoes, setUsuarioPermissoes] = useState<UsuarioOrganizacaoAdmin | null>(null);
+    const [permissoesSelecionadas, setPermissoesSelecionadas] = useState<PermissaoUsuario[]>([]);
+    const [carregandoPermissoes, setCarregandoPermissoes] = useState(false);
+    const [salvandoPermissoes, setSalvandoPermissoes] = useState(false);
 
     const organizacao =
       organizacoes.find(
@@ -331,6 +339,51 @@ export const UsersAdminView: React.FC =
         }
       };
 
+    const abrirPermissoesUsuario = async (usuario: UsuarioOrganizacaoAdmin) => {
+      if (!organizacaoAtivaId) return;
+      setUsuarioPermissoes(usuario);
+      setCarregandoPermissoes(true);
+      setErro(null);
+      try {
+        const atuais = await permissoesService.listar(organizacaoAtivaId, usuario.userId);
+        setPermissoesSelecionadas(atuais.length > 0 ? atuais : permissoesPadraoPerfil(usuario.perfil));
+      } catch (error: any) {
+        setErro(error?.message || 'Erro ao carregar permissões.');
+      } finally { setCarregandoPermissoes(false); }
+    };
+
+    const marcadaPermissao = (modulo: ModuloPermissao, acao: AcaoPermissao) =>
+      permissoesSelecionadas.some(p => p.modulo === modulo && p.acao === acao && p.permitido);
+
+    const alternarPermissao = (modulo: ModuloPermissao, acao: AcaoPermissao) => {
+      setPermissoesSelecionadas(prev => {
+        const existe = prev.some(p => p.modulo === modulo && p.acao === acao);
+        if (existe) return prev.filter(p => !(p.modulo === modulo && p.acao === acao));
+        return [...prev, { modulo, acao, permitido: true }];
+      });
+    };
+
+    const marcarTudoPermissoes = () => setPermissoesSelecionadas(
+      MODULOS_PERMISSOES.flatMap(m => m.acoes.map(acao => ({ modulo: m.id, acao, permitido: true })))
+    );
+
+    const somenteLeitura = () => setPermissoesSelecionadas(
+      MODULOS_PERMISSOES.map(m => ({ modulo: m.id, acao: 'visualizar' as AcaoPermissao, permitido: true }))
+    );
+
+    const salvarPermissoesUsuario = async () => {
+      if (!usuarioPermissoes || !organizacaoAtivaId) return;
+      try {
+        setSalvandoPermissoes(true);
+        setErro(null);
+        await permissoesService.salvar(organizacaoAtivaId, usuarioPermissoes.userId, permissoesSelecionadas);
+        setUsuarioPermissoes(null);
+        alert('Permissões atualizadas com sucesso.');
+      } catch (error: any) {
+        setErro(error?.message || 'Erro ao salvar permissões.');
+      } finally { setSalvandoPermissoes(false); }
+    };
+
     if (
       perfilOrganizacaoAtiva !==
       'admin'
@@ -500,7 +553,7 @@ export const UsersAdminView: React.FC =
             {usuarios.map(usuario => (
               <div
                 key={usuario.id}
-                className="grid gap-4 p-5 md:grid-cols-[1fr_210px_150px_150px] md:items-center"
+                className="grid gap-4 p-5 md:grid-cols-[1fr_190px_135px_145px_130px] md:items-center"
               >
                 <div className="flex items-start gap-3">
                   <div
@@ -584,6 +637,16 @@ export const UsersAdminView: React.FC =
                 >
                   <Building2 size={16} />
                   Empresas
+                </button>
+
+                <button
+                  type="button"
+                  disabled={salvandoId === usuario.id}
+                  onClick={() => abrirPermissoesUsuario(usuario)}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-violet-200 px-4 py-2.5 text-sm font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                >
+                  <Settings2 size={16} />
+                  Permissões
                 </button>
 
                 <button
@@ -713,6 +776,56 @@ export const UsersAdminView: React.FC =
               )}
           </div>
         </section>
+
+        {usuarioPermissoes && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/45 p-4">
+            <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between border-b p-5">
+                <div>
+                  <h3 className="font-bold text-slate-900">Permissões do usuário</h3>
+                  <p className="mt-1 text-sm text-slate-500">{usuarioPermissoes.nome} · {usuarioPermissoes.email}</p>
+                  {usuarioPermissoes.perfil === 'admin' && <p className="mt-2 text-xs font-semibold text-amber-600">Administradores sempre possuem acesso total.</p>}
+                </div>
+                <button type="button" onClick={() => setUsuarioPermissoes(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><XCircle size={20}/></button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-b bg-slate-50 px-5 py-3">
+                <button type="button" onClick={marcarTudoPermissoes} disabled={usuarioPermissoes.perfil === 'admin'} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Marcar tudo</button>
+                <button type="button" onClick={somenteLeitura} disabled={usuarioPermissoes.perfil === 'admin'} className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-40">Somente leitura</button>
+                <button type="button" onClick={() => setPermissoesSelecionadas([])} disabled={usuarioPermissoes.perfil === 'admin'} className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-red-600 disabled:opacity-40">Limpar</button>
+              </div>
+
+              <div className="overflow-y-auto p-5">
+                {carregandoPermissoes ? <div className="p-10 text-center text-sm text-slate-500">Carregando permissões...</div> : (
+                  <div className="space-y-4">
+                    {MODULOS_PERMISSOES.map(modulo => (
+                      <div key={modulo.id} className="rounded-xl border p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <p className="font-semibold text-slate-800">{modulo.label}</p>
+                          <span className="text-xs text-slate-400">{modulo.acoes.filter(a => marcadaPermissao(modulo.id,a)).length}/{modulo.acoes.length}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {modulo.acoes.map(acao => {
+                            const marcada = usuarioPermissoes.perfil === 'admin' || marcadaPermissao(modulo.id, acao);
+                            return <button key={acao} type="button" disabled={usuarioPermissoes.perfil === 'admin'} onClick={() => alternarPermissao(modulo.id, acao)} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${marcada ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+                              <span className={`flex h-4 w-4 items-center justify-center rounded border ${marcada ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent'}`}><Check size={11}/></span>
+                              {ACAO_LABELS[acao]}
+                            </button>;
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 border-t bg-slate-50 p-4">
+                <button type="button" onClick={() => setUsuarioPermissoes(null)} className="rounded-xl border bg-white px-4 py-2.5 text-sm font-semibold text-slate-600">Cancelar</button>
+                <button type="button" disabled={salvandoPermissoes || carregandoPermissoes || usuarioPermissoes.perfil === 'admin'} onClick={salvarPermissoesUsuario} className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{salvandoPermissoes ? 'Salvando...' : 'Salvar permissões'}</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {usuarioEmpresas && (
           <div

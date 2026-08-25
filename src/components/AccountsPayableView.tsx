@@ -14,6 +14,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useFinance } from '../context/FinanceContext';
+import { usePermissions } from '../context/PermissionsContext';
 import { formatarReal } from '../utils';
 import {
   AlertTriangle,
@@ -77,6 +78,7 @@ const diferencaDias = (data: string) => {
 };
 
 export const AccountsPayableView: React.FC = () => {
+  const { temPermissao } = usePermissions();
   const {
     organizacaoAtivaId,
     empresaAtivaId,
@@ -806,6 +808,7 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const confirmarExclusao = async () => {
+    if (!temPermissao('contas_pagar', 'excluir')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!processoExcluindo || excluindoConta) return;
 
     if (confirmacaoExclusao.trim().toUpperCase() !== 'EXCLUIR') {
@@ -875,6 +878,7 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const confirmarExclusaoMassa = async () => {
+    if (!temPermissao('contas_pagar', 'excluir')) { alert('Você não tem permissão para esta ação.'); return; }
     if (excluindoEmMassa) return;
 
     if (confirmacaoExclusaoMassa.trim().toUpperCase() !== 'EXCLUIR') {
@@ -984,6 +988,7 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const confirmarEstornoMassa = async () => {
+    if (!temPermissao('contas_pagar', 'estornar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (estornandoEmMassa) return;
 
     if (motivoEstornoMassa.trim().length < 5) {
@@ -1139,6 +1144,7 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const confirmarPagamentoMassa = async () => {
+    if (!temPermissao('contas_pagar', 'pagar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (pagandoEmMassa) return;
 
     if (confirmacaoPagamentoMassa.trim().toUpperCase() !== 'PAGAR') {
@@ -1246,6 +1252,7 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const exportarContasExcel = () => {
+    if (!temPermissao('contas_pagar', 'exportar')) { alert('Você não tem permissão para exportar.'); return; }
     if (contasFiltradas.length === 0) {
       alert(
         'Não há contas para exportar com os filtros atuais.'
@@ -1563,6 +1570,7 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const confirmarPagamento = async () => {
+    if (!temPermissao('contas_pagar', 'pagar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!processoPagando || salvandoPagamento) {
       return;
     }
@@ -1657,6 +1665,7 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const confirmarEstorno = async () => {
+    if (!temPermissao('contas_pagar', 'estornar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!processoEstornando || estornandoPagamento) return;
 
     if (!motivoEstorno.trim()) {
@@ -1821,6 +1830,7 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const salvarEdicaoDetalhes = async () => {
+    if (!temPermissao('contas_pagar', 'editar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!contaDetalhes) return;
 
     const valor = Number(
@@ -1912,9 +1922,118 @@ export const AccountsPayableView: React.FC = () => {
         dadosAtualizados
       );
 
+      const alteracoesLocais: string[] = [];
+
+      const compararLocal = (
+        label: string,
+        anterior: any,
+        novo: any,
+        formatador = (valor: any) =>
+          String(
+            valor ?? 'Não informado'
+          )
+      ) => {
+        const a =
+          anterior == null
+            ? ''
+            : String(anterior);
+        const n =
+          novo == null
+            ? ''
+            : String(novo);
+
+        if (a !== n) {
+          alteracoesLocais.push(
+            `${label}: ${formatador(
+              anterior
+            )} → ${formatador(novo)}`
+          );
+        }
+      };
+
+      const formatarDataLocal = (
+        valor: any
+      ) => {
+        const texto = String(
+          valor || ''
+        ).slice(0, 10);
+
+        if (!texto) {
+          return 'Não informado';
+        }
+
+        const [ano, mes, dia] =
+          texto.split('-');
+
+        return ano && mes && dia
+          ? `${dia}/${mes}/${ano}`
+          : texto;
+      };
+
+      const formatarValorLocal = (
+        valor: any
+      ) =>
+        Number(valor || 0).toLocaleString(
+          'pt-BR',
+          {
+            style: 'currency',
+            currency: 'BRL',
+          }
+        );
+
+      compararLocal(
+        'Vencimento',
+        contaDetalhes.prazo,
+        dadosAtualizados.prazo,
+        formatarDataLocal
+      );
+
+      compararLocal(
+        'Valor',
+        contaDetalhes.valor,
+        dadosAtualizados.valor,
+        formatarValorLocal
+      );
+
+      compararLocal(
+        'Descrição',
+        contaDetalhes.descricao,
+        dadosAtualizados.descricao
+      );
+
+      compararLocal(
+        'Observação',
+        contaDetalhes.observacao ??
+          contaDetalhes.observacoes,
+        dadosAtualizados.observacao
+      );
+
+      const historicoLocal =
+        alteracoesLocais.length > 0
+          ? [
+              ...(contaDetalhes.historico || []),
+              {
+                data: new Date()
+                  .toISOString()
+                  .replace('T', ' ')
+                  .slice(0, 16),
+                usuario: 'Usuário atual',
+                deStatus:
+                  contaDetalhes.status,
+                paraStatus:
+                  contaDetalhes.status,
+                observacao: [
+                  '[ALTERAÇÃO DE DADOS]',
+                  ...alteracoesLocais,
+                ].join('\n'),
+              },
+            ]
+          : contaDetalhes.historico || [];
+
       const contaAtualizada = {
         ...contaDetalhes,
         ...dadosAtualizados,
+        historico: historicoLocal,
       };
 
       setContaDetalhes(contaAtualizada);
@@ -1943,6 +2062,7 @@ export const AccountsPayableView: React.FC = () => {
   const anexarArquivoNaConta = async (
     arquivo?: File
   ) => {
+    if (!temPermissao('contas_pagar', 'anexar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!arquivo || !contaDetalhes) return;
 
     const processoDbId =
@@ -2030,6 +2150,7 @@ export const AccountsPayableView: React.FC = () => {
   const excluirAnexoConta = async (
     documento: any
   ) => {
+    if (!temPermissao('contas_pagar', 'excluir_anexo')) { alert('Você não tem permissão para esta ação.'); return; }
     const documentoId = String(
       documento?.id ?? ''
     ).trim();
@@ -2185,6 +2306,7 @@ export const AccountsPayableView: React.FC = () => {
     );
 
   const confirmarImportacaoContas = async () => {
+    if (!temPermissao('contas_pagar', 'importar')) { alert('Você não tem permissão para esta ação.'); return; }
     if (!empresaImportacaoId) {
       alert(
         'Selecione uma empresa antes de importar.'
@@ -4115,6 +4237,94 @@ export const AccountsPayableView: React.FC = () => {
               ''
           ).slice(0, 10);
 
+        const historicoDetalhes = [
+          ...(
+            contaDetalhes.historico ||
+            contaDetalhes.historicoProcessos ||
+            []
+          ),
+        ].sort((a: any, b: any) =>
+          String(b.data || b.createdAt || '')
+            .localeCompare(
+              String(
+                a.data ||
+                  a.createdAt ||
+                  ''
+              )
+            )
+        );
+
+        const formatarDataHoraHistorico = (
+          valor?: string
+        ) => {
+          const texto = String(
+            valor || ''
+          );
+
+          if (!texto) {
+            return 'Data não informada';
+          }
+
+          const data = texto
+            .replace('T', ' ')
+            .slice(0, 16);
+
+          const [
+            parteData,
+            parteHora,
+          ] = data.split(' ');
+
+          const [ano, mes, dia] =
+            String(
+              parteData || ''
+            ).split('-');
+
+          const dataBr =
+            ano && mes && dia
+              ? `${dia}/${mes}/${ano}`
+              : parteData;
+
+          return parteHora
+            ? `${dataBr} às ${parteHora}`
+            : dataBr;
+        };
+
+        const vencimentoAtualBR =
+          formatarDataBR(
+            vencimentoDetalhes
+          );
+
+        const historicoCronologico = [
+          ...historicoDetalhes,
+        ].reverse();
+
+        let vencimentoOriginalDetalhes =
+          vencimentoAtualBR;
+
+        for (
+          const item of
+          historicoCronologico
+        ) {
+          const observacao = String(
+            item.observacao || ''
+          );
+
+          const match =
+            observacao.match(
+              /Vencimento:\s*([^\n→]+?)\s*→/
+            );
+
+          if (match?.[1]) {
+            vencimentoOriginalDetalhes =
+              match[1].trim();
+            break;
+          }
+        }
+
+        const vencimentoFoiAlterado =
+          vencimentoOriginalDetalhes !==
+          vencimentoAtualBR;
+
         const campoClass =
           'mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100';
 
@@ -4524,11 +4734,21 @@ export const AccountsPayableView: React.FC = () => {
                             }
                           />
                           <DetalheConta
-                            label="Vencimento"
-                            value={formatarDataBR(
-                              vencimentoDetalhes
-                            )}
+                            label="Vencimento atual"
+                            value={
+                              vencimentoAtualBR
+                            }
                             mono
+                          />
+                          <DetalheConta
+                            label="Vencimento original"
+                            value={
+                              vencimentoOriginalDetalhes
+                            }
+                            mono
+                            destaque={
+                              vencimentoFoiAlterado
+                            }
                           />
                           <DetalheConta
                             label="Valor total"
@@ -4625,6 +4845,101 @@ export const AccountsPayableView: React.FC = () => {
                         </div>
                       </section>
                     </div>
+                  )}
+
+                  {!editandoDetalhes && (
+                    <section className="mt-5 rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">
+                      <div className="mb-4 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                            Histórico de alterações
+                          </p>
+                          <p className="mt-1 text-[10px] text-slate-400">
+                            Registro de mudanças, responsável e data da alteração.
+                          </p>
+                        </div>
+
+                        <Clock className="h-4 w-4 shrink-0 text-slate-300" />
+                      </div>
+
+                      {historicoDetalhes.length === 0 ? (
+                        <div className="rounded-[14px] bg-slate-50 px-4 py-5 text-center">
+                          <p className="text-[10px] text-slate-400">
+                            Nenhuma alteração registrada para esta conta.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {historicoDetalhes.map(
+                            (
+                              item: any,
+                              index: number
+                            ) => {
+                              const observacao =
+                                String(
+                                  item.observacao ||
+                                    'Alteração registrada.'
+                                );
+
+                              const alteracaoDados =
+                                observacao.includes(
+                                  '[ALTERAÇÃO DE DADOS]'
+                                );
+
+                              const textoObservacao =
+                                observacao.replace(
+                                  '[ALTERAÇÃO DE DADOS]\n',
+                                  ''
+                                );
+
+                              return (
+                                <div
+                                  key={
+                                    item.id ||
+                                    `${item.data}-${index}`
+                                  }
+                                  className={`rounded-[14px] border p-3.5 ${
+                                    alteracaoDados
+                                      ? 'border-blue-100 bg-blue-50/50'
+                                      : 'border-slate-100 bg-slate-50/70'
+                                  }`}
+                                >
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="text-[10px] font-bold text-slate-700">
+                                        {alteracaoDados
+                                          ? 'Alteração de dados'
+                                          : item.paraStatus ||
+                                            'Histórico da conta'}
+                                      </p>
+
+                                      <p className="mt-0.5 truncate text-[9px] text-slate-400">
+                                        Por{' '}
+                                        <span className="font-semibold text-slate-500">
+                                          {item.usuario ||
+                                            'Usuário não identificado'}
+                                        </span>
+                                      </p>
+                                    </div>
+
+                                    <span className="shrink-0 text-[9px] font-medium text-slate-400">
+                                      {formatarDataHoraHistorico(
+                                        item.data ||
+                                          item.createdAt
+                                      )}
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-3 whitespace-pre-wrap rounded-xl bg-white/80 px-3 py-2.5 text-[10px] leading-5 text-slate-600">
+                                    {textoObservacao}
+                                  </div>
+                                </div>
+                              );
+                            }
+                          )}
+                        </div>
+                      )}
+                    </section>
                   )}
 
                   <section className="mt-5 rounded-[18px] border border-slate-100 bg-white p-4 shadow-sm">

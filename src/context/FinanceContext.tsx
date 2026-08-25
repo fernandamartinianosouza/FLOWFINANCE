@@ -715,25 +715,355 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return criada;
   };
 
-  const editarProcesso = async (id: string, dados: Partial<ProcessoCompra>) => {
+  const editarProcesso = async (
+    id: string,
+    dados: Partial<ProcessoCompra>
+  ) => {
     try {
-      const atual = processos.find(p => p.id === id);
+      const atual = processos.find(
+        p => p.id === id
+      );
+
       if (!atual) return;
+
+      const formatarDataHistorico = (
+        valor: unknown
+      ) => {
+        const texto = String(
+          valor ?? ''
+        ).slice(0, 10);
+
+        if (!texto) {
+          return 'Não informado';
+        }
+
+        const [ano, mes, dia] =
+          texto.split('-');
+
+        return ano && mes && dia
+          ? `${dia}/${mes}/${ano}`
+          : texto;
+      };
+
+      const formatarValorHistorico = (
+        valor: unknown
+      ) =>
+        Number(valor || 0).toLocaleString(
+          'pt-BR',
+          {
+            style: 'currency',
+            currency: 'BRL',
+          }
+        );
+
+      const nomeEmpresa = (
+        empresaId: unknown
+      ) =>
+        empresas.find(
+          item =>
+            String(item.id) ===
+            String(empresaId || '')
+        )?.nome ||
+        String(empresaId || 'Não informada');
+
+      const nomeFornecedor = (
+        fornecedorId: unknown
+      ) =>
+        fornecedores.find(
+          item =>
+            String(item.id) ===
+            String(fornecedorId || '')
+        )?.nome ||
+        String(
+          fornecedorId ||
+            'Não informado'
+        );
+
+      const nomePlano = (
+        planoId: unknown
+      ) =>
+        planosFinanceirosTodos.find(
+          item =>
+            String(
+              item.id ??
+                (item as any).dbId ??
+                ''
+            ) ===
+            String(planoId || '')
+        )?.nome ||
+        String(planoId || 'Não informado');
+
+      const nomeCentro = (
+        centroId: unknown
+      ) => {
+        if (!centroId) {
+          return 'Não informado';
+        }
+
+        return (
+          centrosCustosTodos.find(
+            item =>
+              String(
+                item.id ??
+                  (item as any).dbId ??
+                  ''
+              ) ===
+              String(centroId)
+          )?.nome ||
+          String(centroId)
+        );
+      };
+
+      const alteracoes: string[] = [];
+
+      const comparar = (
+        label: string,
+        anterior: unknown,
+        novo: unknown,
+        formatador: (
+          valor: unknown
+        ) => string = valor =>
+          String(
+            valor ?? 'Não informado'
+          )
+      ) => {
+        const anteriorNormalizado =
+          anterior == null ? '' : String(anterior);
+        const novoNormalizado =
+          novo == null ? '' : String(novo);
+
+        if (
+          anteriorNormalizado !==
+          novoNormalizado
+        ) {
+          alteracoes.push(
+            `${label}: ${formatador(
+              anterior
+            )} → ${formatador(novo)}`
+          );
+        }
+      };
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'empresaId'
+        )
+      ) {
+        comparar(
+          'Empresa',
+          atual.empresaId,
+          dados.empresaId,
+          nomeEmpresa
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'fornecedorId'
+        )
+      ) {
+        comparar(
+          'Favorecido',
+          atual.fornecedorId,
+          dados.fornecedorId,
+          nomeFornecedor
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'planoFinanceiroId'
+        )
+      ) {
+        comparar(
+          'Plano de contas',
+          atual.planoFinanceiroId,
+          dados.planoFinanceiroId,
+          nomePlano
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'centroCustoId'
+        )
+      ) {
+        comparar(
+          'Centro de custo',
+          atual.centroCustoId,
+          dados.centroCustoId,
+          nomeCentro
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'prazo'
+        )
+      ) {
+        comparar(
+          'Vencimento',
+          atual.prazo,
+          dados.prazo,
+          formatarDataHistorico
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'valor'
+        )
+      ) {
+        comparar(
+          'Valor',
+          atual.valor,
+          dados.valor,
+          formatarValorHistorico
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'formaPagamento'
+        )
+      ) {
+        comparar(
+          'Forma de pagamento',
+          atual.formaPagamento,
+          dados.formaPagamento
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'pixChave'
+        )
+      ) {
+        comparar(
+          'Chave PIX',
+          atual.pixChave,
+          dados.pixChave
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'pixFavorecido'
+        )
+      ) {
+        comparar(
+          'Favorecido PIX',
+          atual.pixFavorecido,
+          dados.pixFavorecido
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'parcela'
+        )
+      ) {
+        comparar(
+          'Parcela',
+          atual.parcela ??
+            atual.numeroParcela,
+          dados.parcela
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'descricao'
+        )
+      ) {
+        comparar(
+          'Descrição',
+          atual.descricao,
+          dados.descricao
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          dados,
+          'observacao'
+        )
+      ) {
+        comparar(
+          'Observação',
+          (atual as any).observacao ??
+            (atual as any).observacoes,
+          (dados as any).observacao
+        );
+      }
 
       const atualizado = {
         ...atual,
         ...dados,
-        organizacaoId: organizacaoAtivaIdState,
+        organizacaoId:
+          organizacaoAtivaIdState,
       };
 
-      const salvo = await financeService.editarProcesso(id, atualizado);
+      const salvo =
+        await financeService.editarProcesso(
+          id,
+          atualizado
+        );
+
+      if (alteracoes.length > 0) {
+        const observacaoHistorico = [
+          '[ALTERAÇÃO DE DADOS]',
+          ...alteracoes,
+        ].join('\n');
+
+        await financeService.criarHistoricoProcesso(
+          {
+            processoId: id,
+            dbId: (atual as any).dbId,
+            usuario: usuarioLogado,
+            deStatus: atual.status,
+            paraStatus:
+              dados.status ??
+              atual.status,
+            observacao:
+              observacaoHistorico,
+          }
+        );
+      }
 
       setProcessosTodos(prev =>
-        prev.map(processo => (processo.id === id ? { ...processo, ...salvo } : processo))
+        prev.map(processo =>
+          processo.id === id
+            ? {
+                ...processo,
+                ...salvo,
+              }
+            : processo
+        )
       );
     } catch (error: any) {
-      console.error('Erro ao editar processo:', error);
-      alert(error.message || 'Erro ao editar processo.');
+      console.error(
+        'Erro ao editar processo:',
+        error
+      );
+
+      alert(
+        error.message ||
+          'Erro ao editar processo.'
+      );
+
+      throw error;
     }
   };
 
@@ -1293,9 +1623,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dados: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
   ): Promise<PlanoFinanceiro> => {
     try {
+      if (!empresaAtivaId) {
+        throw new Error(
+          'Selecione uma empresa antes de cadastrar o plano de contas.'
+        );
+      }
+
       const novo = await financeService.criarPlanoFinanceiro({
         ...dados,
         organizacaoId: organizacaoAtivaIdState,
+        empresaId: empresaAtivaId,
       });
 
       setPlanosFinanceirosTodos(prev => [...prev, novo]);
@@ -1312,9 +1649,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dados: Omit<PlanoFinanceiro, 'id' | 'utilizado' | 'comprometido' | 'organizacaoId'>
   ) => {
     try {
+      if (!empresaAtivaId) {
+        throw new Error(
+          'Selecione uma empresa antes de editar o plano de contas.'
+        );
+      }
+
       const atualizado = await financeService.editarPlanoFinanceiro(id, {
         ...dados,
         organizacaoId: organizacaoAtivaIdState,
+        empresaId: empresaAtivaId,
       });
 
       setPlanosFinanceirosTodos(prev =>
@@ -1352,7 +1696,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dados: Omit<CentroCusto, 'id' | 'utilizado'>
   ) => {
     try {
-      const novo = await financeService.criarCentroCusto(dados);
+      if (!empresaAtivaId) {
+        throw new Error(
+          'Selecione uma empresa antes de cadastrar o centro de custo.'
+        );
+      }
+
+      const novo = await financeService.criarCentroCusto({
+        ...dados,
+        empresaId: empresaAtivaId,
+      } as any);
       setCentrosCustosTodos(prev => [...prev, novo]);
     } catch (error: any) {
       console.error('Erro ao cadastrar centro de custo:', error);
@@ -1365,7 +1718,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dados: Omit<CentroCusto, 'id' | 'utilizado'>
   ) => {
     try {
-      const atualizado = await financeService.editarCentroCusto(id, dados);
+      const atualizado = await financeService.editarCentroCusto(id, {
+        ...dados,
+        empresaId:
+          empresaAtivaId || (dados as any).empresaId,
+      } as any);
       setCentrosCustosTodos(prev =>
         prev.map(c => (c.id === id ? atualizado : c))
       );
