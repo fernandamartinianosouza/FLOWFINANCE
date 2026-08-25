@@ -2162,12 +2162,11 @@ export const AccountsPayableView: React.FC = () => {
 
     if (
       typeof cadastrarPlanoFinanceiro !== 'function' ||
-      typeof cadastrarCentroCusto !== 'function' ||
       typeof cadastrarFornecedor !== 'function' ||
       typeof criarNovaConta !== 'function'
     ) {
       alert(
-        'O FinanceContext precisa disponibilizar cadastrarPlanoFinanceiro, cadastrarCentroCusto, cadastrarFornecedor e criarNovaConta.'
+        'O FinanceContext precisa disponibilizar cadastrarPlanoFinanceiro, cadastrarFornecedor e criarNovaConta.'
       );
       return;
     }
@@ -2287,48 +2286,65 @@ export const AccountsPayableView: React.FC = () => {
           planosMap.set(chavePlano, planoId);
         }
 
-        const chaveCentro =
-          `${planoId}::${normalizarNomeImportacao(
-            linha.centroCusto
-          )}`;
+        let centroId: string | null = null;
 
-        let centroId = centrosMap.get(chaveCentro);
+        if (linha.centroCusto?.trim()) {
+          const chaveCentro =
+            `${planoId}::${normalizarNomeImportacao(
+              linha.centroCusto
+            )}`;
 
-        if (!centroId) {
-          const resultadoCentro =
-            await cadastrarCentroCusto({
-              nome: linha.centroCusto,
-              descricao:
-                'Criado automaticamente pela importação de contas a pagar.',
-              planoFinanceiroId: planoId,
-              orcamentoMensal: 0,
-              limiteMensal: 0,
-              tetoMensal: 0,
-              tetoAnual: 0,
-              utilizado: 0,
-              comprometido: 0,
-            } as any);
-
-          centroId = obterIdCadastro(resultadoCentro);
+          centroId =
+            centrosMap.get(chaveCentro) || null;
 
           if (!centroId) {
-            centroId =
-              await contasPagarImportService.buscarCentro({
-                organizacaoId:
-                  organizacaoAtivaId || undefined,
-                empresaId: empresaImportacaoId,
-                planoFinanceiroId: planoId,
+            if (
+              typeof cadastrarCentroCusto !== 'function'
+            ) {
+              throw new Error(
+                'Não foi possível criar o centro de custo informado.'
+              );
+            }
+
+            const resultadoCentro =
+              await cadastrarCentroCusto({
                 nome: linha.centroCusto,
-              });
-          }
+                descricao:
+                  'Criado automaticamente pela importação de contas a pagar.',
+                planoFinanceiroId: planoId,
+                orcamentoMensal: 0,
+                limiteMensal: 0,
+                tetoMensal: 0,
+                tetoAnual: 0,
+                utilizado: 0,
+                comprometido: 0,
+              } as any);
 
-          if (!centroId) {
-            throw new Error(
-              `O centro "${linha.centroCusto}" foi criado, mas não foi possível localizar o ID no banco.`
+            centroId =
+              obterIdCadastro(resultadoCentro) || null;
+
+            if (!centroId) {
+              centroId =
+                await contasPagarImportService.buscarCentro({
+                  organizacaoId:
+                    organizacaoAtivaId || undefined,
+                  empresaId: empresaImportacaoId,
+                  planoFinanceiroId: planoId,
+                  nome: linha.centroCusto,
+                });
+            }
+
+            if (!centroId) {
+              throw new Error(
+                `O centro "${linha.centroCusto}" foi criado, mas não foi possível localizar o ID no banco.`
+              );
+            }
+
+            centrosMap.set(
+              chaveCentro,
+              centroId
             );
           }
-
-          centrosMap.set(chaveCentro, centroId);
         }
 
         const chaveFornecedor =
@@ -2409,7 +2425,7 @@ export const AccountsPayableView: React.FC = () => {
           planoFinanceiroId: planoId,
           planoId,
           centroCustoId: centroId,
-          centroId,
+          centroId: centroId || undefined,
           descricao: `${linha.fornecedor} • Parcela ${linha.parcela}`,
           valor: linha.valor,
           prazo: linha.vencimento,

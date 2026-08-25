@@ -185,7 +185,6 @@ export const contasPagarImportService = {
       const erros: string[] = [];
 
       if (!planoConta) erros.push('Plano de contas não informado');
-      if (!centroCusto) erros.push('Centro de custo não informado');
       if (!fornecedor) erros.push('Fornecedor não informado');
       if (!vencimento) erros.push('Vencimento inválido');
       if (!parcela) erros.push('Parcela não informada');
