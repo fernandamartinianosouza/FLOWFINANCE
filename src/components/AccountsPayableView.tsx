@@ -2123,8 +2123,40 @@ export const AccountsPayableView: React.FC = () => {
           arquivo
         );
 
+      /*
+       * Centro de custo é OPCIONAL na importação.
+       *
+       * Esta normalização também protege a tela caso exista
+       * algum build/cache antigo do service ainda retornando
+       * "Centro de custo não informado" como atenção.
+       */
+      const linhasNormalizadas = linhas.map(
+        (linha: any) => {
+          const mensagens = String(
+            linha.mensagem || ''
+          )
+            .split('•')
+            .map((item: string) => item.trim())
+            .filter(Boolean)
+            .filter(
+              (item: string) =>
+                item.toLocaleLowerCase('pt-BR') !==
+                'centro de custo não informado'
+            );
+
+          return {
+            ...linha,
+            mensagem: mensagens.join(' • '),
+            status:
+              mensagens.length > 0
+                ? 'atencao'
+                : 'valido',
+          };
+        }
+      );
+
       setArquivoImportacaoNome(arquivo.name);
-      setPreviewImportacao(linhas);
+      setPreviewImportacao(linhasNormalizadas);
       setModalImportacaoOpen(true);
     } catch (error: any) {
       console.error(
