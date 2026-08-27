@@ -317,6 +317,13 @@ export const mapProcessoFromDb = (
     status:
       item.status || 'solicitacao',
 
+    excluido: Boolean(item.excluido),
+    excluidoEm: item.excluido_em || null,
+    excluidoPor: item.excluido_por || null,
+    excluidoPorNome: item.excluido_por_nome || null,
+    motivoExclusao: item.motivo_exclusao || null,
+    statusAntesExclusao: item.status_antes_exclusao || null,
+
     prazo:
       item.prazo || null,
 

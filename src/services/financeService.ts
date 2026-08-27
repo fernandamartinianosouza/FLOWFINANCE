@@ -673,6 +673,7 @@ export const financeService = {
           `,
         )
         .eq("organizacao_id", orgId)
+        .or("excluido.is.null,excluido.eq.false")
         .order("created_at", {
           ascending: false,
         })
@@ -885,8 +886,9 @@ export const financeService = {
         usuario: responsavel,
         de_status: "criacao",
         para_status: "pagamento",
-        observacao:
-          "Conta cadastrada diretamente pelo setor de Contas a Pagar.",
+        observacao: item.observacao?.trim()
+          ? `Conta cadastrada diretamente pelo setor de Contas a Pagar. ${item.observacao.trim()}`
+          : "Conta cadastrada diretamente pelo setor de Contas a Pagar.",
       });
 
     if (historicoError) {
@@ -927,16 +929,58 @@ export const financeService = {
     return mapProcessoFromDb(data);
   },
 
-  async excluirProcesso(id: string, organizacaoId?: string) {
+  async excluirProcesso(id: string, organizacaoId?: string, motivo = 'Exclusão solicitada pelo usuário') {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const { data: auth } = await supabase.auth.getUser();
+    const usuario = auth.user;
+    const usuarioNome = usuario?.user_metadata?.nome || usuario?.email || 'Usuário não identificado';
 
+    const { data: atual, error: buscaError } = await supabase
+      .from("processos_compra")
+      .select("id,codigo,status")
+      .eq("codigo", id)
+      .eq("organizacao_id", orgId)
+      .single();
+    if (buscaError) throw buscaError;
+
+    const agora = new Date().toISOString();
     const { error } = await supabase
       .from("processos_compra")
-      .delete()
-      .eq("codigo", id)
+      .update({
+        excluido: true, excluido_em: agora, excluido_por: usuario?.id || null,
+        excluido_por_nome: usuarioNome, motivo_exclusao: motivo,
+        status_antes_exclusao: atual.status, updated_at: agora,
+      })
+      .eq("id", atual.id)
       .eq("organizacao_id", orgId);
-
     if (error) throw error;
+
+    await supabase.from("historico_processos").insert({
+      user_id: usuario?.id || null, processo_id: atual.id, usuario: usuarioNome,
+      de_status: atual.status, para_status: atual.status,
+      observacao: `Conta movida para Excluídos. Motivo: ${motivo}`,
+    });
+  },
+
+  async listarProcessosExcluidos(organizacaoId?: string, empresaId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
+    let query = supabase.from("processos_compra").select(`*, historico_processos (*), processo_documentos (*), pagamentos_processos (*)`)
+      .eq("organizacao_id", orgId).eq("excluido", true).order("excluido_em", { ascending: false });
+    if (empresaId) query = query.eq("empresa_id", empresaId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(mapProcessoFromDb);
+  },
+
+  async restaurarProcesso(id: string, organizacaoId?: string) {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
+    const { data: auth } = await supabase.auth.getUser();
+    const nome = auth.user?.user_metadata?.nome || auth.user?.email || 'Usuário não identificado';
+    const { data: atual, error: buscaError } = await supabase.from("processos_compra").select("id,status,status_antes_exclusao").eq("codigo", id).eq("organizacao_id", orgId).single();
+    if (buscaError) throw buscaError;
+    const { error } = await supabase.from("processos_compra").update({ excluido:false, excluido_em:null, excluido_por:null, excluido_por_nome:null, motivo_exclusao:null, status_antes_exclusao:null, updated_at:new Date().toISOString() }).eq("id", atual.id);
+    if (error) throw error;
+    await supabase.from("historico_processos").insert({ user_id:auth.user?.id||null, processo_id:atual.id, usuario:nome, de_status:atual.status, para_status:atual.status, observacao:'Conta restaurada da área de Excluídos.' });
   },
 
   async criarHistoricoProcesso(item: any) {

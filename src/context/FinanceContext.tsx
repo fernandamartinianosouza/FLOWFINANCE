@@ -1067,9 +1067,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const excluirProcesso = async (id: string) => {
+  const excluirProcesso = async (id: string, motivo?: string) => {
     try {
-      await financeService.excluirProcesso(id, organizacaoAtivaIdState);
+      await financeService.excluirProcesso(id, organizacaoAtivaIdState, motivo);
 
       setProcessosTodos(prev => prev.filter(processo => processo.id !== id));
       setAlertas(prev => prev.filter(alerta => alerta.processoId !== id));

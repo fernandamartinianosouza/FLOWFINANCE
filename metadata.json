@@ -1,6 +1,0 @@
-{
-  "name": "FLOWFINANCE",
-  "description": "Enterprise Financial Platform for purchase control, approvals, payments, reconciliation, cash flow, and cost centers.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

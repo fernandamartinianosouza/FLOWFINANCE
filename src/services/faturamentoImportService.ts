@@ -31,6 +31,12 @@ export type ContaReceber = {
   loteImportacaoId: string | null;
   observacao: string | null;
   createdAt: string;
+  excluido?: boolean;
+  excluidoEm?: string | null;
+  excluidoPor?: string | null;
+  excluidoPorNome?: string | null;
+  motivoExclusao?: string | null;
+  statusAntesExclusao?: string | null;
 };
 
 export type ContaReceberDocumento = {
@@ -146,6 +152,12 @@ const mapDocumentoContaReceber = (
   url: row.url ?? '',
   tipo: row.tipo ?? null,
   createdAt: row.created_at,
+  excluido: Boolean(row.excluido),
+  excluidoEm: row.excluido_em,
+  excluidoPor: row.excluido_por,
+  excluidoPorNome: row.excluido_por_nome,
+  motivoExclusao: row.motivo_exclusao,
+  statusAntesExclusao: row.status_antes_exclusao,
 });
 
 const mapHistoricoContaReceber = (
@@ -347,6 +359,7 @@ export const faturamentoImportService = {
         .select('*')
         .eq('organizacao_id', organizacaoId)
         .eq('empresa_id', empresaId)
+        .or('excluido.is.null,excluido.eq.false')
         .neq('status', 'cancelado')
         .order('data_vencimento', {
           ascending: true,
@@ -761,39 +774,37 @@ export const faturamentoImportService = {
     return resultados.length;
   },
 
-  async excluirEmMassa(contas: ContaReceber[]): Promise<number> {
+  async excluirEmMassa(contas: ContaReceber[], motivo = 'Exclusão em massa'): Promise<number> {
     if (!contas.length) return 0;
-
-    const idsPorOrganizacao = new Map<string, string[]>();
-    contas.forEach(conta => {
-      const ids = idsPorOrganizacao.get(conta.organizacaoId) || [];
-      ids.push(conta.id);
-      idsPorOrganizacao.set(conta.organizacaoId, ids);
-    });
-
-    let excluidas = 0;
-    for (const [organizacaoId, ids] of idsPorOrganizacao.entries()) {
-      const { error } = await supabase
-        .from('contas_receber')
-        .delete()
-        .eq('organizacao_id', organizacaoId)
-        .in('id', ids);
-
-      if (error) throw error;
-      excluidas += ids.length;
-    }
-
-    return excluidas;
+    let quantidade = 0;
+    for (const conta of contas) { await this.excluir(conta, motivo); quantidade += 1; }
+    return quantidade;
   },
 
-  async excluir(conta: ContaReceber): Promise<void> {
-    const { error } = await supabase
-      .from('contas_receber')
-      .delete()
-      .eq('id', conta.id)
-      .eq('organizacao_id', conta.organizacaoId);
-
+  async excluir(conta: ContaReceber, motivo = 'Exclusão solicitada pelo usuário'): Promise<void> {
+    const { data: auth } = await supabase.auth.getUser();
+    const usuario = auth.user;
+    const nome = usuario?.user_metadata?.nome || usuario?.email || 'Usuário não identificado';
+    const agora = new Date().toISOString();
+    const { error } = await supabase.from('contas_receber').update({
+      excluido:true, excluido_em:agora, excluido_por:usuario?.id||null, excluido_por_nome:nome,
+      motivo_exclusao:motivo, status_antes_exclusao:conta.status, updated_at:agora
+    }).eq('id',conta.id).eq('organizacao_id',conta.organizacaoId);
     if (error) throw error;
+    await supabase.from('contas_receber_historico').insert({ conta_receber_id:conta.id, organizacao_id:conta.organizacaoId, empresa_id:conta.empresaId, campo:'exclusao', valor_anterior:conta.status, valor_novo:`Excluído - ${motivo}`, usuario_id:usuario?.id||null, usuario_nome:nome });
+  },
+
+  async listarExcluidos(organizacaoId:string, empresaId:string): Promise<ContaReceber[]> {
+    const { data,error } = await supabase.from('contas_receber').select('*').eq('organizacao_id',organizacaoId).eq('empresa_id',empresaId).eq('excluido',true).order('excluido_em',{ascending:false});
+    if(error) throw error; return (data||[]).map(mapConta);
+  },
+
+  async restaurar(conta: ContaReceber): Promise<void> {
+    const { data: auth } = await supabase.auth.getUser();
+    const nome=auth.user?.user_metadata?.nome||auth.user?.email||'Usuário não identificado';
+    const { error }=await supabase.from('contas_receber').update({excluido:false,excluido_em:null,excluido_por:null,excluido_por_nome:null,motivo_exclusao:null,status_antes_exclusao:null,updated_at:new Date().toISOString()}).eq('id',conta.id).eq('organizacao_id',conta.organizacaoId);
+    if(error) throw error;
+    await supabase.from('contas_receber_historico').insert({conta_receber_id:conta.id,organizacao_id:conta.organizacaoId,empresa_id:conta.empresaId,campo:'restauracao',valor_anterior:'Excluído',valor_novo:conta.status,usuario_id:auth.user?.id||null,usuario_nome:nome});
   },
 
   baixarModelo(): void {

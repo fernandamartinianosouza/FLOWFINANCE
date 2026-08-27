@@ -346,7 +346,21 @@ export const UsersAdminView: React.FC =
       setErro(null);
       try {
         const atuais = await permissoesService.listar(organizacaoAtivaId, usuario.userId);
-        setPermissoesSelecionadas(atuais.length > 0 ? atuais : permissoesPadraoPerfil(usuario.perfil));
+        const padrao = permissoesPadraoPerfil(usuario.perfil);
+        const baseCompleta = MODULOS_PERMISSOES.flatMap(m =>
+          m.acoes.map(acao => {
+            const salva = atuais.find(p => p.modulo === m.id && p.acao === acao);
+            if (salva) return salva;
+            return {
+              modulo: m.id,
+              acao,
+              permitido: atuais.length === 0
+                ? padrao.some(p => p.modulo === m.id && p.acao === acao && p.permitido)
+                : false,
+            };
+          })
+        );
+        setPermissoesSelecionadas(baseCompleta);
       } catch (error: any) {
         setErro(error?.message || 'Erro ao carregar permissões.');
       } finally { setCarregandoPermissoes(false); }
@@ -357,8 +371,14 @@ export const UsersAdminView: React.FC =
 
     const alternarPermissao = (modulo: ModuloPermissao, acao: AcaoPermissao) => {
       setPermissoesSelecionadas(prev => {
-        const existe = prev.some(p => p.modulo === modulo && p.acao === acao);
-        if (existe) return prev.filter(p => !(p.modulo === modulo && p.acao === acao));
+        const existe = prev.find(p => p.modulo === modulo && p.acao === acao);
+        if (existe) {
+          return prev.map(p =>
+            p.modulo === modulo && p.acao === acao
+              ? { ...p, permitido: !p.permitido }
+              : p
+          );
+        }
         return [...prev, { modulo, acao, permitido: true }];
       });
     };
@@ -368,7 +388,9 @@ export const UsersAdminView: React.FC =
     );
 
     const somenteLeitura = () => setPermissoesSelecionadas(
-      MODULOS_PERMISSOES.map(m => ({ modulo: m.id, acao: 'visualizar' as AcaoPermissao, permitido: true }))
+      MODULOS_PERMISSOES.flatMap(m =>
+        m.acoes.map(acao => ({ modulo: m.id, acao, permitido: acao === 'visualizar' }))
+      )
     );
 
     const salvarPermissoesUsuario = async () => {

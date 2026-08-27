@@ -40,7 +40,7 @@ import {
   LinhaFaturamentoPreview,
 } from '../services/faturamentoImportService';
 
-type Aba = 'visao-geral' | 'contas-receber' | 'conciliacao';
+type Aba = 'visao-geral' | 'contas-receber' | 'conciliacao' | 'excluidos';
 type TipoPeriodoConciliacao = 'dia' | 'mes' | 'ano';
 
 type LinhaConciliacao = {
@@ -92,6 +92,8 @@ export const CashFlowView: React.FC = () => {
 
   const [aba, setAba] = useState<Aba>('visao-geral');
   const [contas, setContas] = useState<ContaReceber[]>([]);
+  const [contasExcluidas, setContasExcluidas] = useState<ContaReceber[]>([]);
+  const [carregandoExcluidos, setCarregandoExcluidos] = useState(false);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [processandoMassa, setProcessandoMassa] = useState(false);
   const [carregando, setCarregando] = useState(false);
@@ -102,6 +104,8 @@ export const CashFlowView: React.FC = () => {
     useState<'todos' | 'com_encargos' | 'sem_encargos'>('todos');
   const [inicioFiltro, setInicioFiltro] = useState('');
   const [fimFiltro, setFimFiltro] = useState('');
+  const [ordenacaoVencimento, setOrdenacaoVencimento] =
+    useState<'asc' | 'desc'>('asc');
   const [paginaContas, setPaginaContas] = useState(1);
   const itensPorPagina = 12;
 
@@ -207,6 +211,22 @@ export const CashFlowView: React.FC = () => {
     carregar();
   }, [organizacaoAtivaId, empresaAtivaId]);
 
+  useEffect(() => {
+    if (aba !== 'excluidos' || !organizacaoAtivaId || !empresaAtivaId) return;
+    setCarregandoExcluidos(true);
+    faturamentoImportService.listarExcluidos(organizacaoAtivaId, empresaAtivaId)
+      .then(setContasExcluidas)
+      .catch((e:any) => setErro(e?.message || 'Erro ao carregar excluídos.'))
+      .finally(() => setCarregandoExcluidos(false));
+  }, [aba, organizacaoAtivaId, empresaAtivaId]);
+
+  const restaurarExcluida = async (conta: ContaReceber) => {
+    if (!window.confirm(`Restaurar o título ${conta.numeroDocumento}?`)) return;
+    await faturamentoImportService.restaurar(conta);
+    setContasExcluidas(v => v.filter(c => c.id !== conta.id));
+    await carregar();
+  };
+
   const contasComStatusCalculado = useMemo(() => {
     const hoje = hojeIso();
 
@@ -233,42 +253,67 @@ export const CashFlowView: React.FC = () => {
   const contasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
 
-    return contasComStatusCalculado.filter(conta => {
-      const correspondeBusca =
-        !termo ||
-        conta.clienteNome.toLowerCase().includes(termo) ||
-        conta.numeroDocumento.toLowerCase().includes(termo) ||
-        conta.clienteDocumento.toLowerCase().includes(termo);
+    return contasComStatusCalculado
+      .filter(conta => {
+        const correspondeBusca =
+          !termo ||
+          conta.clienteNome.toLowerCase().includes(termo) ||
+          conta.numeroDocumento.toLowerCase().includes(termo) ||
+          conta.clienteDocumento.toLowerCase().includes(termo);
 
-      const correspondeStatus =
-        statusFiltro === 'todos' ||
-        conta.statusVisual === statusFiltro;
+        const correspondeStatus =
+          statusFiltro === 'todos' ||
+          conta.statusVisual === statusFiltro;
 
-      const possuiEncargos =
-        Number(conta.jurosRecebidos || 0) > 0.001 ||
-        Number(conta.multaRecebida || 0) > 0.001;
+        const possuiEncargos =
+          Number(conta.jurosRecebidos || 0) > 0.001 ||
+          Number(conta.multaRecebida || 0) > 0.001;
 
-      const correspondeEncargos =
-        encargosFiltro === 'todos' ||
-        (encargosFiltro === 'com_encargos'
-          ? possuiEncargos
-          : !possuiEncargos);
+        const correspondeEncargos =
+          encargosFiltro === 'todos' ||
+          (encargosFiltro === 'com_encargos'
+            ? possuiEncargos
+            : !possuiEncargos);
 
-      const correspondeInicio =
-        !inicioFiltro ||
-        Boolean(conta.dataVencimento && conta.dataVencimento >= inicioFiltro);
+        const correspondeInicio =
+          !inicioFiltro ||
+          Boolean(
+            conta.dataVencimento &&
+              conta.dataVencimento >= inicioFiltro
+          );
 
-      const correspondeFim =
-        !fimFiltro || Boolean(conta.dataVencimento && conta.dataVencimento <= fimFiltro);
+        const correspondeFim =
+          !fimFiltro ||
+          Boolean(
+            conta.dataVencimento &&
+              conta.dataVencimento <= fimFiltro
+          );
 
-      return (
-        correspondeBusca &&
-        correspondeStatus &&
-        correspondeEncargos &&
-        correspondeInicio &&
-        correspondeFim
-      );
-    });
+        return (
+          correspondeBusca &&
+          correspondeStatus &&
+          correspondeEncargos &&
+          correspondeInicio &&
+          correspondeFim
+        );
+      })
+      .sort((a, b) => {
+        const dataA = String(
+          a.dataVencimento || ''
+        ).slice(0, 10);
+        const dataB = String(
+          b.dataVencimento || ''
+        ).slice(0, 10);
+
+        // Títulos sem vencimento ficam sempre no final.
+        if (!dataA && !dataB) return 0;
+        if (!dataA) return 1;
+        if (!dataB) return -1;
+
+        return ordenacaoVencimento === 'desc'
+          ? dataB.localeCompare(dataA)
+          : dataA.localeCompare(dataB);
+      });
   }, [
     contasComStatusCalculado,
     busca,
@@ -276,6 +321,7 @@ export const CashFlowView: React.FC = () => {
     encargosFiltro,
     inicioFiltro,
     fimFiltro,
+    ordenacaoVencimento,
   ]);
 
   useEffect(() => {
@@ -286,6 +332,7 @@ export const CashFlowView: React.FC = () => {
     encargosFiltro,
     inicioFiltro,
     fimFiltro,
+    ordenacaoVencimento,
     empresaAtivaId,
   ]);
 
@@ -1009,7 +1056,9 @@ export const CashFlowView: React.FC = () => {
 
     setProcessandoMassa(true);
     try {
-      const quantidade = await faturamentoImportService.excluirEmMassa(contasSelecionadas);
+      const motivo = window.prompt('Informe o motivo da exclusão:')?.trim();
+      if (!motivo) { alert('O motivo da exclusão é obrigatório.'); return; }
+      const quantidade = await faturamentoImportService.excluirEmMassa(contasSelecionadas, motivo);
       alert(`${quantidade} título(s) excluído(s) com sucesso.`);
       setSelecionadas(new Set());
       await carregar();
@@ -1372,7 +1421,9 @@ export const CashFlowView: React.FC = () => {
     if (!window.confirm(`Excluir o título ${conta.numeroDocumento}?`)) return;
 
     try {
-      await faturamentoImportService.excluir(conta);
+      const motivo = window.prompt('Informe o motivo da exclusão:')?.trim();
+      if (!motivo) { alert('O motivo da exclusão é obrigatório.'); return; }
+      await faturamentoImportService.excluir(conta, motivo);
       await carregar();
     } catch (error: any) {
       console.error(error);
@@ -1749,6 +1800,7 @@ export const CashFlowView: React.FC = () => {
           ['visao-geral', 'Visão geral'],
           ['contas-receber', 'Contas a receber'],
           ['conciliacao', 'Conciliação'],
+          ['excluidos', 'Excluídos'],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -1871,6 +1923,21 @@ export const CashFlowView: React.FC = () => {
         </>
       )}
 
+      {aba === 'excluidos' && (
+        <div className="space-y-4">
+          <div className="rounded-[18px] border border-slate-100 bg-white p-5">
+            <h2 className="text-sm font-bold text-slate-800">Faturamentos excluídos</h2>
+            <p className="mt-1 text-xs text-slate-400">Registros preservados para auditoria. A exclusão não apaga mais o faturamento do banco.</p>
+          </div>
+          {carregandoExcluidos ? <div className="p-8 text-center text-xs text-slate-400">Carregando excluídos...</div> : contasExcluidas.length === 0 ? <div className="rounded-[18px] border border-slate-100 bg-white p-8 text-center text-xs text-slate-400">Nenhum faturamento excluído.</div> : (
+            <div className="overflow-x-auto rounded-[18px] border border-slate-100 bg-white">
+              <table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-400"><tr><th className="p-4">Cliente</th><th className="p-4">Documento</th><th className="p-4">Vencimento</th><th className="p-4">Valor</th><th className="p-4">Exclusão</th><th className="p-4">Responsável</th><th className="p-4">Motivo</th><th className="p-4"></th></tr></thead>
+              <tbody>{contasExcluidas.map(c => <tr key={c.id} className="border-t border-slate-100"><td className="p-4 font-semibold">{c.clienteNome}</td><td className="p-4">{c.numeroDocumento}</td><td className="p-4">{formatarData(c.dataVencimento)}</td><td className="p-4 font-mono">{formatarReal(c.valorOriginal)}</td><td className="p-4">{c.excluidoEm ? new Date(c.excluidoEm).toLocaleString('pt-BR') : '-'}</td><td className="p-4">{c.excluidoPorNome || '-'}</td><td className="p-4 max-w-[260px]">{c.motivoExclusao || '-'}</td><td className="p-4"><div className="flex gap-2"><button onClick={() => abrirDetalhesContaReceber(c)} className="rounded-lg border px-3 py-2 font-bold">Detalhes</button><button onClick={() => restaurarExcluida(c)} className="rounded-lg bg-slate-900 px-3 py-2 font-bold text-white">Restaurar</button></div></td></tr>)}</tbody></table>
+            </div>
+          )}
+        </div>
+      )}
+
       {aba === 'contas-receber' && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
@@ -1985,7 +2052,7 @@ export const CashFlowView: React.FC = () => {
             </div>
 
             <div className="p-4 bg-slate-50/60 border-b border-slate-100">
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.25fr)_minmax(155px,.7fr)_minmax(155px,.7fr)_minmax(145px,.65fr)_minmax(145px,.65fr)_auto] gap-3 items-end">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.2fr)_minmax(145px,.68fr)_minmax(145px,.68fr)_minmax(175px,.8fr)_minmax(140px,.62fr)_minmax(140px,.62fr)_auto] gap-3 items-end">
                 <div>
                   <label className="text-[9px] font-bold uppercase tracking-wide text-slate-400 block mb-1.5">
                     Buscar
@@ -2041,6 +2108,30 @@ export const CashFlowView: React.FC = () => {
                     </option>
                     <option value="sem_encargos">
                       Sem encargos
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-400 block mb-1.5">
+                    Ordenar por
+                  </label>
+                  <select
+                    value={ordenacaoVencimento}
+                    onChange={e =>
+                      setOrdenacaoVencimento(
+                        e.target.value as
+                          | 'asc'
+                          | 'desc'
+                      )
+                    }
+                    className="w-full h-10 bg-white border border-slate-200 rounded-[12px] px-3 text-xs text-slate-700 outline-none focus:border-slate-400"
+                  >
+                    <option value="asc">
+                      Vencimento: mais antigo
+                    </option>
+                    <option value="desc">
+                      Vencimento: mais recente
                     </option>
                   </select>
                 </div>

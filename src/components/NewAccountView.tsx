@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Building2,
@@ -18,6 +18,7 @@ import {
 
 import { useFinance } from "../context/FinanceContext";
 import { financeService } from "../services/financeService";
+import { orcamentoService } from '../services/orcamentoService';
 import {
   MetodoPagamento,
   NovaContaInput,
@@ -113,6 +114,7 @@ export const NewAccountView: React.FC = () => {
     fornecedores,
     planosFinanceiros,
     centrosCustos,
+    processos,
     empresaAtivaId,
     organizacaoAtivaId,
     recarregarDados,
@@ -151,6 +153,11 @@ export const NewAccountView: React.FC = () => {
   const [erroGeral, setErroGeral] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [erros, setErros] = useState<ErrosFormulario>({});
+  const [orcamentosCompetencia, setOrcamentosCompetencia] = useState<any[]>([]);
+  const [carregandoTeto, setCarregandoTeto] = useState(false);
+  const [confirmacaoTetoOpen, setConfirmacaoTetoOpen] = useState(false);
+  const [justificativaTeto, setJustificativaTeto] = useState('');
+  const autorizarExcessoRef = useRef(false);
 
   const planosDaEmpresa = useMemo(
     () =>
@@ -175,6 +182,181 @@ export const NewAccountView: React.FC = () => {
       }),
     [centrosCustos, planoFinanceiroId, empresaId]
   );
+
+  const competenciaSelecionada = useMemo(
+    () => String(dataVencimento || '').slice(0, 7),
+    [dataVencimento]
+  );
+
+  useEffect(() => {
+    let ativo = true;
+
+    const carregar = async () => {
+      if (
+        !organizacaoAtivaId ||
+        !empresaId ||
+        !competenciaSelecionada
+      ) {
+        setOrcamentosCompetencia([]);
+        return;
+      }
+
+      const [anoTexto, mesTexto] = competenciaSelecionada.split('-');
+      const ano = Number(anoTexto);
+      const mes = Number(mesTexto);
+
+      if (!ano || !mes) return;
+
+      try {
+        setCarregandoTeto(true);
+        const lista = await orcamentoService.listarPorCompetencia({
+          organizacaoId: organizacaoAtivaId,
+          empresaId,
+          ano,
+          mes,
+        });
+        if (ativo) setOrcamentosCompetencia(lista || []);
+      } catch (error) {
+        console.error('Erro ao consultar tetos da competência:', error);
+        if (ativo) setOrcamentosCompetencia([]);
+      } finally {
+        if (ativo) setCarregandoTeto(false);
+      }
+    };
+
+    carregar();
+    return () => {
+      ativo = false;
+    };
+  }, [organizacaoAtivaId, empresaId, competenciaSelecionada]);
+
+  const movimentoPorPlano = useMemo(() => {
+    const mapa = new Map<string, number>();
+
+    (processos || []).forEach((processo: any) => {
+      if (processo?.excluido) return;
+
+      const empresaProcesso = String(
+        processo?.empresaId ?? processo?.empresa_id ?? ''
+      );
+      if (empresaProcesso !== String(empresaId)) return;
+
+      const data =
+        processo?.prazo ??
+        processo?.vencimento ??
+        processo?.dataVencimento ??
+        processo?.data_vencimento ??
+        processo?.dataProgramadaPagamento ??
+        processo?.data_programada_pagamento ??
+        processo?.dataPagamento ??
+        processo?.data_pagamento ??
+        processo?.dataCriacao ??
+        processo?.created_at ??
+        '';
+
+      if (String(data).slice(0, 7) !== competenciaSelecionada) return;
+
+      const planoId = String(
+        processo?.planoFinanceiroId ??
+          processo?.planoId ??
+          processo?.plano_financeiro_id ??
+          ''
+      );
+      if (!planoId) return;
+
+      const valorProcesso = Math.max(
+        Number(
+          processo?.valor ??
+            processo?.valorTotal ??
+            processo?.valor_total ??
+            0
+        ) || 0,
+        0
+      );
+
+      mapa.set(planoId, (mapa.get(planoId) || 0) + valorProcesso);
+    });
+
+    return mapa;
+  }, [processos, empresaId, competenciaSelecionada]);
+
+  const obterTetoPlano = (planoId: string) => {
+    const geral = orcamentosCompetencia.find(
+      (item: any) =>
+        String(item.planoFinanceiroId) === String(planoId) &&
+        !item.centroCustoId
+    );
+
+    if (geral) return Number(geral.valorOrcado || 0);
+
+    return orcamentosCompetencia
+      .filter((item: any) => {
+        if (String(item.planoFinanceiroId) !== String(planoId)) return false;
+        return Boolean(item.centroCustoId);
+      })
+      .reduce(
+        (total: number, item: any) => total + Number(item.valorOrcado || 0),
+        0
+      );
+  };
+
+  const situacoesPlanos = useMemo(() => {
+    const valorConta = moedaParaNumero(valor);
+
+    return planosDaEmpresa
+      .map((plano: any) => {
+        const id = String(plano.id ?? plano.dbId ?? '');
+        const orcado = obterTetoPlano(id);
+        const comprometido = movimentoPorPlano.get(id) || 0;
+        const disponivel = orcado - comprometido;
+        const aposLancamento = disponivel - valorConta;
+        const percentualApos =
+          orcado > 0 ? ((comprometido + valorConta) / orcado) * 100 : 0;
+
+        return {
+          id,
+          nome: plano.nome || 'Plano sem nome',
+          orcado,
+          comprometido,
+          disponivel,
+          aposLancamento,
+          percentualApos,
+        };
+      })
+      .sort((a: any, b: any) => b.disponivel - a.disponivel);
+  }, [planosDaEmpresa, orcamentosCompetencia, movimentoPorPlano, valor]);
+
+  const situacaoPlanoSelecionado = useMemo(
+    () =>
+      situacoesPlanos.find(
+        (item: any) => item.id === String(planoFinanceiroId)
+      ) || null,
+    [situacoesPlanos, planoFinanceiroId]
+  );
+
+  const planosAlternativos = useMemo(
+    () =>
+      situacoesPlanos.filter(
+        (item: any) =>
+          item.id !== String(planoFinanceiroId) &&
+          item.orcado > 0 &&
+          item.aposLancamento >= 0
+      ),
+    [situacoesPlanos, planoFinanceiroId]
+  );
+
+  const formatarMoeda = (numero: number) =>
+    Number(numero || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+
+  const trocarPlanoSugerido = (planoId: string) => {
+    setPlanoFinanceiroId(planoId);
+    setCentroCustoId('');
+    setConfirmacaoTetoOpen(false);
+    setJustificativaTeto('');
+  };
 
   const limparFormulario = () => {
     setEmpresaId(empresaAtivaId || empresas[0]?.id || '');
@@ -308,6 +490,16 @@ export const NewAccountView: React.FC = () => {
       return;
     }
 
+    if (
+      !autorizarExcessoRef.current &&
+      situacaoPlanoSelecionado &&
+      situacaoPlanoSelecionado.orcado > 0 &&
+      situacaoPlanoSelecionado.aposLancamento < 0
+    ) {
+      setConfirmacaoTetoOpen(true);
+      return;
+    }
+
     try {
       setSalvando(true);
 
@@ -372,7 +564,9 @@ export const NewAccountView: React.FC = () => {
         recorrente,
         anexoNome,
         anexoUrl,
-        observacao: null,
+        observacao: autorizarExcessoRef.current
+          ? `LANÇAMENTO ACIMA DO TETO. Justificativa: ${justificativaTeto.trim()}`
+          : null,
       };
 
       await financeService.criarNovaConta(dados);
@@ -383,6 +577,9 @@ export const NewAccountView: React.FC = () => {
       );
 
       limparFormulario();
+      autorizarExcessoRef.current = false;
+      setJustificativaTeto('');
+      setConfirmacaoTetoOpen(false);
 
       window.setTimeout(() => {
         setActiveView?.('contas-pagar');
@@ -688,6 +885,59 @@ export const NewAccountView: React.FC = () => {
               </select>
             </label>
           </div>
+
+          {planoFinanceiroId && dataVencimento && moedaParaNumero(valor) > 0 && (
+            <div className="mt-5">
+              {carregandoTeto ? (
+                <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                  <Loader2 size={16} className="animate-spin" />
+                  Verificando teto do plano...
+                </div>
+              ) : situacaoPlanoSelecionado?.orcado > 0 ? (
+                <div
+                  className={`rounded-xl border p-4 ${
+                    situacaoPlanoSelecionado.aposLancamento < 0
+                      ? 'border-red-200 bg-red-50'
+                      : situacaoPlanoSelecionado.percentualApos >= 80
+                        ? 'border-amber-200 bg-amber-50'
+                        : 'border-emerald-200 bg-emerald-50'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertCircle
+                      size={20}
+                      className={
+                        situacaoPlanoSelecionado.aposLancamento < 0
+                          ? 'text-red-600'
+                          : situacaoPlanoSelecionado.percentualApos >= 80
+                            ? 'text-amber-600'
+                            : 'text-emerald-600'
+                      }
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {situacaoPlanoSelecionado.aposLancamento < 0
+                          ? 'Teto será excedido com este lançamento'
+                          : situacaoPlanoSelecionado.percentualApos >= 80
+                            ? 'Atenção: plano próximo do teto'
+                            : 'Plano com teto disponível'}
+                      </p>
+                      <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">
+                        <div><span className="block text-slate-400">Teto</span><strong>{formatarMoeda(situacaoPlanoSelecionado.orcado)}</strong></div>
+                        <div><span className="block text-slate-400">Comprometido</span><strong>{formatarMoeda(situacaoPlanoSelecionado.comprometido)}</strong></div>
+                        <div><span className="block text-slate-400">Disponível agora</span><strong>{formatarMoeda(situacaoPlanoSelecionado.disponivel)}</strong></div>
+                        <div><span className="block text-slate-400">Após esta conta</span><strong>{formatarMoeda(situacaoPlanoSelecionado.aposLancamento)}</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-500">
+                  Este plano não possui teto/orçamento mensal configurado para {competenciaSelecionada}.
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -1070,6 +1320,67 @@ export const NewAccountView: React.FC = () => {
           </button>
         </div>
       </form>
+      {confirmacaoTetoOpen && situacaoPlanoSelecionado && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-red-600">Atenção ao orçamento</p>
+                <h3 className="mt-1 text-xl font-bold text-slate-900">Teto do plano será excedido</h3>
+              </div>
+              <button type="button" onClick={() => setConfirmacaoTetoOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
+            </div>
+
+            <div className="mt-5 grid gap-3 rounded-xl bg-red-50 p-4 text-sm sm:grid-cols-2">
+              <div>Disponível atualmente<br/><strong>{formatarMoeda(situacaoPlanoSelecionado.disponivel)}</strong></div>
+              <div>Valor da nova conta<br/><strong>{formatarMoeda(moedaParaNumero(valor))}</strong></div>
+              <div>Disponível após lançamento<br/><strong className="text-red-700">{formatarMoeda(situacaoPlanoSelecionado.aposLancamento)}</strong></div>
+              <div>Excedente<br/><strong className="text-red-700">{formatarMoeda(Math.abs(situacaoPlanoSelecionado.aposLancamento))}</strong></div>
+            </div>
+
+            {planosAlternativos.length > 0 && (
+              <div className="mt-5">
+                <h4 className="text-sm font-semibold text-slate-900">Planos com teto disponível</h4>
+                <div className="mt-2 space-y-2">
+                  {planosAlternativos.slice(0, 5).map((plano: any) => (
+                    <div key={plano.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{plano.nome}</p>
+                        <p className="text-xs text-slate-500">Disponível: {formatarMoeda(plano.disponivel)} • Após a conta: {formatarMoeda(plano.aposLancamento)}</p>
+                      </div>
+                      <button type="button" onClick={() => trocarPlanoSugerido(plano.id)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Usar este plano</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5">
+              <label className="text-sm font-medium text-slate-700">Justificativa para exceder o teto *</label>
+              <textarea value={justificativaTeto} onChange={(e) => setJustificativaTeto(e.target.value)} rows={3} className="mt-2 w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-slate-400" placeholder="Explique por que esta conta precisa ser lançada neste plano..." />
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setConfirmacaoTetoOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Voltar e trocar plano</button>
+              <button
+                type="button"
+                disabled={!justificativaTeto.trim()}
+                onClick={() => {
+                  if (!justificativaTeto.trim()) return;
+                  autorizarExcessoRef.current = true;
+                  setConfirmacaoTetoOpen(false);
+                  window.setTimeout(() => {
+                    document.querySelector<HTMLFormElement>('form')?.requestSubmit();
+                  }, 0);
+                }}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Continuar mesmo assim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

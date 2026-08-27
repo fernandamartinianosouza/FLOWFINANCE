@@ -13,7 +13,6 @@
     "start": "serve -s dist -l $PORT"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@supabase/supabase-js": "^2.110.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

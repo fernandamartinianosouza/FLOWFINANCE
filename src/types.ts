@@ -252,6 +252,13 @@ export interface ProcessoCompra {
   historico?: HistoricoStatus[];
   documentos?: ProcessoDocumento[];
   pagamentos?: PagamentoProcesso[];
+
+  excluido?: boolean;
+  excluidoEm?: string | null;
+  excluidoPor?: string | null;
+  excluidoPorNome?: string | null;
+  motivoExclusao?: string | null;
+  statusAntesExclusao?: string | null;
 }
 
 export interface NovaContaInput {

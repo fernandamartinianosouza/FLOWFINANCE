@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 
 import { gerarRelatorioContasPagar } from '../services/relatorioContasPagarService';
+import { financeService } from '../services/financeService';
 import {
   ContaPagarImportPreview,
   contasPagarImportService,
@@ -117,6 +118,8 @@ export const AccountsPayableView: React.FC = () => {
     useState('');
   const [dataFim, setDataFim] =
     useState('');
+  const [ordenacaoVencimento, setOrdenacaoVencimento] =
+    useState<'asc' | 'desc'>('asc');
   const [paginaAtual, setPaginaAtual] =
     useState(1);
   const [pixCopiadoId, setPixCopiadoId] =
@@ -172,6 +175,10 @@ export const AccountsPayableView: React.FC = () => {
     useState('');
   const [excluindoConta, setExcluindoConta] =
     useState(false);
+  const [motivoExclusao, setMotivoExclusao] = useState('');
+  const [modalExcluidosOpen, setModalExcluidosOpen] = useState(false);
+  const [contasExcluidas, setContasExcluidas] = useState<any[]>([]);
+  const [carregandoExcluidos, setCarregandoExcluidos] = useState(false);
 
   const [contasExclusaoSelecionadas, setContasExclusaoSelecionadas] =
     useState<Set<string>>(new Set());
@@ -451,9 +458,19 @@ export const AccountsPayableView: React.FC = () => {
 
         return true;
       })
-      .sort((a: any, b: any) =>
-        dataBase(a).localeCompare(dataBase(b))
-      );
+      .sort((a: any, b: any) => {
+        const dataA = dataBase(a);
+        const dataB = dataBase(b);
+
+        // Contas sem vencimento ficam sempre no final.
+        if (!dataA && !dataB) return 0;
+        if (!dataA) return 1;
+        if (!dataB) return -1;
+
+        return ordenacaoVencimento === 'desc'
+          ? dataB.localeCompare(dataA)
+          : dataA.localeCompare(dataB);
+      });
   }, [
     todasContas,
     busca,
@@ -462,6 +479,7 @@ export const AccountsPayableView: React.FC = () => {
     formaFiltro,
     dataInicio,
     dataFim,
+    ordenacaoVencimento,
     fornecedores,
     empresas,
     contasVencidas,
@@ -798,6 +816,7 @@ export const AccountsPayableView: React.FC = () => {
   const abrirModalExclusao = (processo: any) => {
     setProcessoExcluindo(processo);
     setConfirmacaoExclusao('');
+    setMotivoExclusao('');
   };
 
   const fecharModalExclusao = () => {
@@ -816,6 +835,8 @@ export const AccountsPayableView: React.FC = () => {
       return;
     }
 
+    if (!motivoExclusao.trim()) { alert('Informe o motivo da exclusão.'); return; }
+
     const confirmado = window.confirm(
       `CONFIRMAÇÃO FINAL\n\nA conta ${processoExcluindo.id} será excluída permanentemente.\n\nDeseja continuar?`
     );
@@ -825,7 +846,7 @@ export const AccountsPayableView: React.FC = () => {
     try {
       setExcluindoConta(true);
 
-      const sucesso = await excluirProcesso(String(processoExcluindo.id));
+      const sucesso = await excluirProcesso(String(processoExcluindo.id), motivoExclusao.trim());
 
       if (!sucesso) {
         return;
@@ -886,6 +907,9 @@ export const AccountsPayableView: React.FC = () => {
       return;
     }
 
+    const motivoMassa = window.prompt('Informe o motivo da exclusão em massa:')?.trim();
+    if (!motivoMassa) { alert('O motivo da exclusão é obrigatório.'); return; }
+
     const contas = [...contasExclusaoSelecionadasDetalhes];
 
     if (contas.length === 0) {
@@ -917,7 +941,7 @@ export const AccountsPayableView: React.FC = () => {
         });
 
         try {
-          const sucesso = await excluirProcesso(processoId);
+          const sucesso = await excluirProcesso(processoId, motivoMassa);
 
           if (sucesso) {
             sucessos.push(processoId);
@@ -2634,11 +2658,26 @@ export const AccountsPayableView: React.FC = () => {
     previewImportacao.length -
     totalImportacaoValido;
 
+  const abrirExcluidos = async () => {
+    setModalExcluidosOpen(true); setCarregandoExcluidos(true);
+    try { setContasExcluidas(await financeService.listarProcessosExcluidos(organizacaoAtivaId, empresaAtivaId)); }
+    catch(e:any) { alert(e?.message || 'Erro ao carregar excluídos.'); }
+    finally { setCarregandoExcluidos(false); }
+  };
+  const restaurarExcluida = async (conta:any) => {
+    if(!window.confirm(`Restaurar a conta ${conta.id}?`)) return;
+    await financeService.restaurarProcesso(String(conta.id), organizacaoAtivaId);
+    setContasExcluidas(v => v.filter(c => c.id !== conta.id));
+    await recarregarDados();
+  };
+
   return (
     <div
       className="w-full space-y-5 lg:space-y-8"
       id="accounts-payable-view-container"
     >
+      {modalExcluidosOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4"><div className="max-h-[85vh] w-full max-w-6xl overflow-auto rounded-[22px] bg-white p-6 shadow-2xl"><div className="mb-5 flex items-center justify-between"><div><h2 className="text-lg font-bold">Contas excluídas</h2><p className="text-xs text-slate-400">Histórico preservado para auditoria.</p></div><button onClick={() => setModalExcluidosOpen(false)} className="rounded-lg p-2 hover:bg-slate-100"><X className="h-5 w-5"/></button></div>{carregandoExcluidos ? <div className="p-8 text-center text-xs text-slate-400">Carregando...</div> : contasExcluidas.length===0 ? <div className="p-8 text-center text-xs text-slate-400">Nenhuma conta excluída.</div> : <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-400"><tr><th className="p-3">Conta</th><th className="p-3">Favorecido/Descrição</th><th className="p-3">Vencimento</th><th className="p-3">Valor</th><th className="p-3">Excluído em</th><th className="p-3">Por</th><th className="p-3">Motivo</th><th className="p-3"></th></tr></thead><tbody>{contasExcluidas.map(c => <tr key={c.id} className="border-t"><td className="p-3 font-bold">{c.id}</td><td className="p-3">{c.descricao}</td><td className="p-3">{c.dataVencimento || c.prazo || '-'}</td><td className="p-3 font-mono">{formatarReal(c.valor)}</td><td className="p-3">{c.excluidoEm ? new Date(c.excluidoEm).toLocaleString('pt-BR') : '-'}</td><td className="p-3">{c.excluidoPorNome || '-'}</td><td className="p-3 max-w-[240px]">{c.motivoExclusao || '-'}</td><td className="p-3"><div className="flex gap-2"><button onClick={() => { abrirDetalhesConta(c); setModalExcluidosOpen(false); }} className="rounded-lg border px-3 py-2 font-bold">Detalhes</button><button onClick={() => restaurarExcluida(c)} className="rounded-lg bg-slate-900 px-3 py-2 font-bold text-white">Restaurar</button></div></td></tr>)}</tbody></table></div>}</div></div>}
+
       <input
         ref={inputImportacaoRef}
         type="file"
@@ -2683,6 +2722,8 @@ export const AccountsPayableView: React.FC = () => {
             <Upload className="h-4 w-4" />
             Importar Excel
           </button>
+
+          <button type="button" onClick={abrirExcluidos} className="flex flex-1 items-center justify-center gap-2 rounded-[12px] border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 md:flex-none"><Trash2 className="h-4 w-4" />Excluídos</button>
 
           <button
             type="button"
@@ -2760,7 +2801,7 @@ export const AccountsPayableView: React.FC = () => {
       </div>
 
       <div className="rounded-[18px] border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-8">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-9">
           <div className="flex items-center gap-2 rounded-[12px] bg-slate-50 px-3.5">
             <Search className="h-4 w-4 text-slate-400" />
 
@@ -2871,6 +2912,26 @@ export const AccountsPayableView: React.FC = () => {
             </option>
             <option value="cartao">
               Cartão
+            </option>
+          </select>
+
+          <select
+            value={ordenacaoVencimento}
+            onChange={event =>
+              setOrdenacaoVencimento(
+                event.target.value as
+                  | 'asc'
+                  | 'desc'
+              )
+            }
+            className="rounded-[12px] border-0 bg-slate-50 px-3.5 py-2.5 text-xs"
+            title="Ordenar por vencimento"
+          >
+            <option value="asc">
+              Vencimento: mais antigo
+            </option>
+            <option value="desc">
+              Vencimento: mais recente
             </option>
           </select>
 
@@ -3710,6 +3771,7 @@ export const AccountsPayableView: React.FC = () => {
                 <p className="mt-1 text-[10px] text-slate-500">
                   Digite <strong>EXCLUIR</strong> para liberar a exclusão.
                 </p>
+                <textarea value={motivoExclusao} onChange={e => setMotivoExclusao(e.target.value)} placeholder="Motivo da exclusão (obrigatório)" className="mb-3 min-h-[80px] w-full rounded-[12px] border border-slate-200 p-3 text-xs" />
                 <input
                   value={confirmacaoExclusao}
                   onChange={event => setConfirmacaoExclusao(event.target.value)}
