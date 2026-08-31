@@ -536,29 +536,34 @@ export const faturamentoImportService = {
       );
     }
 
-    const { data, error } = await supabase
-      .from('contas_receber')
-      .update({
-        cliente_nome: dados.clienteNome.trim(),
-        cliente_documento:
-          dados.clienteDocumento?.trim() || null,
-        medicao: dados.medicao?.trim() || null,
-        numero_documento:
-          dados.numeroDocumento.trim().toUpperCase(),
-        data_vencimento: dados.dataVencimento,
-        valor_original: valorOriginal,
-        observacao:
-          dados.observacao?.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conta.id)
-      .eq('organizacao_id', conta.organizacaoId)
-      .select('*')
-      .single();
+    // A edição é executada no banco pela RPC segura.
+    // A função valida autenticação, organização, empresa e a permissão
+    // contas_receber/editar antes de atualizar o título.
+    const { data, error } = await supabase.rpc(
+      'editar_conta_receber',
+      {
+        p_conta_id: conta.id,
+        p_cliente_nome: dados.clienteNome.trim(),
+        p_cliente_documento: dados.clienteDocumento?.trim() || null,
+        p_medicao: dados.medicao?.trim() || null,
+        p_numero_documento: dados.numeroDocumento.trim().toUpperCase(),
+        p_data_vencimento: dados.dataVencimento,
+        p_valor_original: valorOriginal,
+        p_observacao: dados.observacao?.trim() || null,
+      }
+    );
 
     if (error) throw error;
 
-    return mapConta(data);
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (!row) {
+      throw new Error(
+        'A edição foi processada, mas a conta atualizada não foi retornada.'
+      );
+    }
+
+    return mapConta(row);
   },
 
   async listarHistoricoConta(
@@ -781,16 +786,26 @@ export const faturamentoImportService = {
   },
 
   async excluir(conta: ContaReceber, motivo = 'Exclusão solicitada pelo usuário'): Promise<void> {
-    const { data: auth } = await supabase.auth.getUser();
-    const usuario = auth.user;
-    const nome = usuario?.user_metadata?.nome || usuario?.email || 'Usuário não identificado';
-    const agora = new Date().toISOString();
-    const { error } = await supabase.from('contas_receber').update({
-      excluido:true, excluido_em:agora, excluido_por:usuario?.id||null, excluido_por_nome:nome,
-      motivo_exclusao:motivo, status_antes_exclusao:conta.status, updated_at:agora
-    }).eq('id',conta.id).eq('organizacao_id',conta.organizacaoId);
+    // Soft delete executado pela RPC segura.
+    // A função valida autenticação, organização, empresa e a permissão
+    // contas_receber/excluir antes de marcar o registro como excluído.
+    const { data, error } = await supabase.rpc(
+      'excluir_conta_receber',
+      {
+        p_conta_id: conta.id,
+        p_motivo: motivo,
+      }
+    );
+
     if (error) throw error;
-    await supabase.from('contas_receber_historico').insert({ conta_receber_id:conta.id, organizacao_id:conta.organizacaoId, empresa_id:conta.empresaId, campo:'exclusao', valor_anterior:conta.status, valor_novo:`Excluído - ${motivo}`, usuario_id:usuario?.id||null, usuario_nome:nome });
+
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (!row) {
+      throw new Error(
+        'A exclusão foi processada, mas a conta atualizada não foi retornada.'
+      );
+    }
   },
 
   async listarExcluidos(organizacaoId:string, empresaId:string): Promise<ContaReceber[]> {
@@ -799,11 +814,25 @@ export const faturamentoImportService = {
   },
 
   async restaurar(conta: ContaReceber): Promise<void> {
-    const { data: auth } = await supabase.auth.getUser();
-    const nome=auth.user?.user_metadata?.nome||auth.user?.email||'Usuário não identificado';
-    const { error }=await supabase.from('contas_receber').update({excluido:false,excluido_em:null,excluido_por:null,excluido_por_nome:null,motivo_exclusao:null,status_antes_exclusao:null,updated_at:new Date().toISOString()}).eq('id',conta.id).eq('organizacao_id',conta.organizacaoId);
-    if(error) throw error;
-    await supabase.from('contas_receber_historico').insert({conta_receber_id:conta.id,organizacao_id:conta.organizacaoId,empresa_id:conta.empresaId,campo:'restauracao',valor_anterior:'Excluído',valor_novo:conta.status,usuario_id:auth.user?.id||null,usuario_nome:nome});
+    // Restauração executada pela RPC segura.
+    // A função valida autenticação, organização, empresa e a permissão
+    // contas_receber/excluir antes de restaurar o registro.
+    const { data, error } = await supabase.rpc(
+      'restaurar_conta_receber',
+      {
+        p_conta_id: conta.id,
+      }
+    );
+
+    if (error) throw error;
+
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (!row) {
+      throw new Error(
+        'A restauração foi processada, mas a conta atualizada não foi retornada.'
+      );
+    }
   },
 
   baixarModelo(): void {
