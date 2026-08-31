@@ -721,42 +721,34 @@ export const faturamentoImportService = {
     const valorJuros = Math.max(Number(juros || 0), 0);
     const valorMulta = Math.max(Number(multa || 0), 0);
 
-    // Não limitar o valor recebido ao valor original.
-    const novoRecebido =
-      Number(conta.valorRecebido || 0) + valorPrincipal;
-
-    const novosJuros =
-      Number(conta.jurosRecebidos || 0) +
-      valorJuros;
-
-    const novaMulta =
-      Number(conta.multaRecebida || 0) +
-      valorMulta;
-
-    const novoStatus: StatusContaReceber =
-      novoRecebido >= conta.valorOriginal
-        ? 'recebido'
-        : 'recebido_parcial';
-
-    const { data, error } = await supabase
-      .from('contas_receber')
-      .update({
-        valor_recebido: novoRecebido,
-        juros_recebidos: novosJuros,
-        multa_recebida: novaMulta,
-        status: novoStatus,
-        data_recebimento: dataRecebimento,
-        forma_recebimento: formaRecebimento,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conta.id)
-      .eq('organizacao_id', conta.organizacaoId)
-      .select('*')
-      .single();
+    // A baixa é executada no banco pela RPC segura.
+    // A função valida autenticação, organização, empresa e a permissão
+    // contas_receber/receber antes de atualizar o título.
+    const { data, error } = await supabase.rpc(
+      'receber_conta_receber',
+      {
+        p_conta_id: conta.id,
+        p_valor: valorPrincipal,
+        p_data_recebimento: dataRecebimento,
+        p_forma_recebimento: formaRecebimento,
+        p_juros: valorJuros,
+        p_multa: valorMulta,
+      }
+    );
 
     if (error) throw error;
 
-    return mapConta(data);
+    // Para retorno de tipo composto, o PostgREST pode entregar o registro
+    // diretamente ou dentro de um array, conforme a versão/configuração.
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (!row) {
+      throw new Error(
+        'O recebimento foi processado, mas a conta atualizada não foi retornada.'
+      );
+    }
+
+    return mapConta(row);
   },
 
   async registrarRecebimentosEmMassa(
