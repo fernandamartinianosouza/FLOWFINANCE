@@ -952,16 +952,10 @@ export const CashFlowView: React.FC = () => {
       baixa.multa.replace(',', '.')
     );
 
-    if (
-      !Number.isFinite(valor) ||
-      valor <= 0 ||
-      valor > contaBaixa.saldo
-    ) {
-      alert(
-        `Informe um valor entre R$ 0,01 e ${formatarReal(
-          contaBaixa.saldo
-        )}.`
-      );
+    // Permite registrar valor recebido acima do saldo/original.
+    // Isso atende casos em que o recebimento possui acréscimos.
+    if (!Number.isFinite(valor) || valor <= 0) {
+      alert('Informe um valor recebido válido e maior que zero.');
       return;
     }
 

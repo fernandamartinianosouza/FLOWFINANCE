@@ -200,7 +200,15 @@ const mapConta = (row: any): ContaReceber => ({
     Number(row.valor_recebido ?? 0) +
     Number(row.juros_recebidos ?? 0) +
     Number(row.multa_recebida ?? 0),
-  saldo: Number(row.saldo ?? 0),
+  // Evita saldo negativo na interface quando houver recebimento maior.
+  saldo: Math.max(
+    Number(
+      row.saldo ??
+        (Number(row.valor_original ?? 0) -
+          Number(row.valor_recebido ?? 0))
+    ),
+    0
+  ),
   status: row.status,
   dataRecebimento: row.data_recebimento,
   formaRecebimento: row.forma_recebimento,
@@ -713,10 +721,9 @@ export const faturamentoImportService = {
     const valorJuros = Math.max(Number(juros || 0), 0);
     const valorMulta = Math.max(Number(multa || 0), 0);
 
-    const novoRecebido = Math.min(
-      conta.valorOriginal,
-      conta.valorRecebido + valorPrincipal
-    );
+    // Não limitar o valor recebido ao valor original.
+    const novoRecebido =
+      Number(conta.valorRecebido || 0) + valorPrincipal;
 
     const novosJuros =
       Number(conta.jurosRecebidos || 0) +
