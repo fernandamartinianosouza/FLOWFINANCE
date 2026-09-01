@@ -1071,28 +1071,38 @@ export const financeService = {
     comprovante?: string | null;
     observacao?: string | null;
   }) {
-    const userId = await getUserId();
-
     const processoDbId = await obterProcessoDbId(params.processoId);
 
-    const { data, error } = await supabase
-      .from("pagamentos_processos")
-      .insert({
-        user_id: userId,
-        processo_id: processoDbId,
-        valor_pago: Number(params.valorPago),
-        metodo_pagamento: params.metodoPagamento,
-        data_pagamento:
+    const { data, error } = await supabase.rpc(
+      "registrar_pagamento_processo",
+      {
+        p_processo_id: processoDbId,
+        p_valor_pago: Number(params.valorPago),
+        p_metodo_pagamento: params.metodoPagamento,
+        p_data_pagamento:
           params.dataPagamento || new Date().toISOString().split("T")[0],
-        comprovante: params.comprovante || null,
-        observacao: params.observacao || null,
-      })
-      .select()
-      .single();
+        p_comprovante: params.comprovante || null,
+        p_observacao: params.observacao || null,
+      },
+    );
 
-    if (error) throw error;
+    if (error) {
+      throw new Error(
+        error.message || "Não foi possível registrar o pagamento.",
+      );
+    }
 
-    return data;
+    // Funções que retornam tipo composto normalmente entregam um objeto,
+    // mas mantemos compatibilidade com respostas em array.
+    const pagamento = Array.isArray(data) ? data[0] : data;
+
+    if (!pagamento) {
+      throw new Error(
+        "O pagamento foi processado, mas o registro criado não foi retornado.",
+      );
+    }
+
+    return pagamento;
   },
 
   async getPagamentosProcesso(processoId: string) {

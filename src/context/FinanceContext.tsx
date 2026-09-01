@@ -1235,22 +1235,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         throw new Error('Processo não encontrado.');
       }
 
-      const valorTotal = Number(
-        processoAtual.valor || 0
-      );
-
+      const valorTotal = Number(processoAtual.valor || 0);
       const valorJaPago = Number(
         (processoAtual as any).valorPago || 0
       );
-
       const saldoAtual = Math.max(
         valorTotal - valorJaPago,
         0
       );
-
-      const valorDestePagamento = Number(
-        valorPagamento
-      );
+      const valorDestePagamento = Number(valorPagamento);
 
       if (
         !Number.isFinite(valorDestePagamento) ||
@@ -1267,10 +1260,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         );
       }
 
-      if (
-        valorDestePagamento >
-        saldoAtual + 0.001
-      ) {
+      if (valorDestePagamento > saldoAtual + 0.001) {
         throw new Error(
           `O valor informado é maior que o saldo restante de ${saldoAtual.toLocaleString(
             'pt-BR',
@@ -1282,93 +1272,37 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         );
       }
 
-      const novoValorPago =
-        valorJaPago + valorDestePagamento;
-
+      const novoValorPago = valorJaPago + valorDestePagamento;
       const novoSaldo = Math.max(
         valorTotal - novoValorPago,
         0
       );
-
       const quitado = novoSaldo <= 0.001;
-      const dataHoje = new Date()
-        .toISOString()
-        .split('T')[0];
+      const dataHoje = new Date().toISOString().split('T')[0];
 
-      const textoValor =
-        valorDestePagamento.toLocaleString(
-          'pt-BR',
-          {
-            style: 'currency',
-            currency: 'BRL',
-          }
-        );
-
-      const textoSaldo =
-        novoSaldo.toLocaleString('pt-BR', {
+      const textoValor = valorDestePagamento.toLocaleString(
+        'pt-BR',
+        {
           style: 'currency',
           currency: 'BRL',
-        });
+        }
+      );
 
-      const novoHistorico: HistoricoStatus = {
-        data: new Date()
-          .toISOString()
-          .replace('T', ' ')
-          .substring(0, 16),
-        usuario: usuarioLogado,
-        deStatus: processoAtual.status,
-        paraStatus: quitado
-          ? 'conciliacao'
-          : 'pagamento',
-        observacao: quitado
-          ? `Pagamento final de ${textoValor} registrado via ${metodo.toUpperCase()}. Conta quitada e enviada para conciliação.${
-              observacao
-                ? ` Observação: ${observacao}`
-                : ''
-            }`
-          : `Pagamento parcial de ${textoValor} registrado via ${metodo.toUpperCase()}. Saldo restante: ${textoSaldo}.${
-              observacao
-                ? ` Observação: ${observacao}`
-                : ''
-            }`,
-      };
+      const textoSaldo = novoSaldo.toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+      });
 
-      const atualizado: ProcessoCompra = {
-        ...processoAtual,
-        status: quitado
-          ? 'conciliacao'
-          : 'pagamento',
-        metodoPagamento: metodo,
-        valorPago: novoValorPago,
-        saldoPagar: novoSaldo,
-        pagamentoParcial:
-          novoValorPago > 0 && !quitado,
-        dataPagamento: quitado
-          ? dataHoje
-          : processoAtual.dataPagamento,
-        comprovanteNome:
-          comprovante ||
-          processoAtual.comprovanteNome ||
-          null,
-        historico: [
-          ...(processoAtual.historico || []),
-          novoHistorico,
-        ],
-      } as any;
-
-      const salvo =
-        await financeService.editarProcesso(
-          id,
-          atualizado
-        );
-
-      const processoDbId =
-        (processoAtual as any).dbId ||
-        (salvo as any).dbId;
-
-      if (processoDbId) {
+      /*
+       * O pagamento agora é uma única operação atômica no banco.
+       * A RPC registra pagamentos_processos, recalcula o processo principal
+       * e cria o histórico. O frontend não faz mais UPDATE financeiro direto
+       * em processos_compra antes de registrar o pagamento.
+       */
+      const pagamentoCriado: any =
         await financeService.criarPagamentoProcesso({
-          processoId: processoDbId,
+          processoId:
+            (processoAtual as any).dbId || processoAtual.id,
           valorPago: valorDestePagamento,
           metodoPagamento: metodo,
           dataPagamento: dataHoje,
@@ -1376,44 +1310,30 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           observacao: observacao || null,
         });
 
-        await financeService.criarHistoricoProcesso({
-          dbId: processoDbId,
-          usuario: usuarioLogado,
-          deStatus: processoAtual.status,
-          paraStatus: quitado
-            ? 'conciliacao'
-            : 'pagamento',
-          observacao:
-            novoHistorico.observacao,
-        });
-      }
+      const processoDbId =
+        pagamentoCriado?.processo_id ||
+        pagamentoCriado?.processoId ||
+        (processoAtual as any).dbId ||
+        null;
 
-      setProcessosTodos(prev =>
-        prev.map(processo =>
-          processo.id === id
-            ? {
-                ...processo,
-                ...atualizado,
-                ...salvo,
-              }
-            : processo
-        )
-      );
+      /*
+       * Recarrega o estado a partir do banco para que saldo, valor pago,
+       * status e histórico exibidos sejam exatamente os persistidos pela RPC.
+       */
+      await recarregarDados();
 
       if (quitado) {
         const fornecedor = fornecedores.find(
           fornecedorItem =>
-            fornecedorItem.id ===
-            processoAtual.fornecedorId
+            fornecedorItem.id === processoAtual.fornecedorId
         );
 
         if (fornecedor) {
           const atualizadoFornecedor = {
             ...fornecedor,
             historicoCompras:
-              Number(
-                fornecedor.historicoCompras || 0
-              ) + valorTotal,
+              Number(fornecedor.historicoCompras || 0) +
+              valorTotal,
             ultimaCompra: dataHoje,
           };
 
@@ -1427,26 +1347,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
 
-      const alerta =
-        await financeService.criarAlerta({
-          organizacaoId: organizacaoAtivaIdState,
-          tipo: quitado
-            ? 'sucesso'
-            : 'info',
-          titulo: quitado
-            ? 'Conta Quitada'
-            : 'Pagamento Parcial Registrado',
-          mensagem: quitado
-            ? `${id} foi totalmente pago e enviado para conciliação.`
-            : `${id} recebeu pagamento parcial de ${textoValor}. Saldo restante: ${textoSaldo}.`,
-          lido: false,
-          processoId: processoDbId || null,
-        });
+      const alerta = await financeService.criarAlerta({
+        organizacaoId: organizacaoAtivaIdState,
+        tipo: quitado ? 'sucesso' : 'info',
+        titulo: quitado
+          ? 'Conta Quitada'
+          : 'Pagamento Parcial Registrado',
+        mensagem: quitado
+          ? `${id} foi totalmente pago e enviado para conciliação.`
+          : `${id} recebeu pagamento parcial de ${textoValor}. Saldo restante: ${textoSaldo}.`,
+        lido: false,
+        processoId: processoDbId,
+      });
 
-      setAlertas(prev => [
-        alerta,
-        ...prev,
-      ]);
+      setAlertas(prev => [alerta, ...prev]);
     } catch (error: any) {
       console.error(
         'Erro ao registrar pagamento:',

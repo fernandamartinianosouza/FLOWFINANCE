@@ -85,7 +85,6 @@ export interface Empresa {
   saldoAtual: number;
 }
 
-Substitua a interface Fornecedor em src/types/index.ts por:
 
 export interface Fornecedor {
   id: string;
