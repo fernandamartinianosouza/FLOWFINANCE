@@ -2,23 +2,26 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 
 export interface ContaPagarImportPreview {
+  aba: string;
   linha: number;
   planoConta: string;
-  centroCusto: string;
   fornecedor: string;
-  pix: string;
   vencimento: string;
   parcela: string;
-  valor: number;
+  valorTotal: number;
+  valorReal: number | null;
+  valorPagoPlanilha: number | null;
+  possivelmentePago: boolean;
   status: 'valido' | 'atencao';
   mensagem?: string;
 }
 
-const normalizarCabecalho = (valor: string) =>
-  valor
+const normalizarCabecalho = (valor: unknown) =>
+  String(valor ?? '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
+    .replace(/\s+/g, ' ')
     .toLowerCase();
 
 export const normalizarNomeImportacao = (valor: string) =>
@@ -27,27 +30,33 @@ export const normalizarNomeImportacao = (valor: string) =>
     .replace(/\s+/g, ' ')
     .toLocaleLowerCase('pt-BR');
 
-const parseValor = (valor: unknown): number => {
-  if (typeof valor === 'number') {
-    return Number.isFinite(valor) ? valor : 0;
+const parseValor = (valor: unknown): number | null => {
+  if (valor === null || valor === undefined || valor === '') {
+    return null;
   }
 
-  const texto = String(valor ?? '')
+  if (typeof valor === 'number') {
+    return Number.isFinite(valor) ? valor : null;
+  }
+
+  const texto = String(valor)
     .trim()
     .replace(/\s/g, '')
     .replace(/R\$/gi, '');
 
-  if (!texto) return 0;
+  if (!texto || texto === '-') return null;
+
+  let numero: number;
 
   if (texto.includes(',') && texto.includes('.')) {
-    return Number(texto.replace(/\./g, '').replace(',', '.'));
+    numero = Number(texto.replace(/\./g, '').replace(',', '.'));
+  } else if (texto.includes(',')) {
+    numero = Number(texto.replace(',', '.'));
+  } else {
+    numero = Number(texto);
   }
 
-  if (texto.includes(',')) {
-    return Number(texto.replace(',', '.'));
-  }
-
-  return Number(texto);
+  return Number.isFinite(numero) ? numero : null;
 };
 
 const dataIso = (valor: unknown): string => {
@@ -64,9 +73,10 @@ const dataIso = (valor: unknown): string => {
 
   const texto = String(valor ?? '').trim();
 
-  const br = texto.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  const br = texto.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (br) {
-    return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`;
+    const ano = br[3].length === 2 ? `20${br[3]}` : br[3];
+    return `${ano}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`;
   }
 
   const iso = texto.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
@@ -75,6 +85,61 @@ const dataIso = (valor: unknown): string => {
   }
 
   return '';
+};
+
+const localizarColuna = (
+  cabecalhos: unknown[],
+  opcoes: string[]
+): number => {
+  const normalizados = cabecalhos.map(normalizarCabecalho);
+
+  for (const opcao of opcoes) {
+    const indice = normalizados.indexOf(normalizarCabecalho(opcao));
+    if (indice >= 0) return indice;
+  }
+
+  return -1;
+};
+
+const montarParcela = (
+  atual: unknown,
+  total: unknown
+): string => {
+  const parteAtual = String(atual ?? '').trim();
+  const parteTotal = String(total ?? '').trim();
+
+  const atualValida =
+    parteAtual && parteAtual !== '-' && parteAtual !== '0';
+  const totalValida =
+    parteTotal && parteTotal !== '-' && parteTotal !== '0';
+
+  if (atualValida && totalValida) {
+    if (parteAtual.includes('/')) return parteAtual;
+    return `${parteAtual}/${parteTotal}`;
+  }
+
+  if (atualValida) return parteAtual;
+  if (totalValida) return parteTotal;
+
+  return '';
+};
+
+const ehAbaMensal = (nome: string) => {
+  const normalizado = normalizarCabecalho(nome).toUpperCase();
+  return [
+    'JAN',
+    'FEV',
+    'MAR',
+    'ABR',
+    'MAI',
+    'JUN',
+    'JUL',
+    'AGO',
+    'SET',
+    'OUT',
+    'NOV',
+    'DEZ',
+  ].includes(normalizado);
 };
 
 export const contasPagarImportService = {
@@ -98,9 +163,7 @@ export const contasPagarImportService = {
       inicioTexto.includes('<head>') ||
       inicioTexto.includes('<body')
     ) {
-      throw new Error(
-        'O arquivo selecionado não é uma planilha Excel válida. Provavelmente o botão Modelo baixou uma página HTML porque o arquivo não foi colocado em public/modelos. Copie modelo_importacao_contas_pagar.xlsx para public/modelos e baixe novamente.'
-      );
+      throw new Error('O arquivo selecionado não é uma planilha Excel válida.');
     }
 
     let workbook: XLSX.WorkBook;
@@ -113,96 +176,150 @@ export const contasPagarImportService = {
     } catch (error: any) {
       console.error('Erro interno do XLSX:', error);
       throw new Error(
-        'Não foi possível abrir esta planilha. Baixe novamente o modelo do sistema ou salve o arquivo no Excel como Pasta de Trabalho do Excel (.xlsx).'
+        'Não foi possível abrir esta planilha. Salve o arquivo no Excel como Pasta de Trabalho do Excel (.xlsx) e tente novamente.'
       );
     }
 
-    const nomeAba = workbook.SheetNames[0];
-    if (!nomeAba) throw new Error('A planilha não possui nenhuma aba.');
+    const abasPreferenciais = workbook.SheetNames.filter(ehAbaMensal);
+    const abasParaLer = abasPreferenciais.length
+      ? abasPreferenciais
+      : workbook.SheetNames;
 
-    const sheet = workbook.Sheets[nomeAba];
+    const resultado: ContaPagarImportPreview[] = [];
 
-    const linhas = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-      defval: '',
-      raw: true,
-    });
+    for (const nomeAba of abasParaLer) {
+      const sheet = workbook.Sheets[nomeAba];
+      if (!sheet) continue;
 
-    return linhas.map((linha, index) => {
-      const dados: Record<string, unknown> = {};
-
-      Object.entries(linha).forEach(([chave, valor]) => {
-        dados[normalizarCabecalho(chave)] = valor;
+      const matriz = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+        header: 1,
+        defval: '',
+        raw: true,
       });
 
-      const planoConta = String(
-        dados['planos de contas'] ??
-          dados['plano de contas'] ??
-          dados['plano de conta'] ??
-          dados['plano'] ??
-          ''
-      ).trim();
+      const indiceCabecalho = matriz.findIndex((linha) => {
+        const textos = (linha || []).map(normalizarCabecalho);
+        return (
+          textos.includes('vencimentos') &&
+          textos.includes('plano de contas') &&
+          textos.includes('fornecedor') &&
+          (textos.includes('previsto') ||
+            textos.includes('valor total') ||
+            textos.includes('valor'))
+        );
+      });
 
-      const centroCusto = String(
-        dados['centro de custo'] ??
-          dados['centro custo'] ??
-          dados['centro de custos'] ??
-          dados['centro'] ??
-          ''
-      ).trim();
+      if (indiceCabecalho < 0) continue;
 
-      const fornecedor = String(
-        dados['fornecedor'] ??
-          dados['favorecido'] ??
-          ''
-      ).trim();
+      const cabecalhos = matriz[indiceCabecalho] || [];
 
-      const pix = String(
-        dados['pix'] ??
-          dados['chave pix'] ??
-          dados['pix copia e cola'] ??
-          ''
-      ).trim();
+      const colVencimento = localizarColuna(cabecalhos, [
+        'vencimentos',
+        'vencimento',
+        'data de vencimento',
+      ]);
+      const colParcela = localizarColuna(cabecalhos, [
+        'parcelas',
+        'parcela',
+      ]);
+      const colPlano = localizarColuna(cabecalhos, [
+        'plano de contas',
+        'planos de contas',
+        'plano de conta',
+      ]);
+      const colFornecedor = localizarColuna(cabecalhos, [
+        'fornecedor',
+        'favorecido',
+      ]);
+      const colValorTotal = localizarColuna(cabecalhos, [
+        'valor total',
+        'previsto',
+        'valor previsto',
+        'valor',
+      ]);
+      const colValorReal = localizarColuna(cabecalhos, ['real', 'valor real']);
+      const colPago = localizarColuna(cabecalhos, ['pago', 'valor pago']);
 
-      const vencimento = dataIso(
-        dados['vencimento'] ??
-          dados['data de vencimento'] ??
-          dados['data vencimento']
+      const colTotalParcelas =
+        colParcela >= 0 &&
+        normalizarCabecalho(cabecalhos[colParcela + 1]) === ''
+          ? colParcela + 1
+          : -1;
+
+      for (let i = indiceCabecalho + 1; i < matriz.length; i += 1) {
+        const linha = matriz[i] || [];
+
+        const vencimento =
+          colVencimento >= 0 ? dataIso(linha[colVencimento]) : '';
+        const planoConta =
+          colPlano >= 0 ? String(linha[colPlano] ?? '').trim() : '';
+        const fornecedor =
+          colFornecedor >= 0
+            ? String(linha[colFornecedor] ?? '').trim()
+            : '';
+        const valorTotal =
+          colValorTotal >= 0 ? parseValor(linha[colValorTotal]) : null;
+        const valorReal =
+          colValorReal >= 0 ? parseValor(linha[colValorReal]) : null;
+          if (!valorReal || valorReal <= 0) {
+  continue;
+}
+        const valorPagoPlanilha =
+          colPago >= 0 ? parseValor(linha[colPago]) : null;
+        const parcela =
+          colParcela >= 0
+            ? montarParcela(
+                linha[colParcela],
+                colTotalParcelas >= 0 ? linha[colTotalParcelas] : ''
+              )
+            : '';
+
+        const linhaVazia =
+          !vencimento &&
+          !planoConta &&
+          !fornecedor &&
+          !(valorTotal && valorTotal > 0) &&
+          !(valorReal && valorReal > 0) &&
+          !(valorPagoPlanilha && valorPagoPlanilha > 0);
+
+        if (linhaVazia) continue;
+
+        const erros: string[] = [];
+
+        if (!vencimento) erros.push('Vencimento inválido');
+        if (!planoConta) erros.push('Plano de contas não informado');
+        if (!fornecedor) erros.push('Fornecedor não informado');
+        if (!valorTotal || valorTotal <= 0) erros.push('Valor Total inválido');
+
+        resultado.push({
+          aba: nomeAba,
+          linha: i + 1,
+          planoConta,
+          fornecedor,
+          vencimento,
+          parcela,
+          valorTotal: valorTotal || 0,
+          valorReal:
+            valorReal !== null && valorReal > 0 ? valorReal : null,
+          valorPagoPlanilha:
+            valorPagoPlanilha !== null && valorPagoPlanilha > 0
+              ? valorPagoPlanilha
+              : null,
+          possivelmentePago:
+            valorPagoPlanilha !== null && valorPagoPlanilha > 0,
+          status: erros.length ? 'atencao' : 'valido',
+          mensagem: erros.join(' • '),
+        });
+      }
+    }
+
+    if (resultado.length === 0) {
+      throw new Error(
+        'Não foram encontrados lançamentos com a coluna REAL preenchida nas abas da planilha.'
       );
+    }
 
-      const parcela = String(
-        dados['parcela'] ??
-          dados['parcelas'] ??
-          '1/1'
-      ).trim();
-
-      const valor = parseValor(
-        dados['valor'] ??
-          dados['valor da parcela'] ??
-          dados['valor total'] ??
-          0
-      );
-
-      const erros: string[] = [];
-
-      if (!planoConta) erros.push('Plano de contas não informado');
-      if (!fornecedor) erros.push('Fornecedor não informado');
-      if (!vencimento) erros.push('Vencimento inválido');
-      if (!parcela) erros.push('Parcela não informada');
-      if (!Number.isFinite(valor) || valor <= 0) erros.push('Valor inválido');
-
-      return {
-        linha: index + 2,
-        planoConta,
-        centroCusto,
-        fornecedor,
-        pix,
-        vencimento,
-        parcela,
-        valor,
-        status: erros.length ? 'atencao' : 'valido',
-        mensagem: erros.join(' • '),
-      };
-    });
+    return resultado;
   },
 
   async buscarPlano(params: {
@@ -214,30 +331,6 @@ export const contasPagarImportService = {
       .from('planos_financeiros')
       .select('id')
       .eq('empresa_id', params.empresaId)
-      .ilike('nome', params.nome.trim())
-      .limit(1);
-
-    if (params.organizacaoId) {
-      query = query.eq('organizacao_id', params.organizacaoId);
-    }
-
-    const { data, error } = await query.maybeSingle();
-    if (error) throw error;
-
-    return data?.id ? String(data.id) : null;
-  },
-
-  async buscarCentro(params: {
-    organizacaoId?: string;
-    empresaId: string;
-    planoFinanceiroId: string;
-    nome: string;
-  }): Promise<string | null> {
-    let query = supabase
-      .from('centros_custos')
-      .select('id')
-      .eq('empresa_id', params.empresaId)
-      .eq('plano_financeiro_id', params.planoFinanceiroId)
       .ilike('nome', params.nome.trim())
       .limit(1);
 

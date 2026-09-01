@@ -213,6 +213,9 @@ export interface ProcessoCompra {
 
   descricao: string;
   valor: number;
+  valorReal?: number | null;
+  parcela?: string | null;
+  numeroParcela?: string | null;
   urgencia: Urgencia;
   responsavel: string;
   dataCriacao: string;

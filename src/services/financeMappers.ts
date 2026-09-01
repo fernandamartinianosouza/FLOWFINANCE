@@ -303,6 +303,17 @@ export const mapProcessoFromDb = (
 
     valor,
 
+    valorReal:
+      item.valor_real == null
+        ? null
+        : numero(item.valor_real),
+
+    parcela:
+      item.parcela || null,
+
+    numeroParcela:
+      item.parcela || null,
+
     urgencia:
       item.urgencia || 'media',
 
@@ -583,6 +594,16 @@ export const mapProcessoToDb = (
       ),
 
     valor,
+
+    valor_real:
+      item.valorReal == null
+        ? null
+        : numero(item.valorReal),
+
+    parcela:
+      textoOuNull(
+        item.parcela || item.numeroParcela
+      ),
 
     urgencia:
       item.urgencia || 'media',

@@ -1382,6 +1382,10 @@ export const AccountsPayableView: React.FC = () => {
             Descrição: processo.descricao || '',
             Vencimento: vencimento,
             'Valor total': valorTotal,
+            'Valor real':
+              processo.valorReal == null
+                ? ''
+                : Number(processo.valorReal),
             'Valor pago': valorPago,
             Saldo: saldo,
             Status: status,
@@ -2380,24 +2384,6 @@ export const AccountsPayableView: React.FC = () => {
         }
       );
 
-      const centrosMap = new Map<string, string>();
-
-      (centrosCustos || []).forEach((centro: any) => {
-        const id = String(centro.id ?? centro.dbId ?? '');
-        const planoId = String(
-          centro.planoFinanceiroId ??
-            centro.plano_financeiro_id ??
-            ''
-        );
-
-        if (id && planoId) {
-          centrosMap.set(
-            `${planoId}::${normalizarNomeImportacao(centro.nome || '')}`,
-            id
-          );
-        }
-      });
-
       const fornecedoresMap = new Map<string, string>();
 
       (fornecedores || []).forEach(
@@ -2462,67 +2448,6 @@ export const AccountsPayableView: React.FC = () => {
           }
 
           planosMap.set(chavePlano, planoId);
-        }
-
-        let centroId: string | null = null;
-
-        if (linha.centroCusto?.trim()) {
-          const chaveCentro =
-            `${planoId}::${normalizarNomeImportacao(
-              linha.centroCusto
-            )}`;
-
-          centroId =
-            centrosMap.get(chaveCentro) || null;
-
-          if (!centroId) {
-            if (
-              typeof cadastrarCentroCusto !== 'function'
-            ) {
-              throw new Error(
-                'Não foi possível criar o centro de custo informado.'
-              );
-            }
-
-            const resultadoCentro =
-              await cadastrarCentroCusto({
-                nome: linha.centroCusto,
-                descricao:
-                  'Criado automaticamente pela importação de contas a pagar.',
-                planoFinanceiroId: planoId,
-                orcamentoMensal: 0,
-                limiteMensal: 0,
-                tetoMensal: 0,
-                tetoAnual: 0,
-                utilizado: 0,
-                comprometido: 0,
-              } as any);
-
-            centroId =
-              obterIdCadastro(resultadoCentro) || null;
-
-            if (!centroId) {
-              centroId =
-                await contasPagarImportService.buscarCentro({
-                  organizacaoId:
-                    organizacaoAtivaId || undefined,
-                  empresaId: empresaImportacaoId,
-                  planoFinanceiroId: planoId,
-                  nome: linha.centroCusto,
-                });
-            }
-
-            if (!centroId) {
-              throw new Error(
-                `O centro "${linha.centroCusto}" foi criado, mas não foi possível localizar o ID no banco.`
-              );
-            }
-
-            centrosMap.set(
-              chaveCentro,
-              centroId
-            );
-          }
         }
 
         const chaveFornecedor =
@@ -2602,10 +2527,12 @@ export const AccountsPayableView: React.FC = () => {
           fornecedorId,
           planoFinanceiroId: planoId,
           planoId,
-          centroCustoId: centroId,
-          centroId: centroId || undefined,
-          descricao: `${linha.fornecedor} • Parcela ${linha.parcela}`,
-          valor: linha.valor,
+          centroCustoId: null,
+          descricao: linha.parcela
+            ? `${linha.fornecedor} • Parcela ${linha.parcela}`
+            : linha.fornecedor,
+          valor: linha.valorTotal,
+          valorReal: linha.valorReal,
           prazo: linha.vencimento,
           vencimento: linha.vencimento,
           parcela: linha.parcela,
@@ -2619,7 +2546,15 @@ export const AccountsPayableView: React.FC = () => {
           pixFavorecido: linha.fornecedor,
           urgencia: 'media',
           origem: 'importacao_excel',
-          observacao: `Importado do arquivo ${arquivoImportacaoNome}`,
+          observacao: [
+            `Importado do arquivo ${arquivoImportacaoNome} • Aba ${linha.aba} • Linha ${linha.linha}.`,
+            linha.valorReal != null
+              ? `Valor Real informado na planilha: ${formatarReal(linha.valorReal)}.`
+              : '',
+            linha.possivelmentePago && linha.valorPagoPlanilha != null
+              ? `ATENÇÃO: a planilha possui valor em PAGO (${formatarReal(linha.valorPagoPlanilha)}). O lançamento não foi marcado como pago automaticamente.`
+              : '',
+          ].filter(Boolean).join(' '),
         });
 
         criadas += 1;
@@ -2657,6 +2592,11 @@ export const AccountsPayableView: React.FC = () => {
   const totalImportacaoAtencao =
     previewImportacao.length -
     totalImportacaoValido;
+
+  const totalImportacaoPossivelmentePago =
+    previewImportacao.filter(
+      item => item.possivelmentePago
+    ).length;
 
   const abrirExcluidos = async () => {
     setModalExcluidosOpen(true); setCarregandoExcluidos(true);
@@ -4822,6 +4762,15 @@ export const AccountsPayableView: React.FC = () => {
                             mono
                             destaque
                           />
+                          {contaDetalhes.valorReal != null && (
+                            <DetalheConta
+                              label="Valor real"
+                              value={formatarReal(
+                                Number(contaDetalhes.valorReal)
+                              )}
+                              mono
+                            />
+                          )}
                           <DetalheConta
                             label="Valor pago"
                             value={formatarReal(
@@ -5249,7 +5198,7 @@ export const AccountsPayableView: React.FC = () => {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-slate-50 p-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-slate-50 p-4 sm:grid-cols-4">
               <div className="rounded-[14px] bg-white p-4">
                 <p className="text-[9px] font-bold uppercase text-slate-400">
                   Total
@@ -5276,19 +5225,30 @@ export const AccountsPayableView: React.FC = () => {
                   {totalImportacaoAtencao}
                 </p>
               </div>
+
+              <div className="rounded-[14px] bg-violet-50 p-4">
+                <p className="text-[9px] font-bold uppercase text-violet-600">
+                  Possivelmente pagos
+                </p>
+                <p className="mt-1 text-xl font-black text-violet-700">
+                  {totalImportacaoPossivelmentePago}
+                </p>
+              </div>
             </div>
 
             <div className="overflow-auto">
-              <table className="w-full min-w-[1000px]">
+              <table className="w-full min-w-[1250px]">
                 <thead className="sticky top-0 z-10 border-b border-slate-200 bg-[#F8FAFC]">
                   <tr className="text-left text-[9px] uppercase text-slate-500">
+                    <th className="px-4 py-3">Aba</th>
                     <th className="px-4 py-3">Linha</th>
-                    <th className="px-4 py-3">Plano de contas</th>
-                    <th className="px-4 py-3">Fornecedor</th>
-                    <th className="px-4 py-3">PIX</th>
                     <th className="px-4 py-3">Vencimento</th>
                     <th className="px-4 py-3">Parcela</th>
-                    <th className="px-4 py-3 text-right">Valor</th>
+                    <th className="px-4 py-3">Plano de contas</th>
+                    <th className="px-4 py-3">Fornecedor</th>
+                    <th className="px-4 py-3 text-right">Valor Total</th>
+                    <th className="px-4 py-3 text-right">Valor Real</th>
+                    <th className="px-4 py-3 text-right">Pago na planilha</th>
                     <th className="px-4 py-3">Validação</th>
                   </tr>
                 </thead>
@@ -5296,20 +5256,14 @@ export const AccountsPayableView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {previewImportacao.map(item => (
                     <tr
-                      key={item.linha}
+                      key={`${item.aba}-${item.linha}`}
                       className="hover:bg-slate-50"
                     >
+                      <td className="px-4 py-3 text-xs font-bold text-slate-600">
+                        {item.aba}
+                      </td>
                       <td className="px-4 py-3 text-xs text-slate-500">
                         {item.linha}
-                      </td>
-                      <td className="px-4 py-3 text-xs font-bold text-slate-800">
-                        {item.planoConta || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-600">
-                        {item.fornecedor || '—'}
-                      </td>
-                      <td className="max-w-[220px] truncate px-4 py-3 font-mono text-[10px] text-slate-600" title={item.pix}>
-                        {item.pix || 'Usar PIX cadastrado'}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">
                         {item.vencimento || '—'}
@@ -5317,8 +5271,29 @@ export const AccountsPayableView: React.FC = () => {
                       <td className="px-4 py-3 text-xs text-slate-600">
                         {item.parcela || '—'}
                       </td>
+                      <td className="px-4 py-3 text-xs font-bold text-slate-800">
+                        {item.planoConta || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        {item.fornecedor || '—'}
+                      </td>
                       <td className="px-4 py-3 text-right font-mono text-xs font-bold">
-                        {formatarReal(item.valor || 0)}
+                        {formatarReal(item.valorTotal || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-slate-600">
+                        {item.valorReal != null
+                          ? formatarReal(item.valorReal)
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {item.possivelmentePago && item.valorPagoPlanilha != null ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">
+                            <AlertTriangle className="h-3 w-3" />
+                            {formatarReal(item.valorPagoPlanilha)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {item.status === 'valido' ? (
@@ -5346,7 +5321,7 @@ export const AccountsPayableView: React.FC = () => {
 
             <div className="flex flex-col gap-3 border-t border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[10px] text-slate-400">
-                Planos e fornecedores inexistentes serão criados automaticamente.
+                Planos e fornecedores inexistentes serão criados automaticamente. Valor em PAGO apenas sinaliza possível pagamento; não baixa a conta automaticamente.
               </p>
 
               <div className="flex justify-end gap-2">

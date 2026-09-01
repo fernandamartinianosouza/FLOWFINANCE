@@ -94,7 +94,7 @@ interface FinanceContextType {
     beneficiarioInterno?: string | null;
     empresaId: string;
     planoFinanceiroId: string;
-    centroCustoId: string;
+    centroCustoId?: string | null;
     descricao: string;
     valor: number;
     urgencia: Urgencia;
@@ -119,6 +119,7 @@ interface FinanceContextType {
     centroCustoId?: string | null;
     descricao: string;
     valor: number;
+    valorReal?: number | null;
     prazo: string;
     vencimento?: string;
     parcela?: string;
@@ -625,6 +626,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     centroCustoId?: string | null;
     descricao: string;
     valor: number;
+    valorReal?: number | null;
     prazo: string;
     vencimento?: string;
     parcela?: string;
@@ -672,6 +674,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       centroCustoId: dados.centroCustoId || '',
       descricao: dados.descricao,
       valor,
+      valorReal:
+        dados.valorReal == null ? null : Number(dados.valorReal),
       urgencia: dados.urgencia || 'media',
       responsavel: usuarioLogado,
       dataCriacao: new Date().toISOString().split('T')[0],
