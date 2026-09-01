@@ -118,10 +118,10 @@ const usuarioLogado =
 
     if (enviando) return;
 
-    if (!descricao || !valor || !empresaId || !planoId || !centroId) {
-      alert('Por favor, preencha todos os campos obrigatórios.');
-      return;
-    }
+    if (!descricao || !valor || !empresaId || !planoId) {
+  alert('Por favor, preencha todos os campos obrigatórios.');
+  return;
+}
 
     if (tipoPagamento === 'fornecedor' && !fornecedorId) {
       alert('Selecione o fornecedor.');
@@ -166,7 +166,7 @@ const usuarioLogado =
             : null,
         empresaId,
         planoFinanceiroId: planoId,
-        centroCustoId: centroId,
+        centroCustoId: centroId || null,
         descricao,
         valor: valorNumerico,
         urgencia,
@@ -359,23 +359,27 @@ const usuarioLogado =
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                Centro de Custo
-              </label>
-              <select
-                value={centroId}
-                onChange={(e) => setCentroId(e.target.value)}
-                className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700 font-medium"
-                required
-              >
-                <option value="">Selecione</option>
-                {centrosFiltrados.map((cc: any) => (
-                  <option key={cc.id} value={cc.id}>
-                    {cc.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
+  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
+    Centro de Custo
+    <span className="ml-1 normal-case font-medium text-slate-300">
+      (opcional)
+    </span>
+  </label>
+
+  <select
+    value={centroId}
+    onChange={(e) => setCentroId(e.target.value)}
+    className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700 font-medium"
+  >
+    <option value="">Sem centro de custo</option>
+
+    {centrosFiltrados.map((cc: any) => (
+      <option key={cc.id} value={cc.id}>
+        {cc.nome}
+      </option>
+    ))}
+  </select>
+</div>
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">

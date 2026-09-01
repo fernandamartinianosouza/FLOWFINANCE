@@ -506,7 +506,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     beneficiarioInterno?: string | null;
     empresaId: string;
     planoFinanceiroId: string;
-    centroCustoId: string;
+    centroCustoId?: string | null;
     descricao: string;
     valor: number;
     urgencia: Urgencia;
@@ -546,7 +546,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             : null,
         empresaId: dados.empresaId,
         planoFinanceiroId: dados.planoFinanceiroId,
-        centroCustoId: dados.centroCustoId,
+        centroCustoId: dados.centroCustoId || null,
         descricao: dados.descricao,
         valor: Number(dados.valor) || 0,
         urgencia: dados.urgencia,
