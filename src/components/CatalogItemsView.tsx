@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { catalogoService } from "../services/catalogoService";
+import { useFinance } from "../context/FinanceContext";
 import ItemSuppliersModal from "./catalogo/ItemSuppliersModal";
 import {
   ItemCatalogo,
@@ -178,6 +179,7 @@ const LoadingState = () => (
 );
 
 export const CatalogItemsView: React.FC = () => {
+  const { organizacaoAtivaId, empresaAtivaId } = useFinance();
   const [itens, setItens] = useState<ItemCatalogo[]>([]);
   const [segmentos, setSegmentos] = useState<SegmentoItem[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -221,9 +223,15 @@ export const CatalogItemsView: React.FC = () => {
       setCarregando(true);
       setErro("");
 
+      if (!organizacaoAtivaId || !empresaAtivaId) {
+        setItens([]);
+        setSegmentos([]);
+        return;
+      }
+
       const [itensData, segmentosData] = await Promise.all([
-        catalogoService.listarItens(),
-        catalogoService.listarSegmentos(),
+        catalogoService.listarItens(organizacaoAtivaId, empresaAtivaId),
+        catalogoService.listarSegmentos(organizacaoAtivaId, empresaAtivaId),
       ]);
 
       setItens(itensData);
@@ -233,9 +241,14 @@ export const CatalogItemsView: React.FC = () => {
     } finally {
       setCarregando(false);
     }
-  }, []);
+  }, [organizacaoAtivaId, empresaAtivaId]);
 
   useEffect(() => {
+    setBusca("");
+    setSegmentoSelecionado("todos");
+    setModalItem({ aberto: false, item: null });
+    setModalSegmento({ aberto: false, segmento: null });
+    setModalFornecedor({ aberto: false, item: null });
     void carregarDados();
   }, [carregarDados]);
 
@@ -362,10 +375,10 @@ export const CatalogItemsView: React.FC = () => {
       setErro("");
 
       if (confirmacao.tipo === "item") {
-        await catalogoService.excluirItem(confirmacao.id);
+        await catalogoService.excluirItem(confirmacao.id, organizacaoAtivaId, empresaAtivaId);
         setSucesso("Item excluído com sucesso.");
       } else {
-        await catalogoService.excluirSegmento(confirmacao.id);
+        await catalogoService.excluirSegmento(confirmacao.id, organizacaoAtivaId, empresaAtivaId);
         setSucesso("Segmento excluído com sucesso.");
       }
 
@@ -393,10 +406,10 @@ export const CatalogItemsView: React.FC = () => {
       setErro("");
 
       if (itemId) {
-        await catalogoService.editarItem(itemId, dados);
+        await catalogoService.editarItem(itemId, dados, organizacaoAtivaId, empresaAtivaId);
         setSucesso("Item atualizado com sucesso.");
       } else {
-        await catalogoService.criarItem(dados);
+        await catalogoService.criarItem(dados, organizacaoAtivaId, empresaAtivaId);
         setSucesso("Item cadastrado com sucesso.");
       }
 
@@ -422,10 +435,10 @@ export const CatalogItemsView: React.FC = () => {
       setErro("");
 
       if (segmentoId) {
-        await catalogoService.editarSegmento(segmentoId, dados);
+        await catalogoService.editarSegmento(segmentoId, dados, organizacaoAtivaId, empresaAtivaId);
         setSucesso("Segmento atualizado com sucesso.");
       } else {
-        await catalogoService.criarSegmento(dados);
+        await catalogoService.criarSegmento(dados, organizacaoAtivaId, empresaAtivaId);
         setSucesso("Segmento cadastrado com sucesso.");
       }
 
@@ -1017,6 +1030,8 @@ export const CatalogItemsView: React.FC = () => {
       <ItemSuppliersModal
         aberto={modalFornecedor.aberto}
         item={modalFornecedor.item}
+        organizacaoId={organizacaoAtivaId}
+        empresaId={empresaAtivaId}
         onFechar={() => setModalFornecedor({ aberto: false, item: null })}
         onAlterado={carregarDados}
       />

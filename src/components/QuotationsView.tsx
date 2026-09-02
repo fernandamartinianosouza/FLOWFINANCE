@@ -60,7 +60,7 @@ const novoItem = (): ItemRascunho => ({
 
 export const QuotationsView: React.FC = () => {
   const finance = useFinance() as any;
-  const { fornecedores = [] } = finance;
+  const { fornecedores = [], organizacaoAtivaId, empresaAtivaId } = finance;
   const { nomeUsuario } = useAuth();
 
   const [catalogo, setCatalogo] = useState<
@@ -120,10 +120,17 @@ export const QuotationsView: React.FC = () => {
     try {
       setCarregando(true);
 
+      if (!organizacaoAtivaId || !empresaAtivaId) {
+        setCatalogo([]);
+        setCotacoes([]);
+        setSelecionadaId(null);
+        return;
+      }
+
       const [listaCatalogo, listaCotacoes] =
         await Promise.all([
-          quotationService.listarItensCatalogo(),
-          quotationService.listarCotacoes(),
+          quotationService.listarItensCatalogo(organizacaoAtivaId, empresaAtivaId),
+          quotationService.listarCotacoes(organizacaoAtivaId, empresaAtivaId),
         ]);
 
       setCatalogo(listaCatalogo);
@@ -140,8 +147,10 @@ export const QuotationsView: React.FC = () => {
   };
 
   useEffect(() => {
+    setSelecionadaId(null);
+    setModalNova(false);
     carregar();
-  }, []);
+  }, [organizacaoAtivaId, empresaAtivaId]);
 
   useEffect(() => {
     if (
@@ -199,11 +208,18 @@ export const QuotationsView: React.FC = () => {
       return;
     }
 
+    if (!organizacaoAtivaId || !empresaAtivaId) {
+      alert('Selecione uma empresa antes de criar a cotação.');
+      return;
+    }
+
     try {
       setSalvando(true);
 
       const criada =
         await quotationService.criarCotacao({
+          organizacaoId: organizacaoAtivaId,
+          empresaId: empresaAtivaId,
           titulo: titulo.trim() || 'Nova cotação',
           observacao: observacao.trim(),
           criadoPor: nomeUsuario,
@@ -238,7 +254,9 @@ export const QuotationsView: React.FC = () => {
       const listas = await Promise.all(
         itensComCatalogo.map(item =>
           quotationService.listarFornecedoresDoItem(
-            item.itemCatalogoId!
+            item.itemCatalogoId!,
+            organizacaoAtivaId,
+            empresaAtivaId
           )
         )
       );
@@ -332,8 +350,10 @@ export const QuotationsView: React.FC = () => {
             itemCotacao: item,
             fornecedores:
               await quotationService.listarFornecedoresDoItem(
-                item.itemCatalogoId!
-              ),
+                item.itemCatalogoId!,
+                organizacaoAtivaId,
+                empresaAtivaId
+          ),
           }))
         );
 
@@ -486,8 +506,10 @@ export const QuotationsView: React.FC = () => {
           .filter(item => item.itemCatalogoId)
           .map(item =>
             quotationService.listarFornecedoresDoItem(
-              item.itemCatalogoId!
-            )
+              item.itemCatalogoId!,
+              organizacaoAtivaId,
+              empresaAtivaId
+          )
           )
       )
     )
@@ -680,6 +702,7 @@ export const QuotationsView: React.FC = () => {
     }
 
     const payload = {
+      empresaId: empresaAtivaId,
       descricao: cotacao.itens
         .map(
           item =>

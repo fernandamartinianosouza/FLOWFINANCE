@@ -8,6 +8,7 @@ export type StatusCotacao =
 
 export interface ItemCatalogoCotacao {
   id: string;
+  empresaId: string;
   nome: string;
   descricao: string;
   unidade: string;
@@ -68,6 +69,8 @@ export interface CotacaoProposta {
 
 export interface Cotacao {
   id: string;
+  organizacaoId: string;
+  empresaId: string;
   processoId?: string | null;
   titulo: string;
   observacao?: string | null;
@@ -84,6 +87,8 @@ export interface Cotacao {
 }
 
 interface CriarCotacaoParams {
+  organizacaoId: string;
+  empresaId: string;
   titulo: string;
   observacao?: string;
   criadoPor?: string;
@@ -197,6 +202,8 @@ const mapProposta = (item: any): CotacaoProposta => ({
 
 const mapCotacao = (item: any): Cotacao => ({
   id: String(item.id),
+  organizacaoId: String(item.organizacao_id || ""),
+  empresaId: String(item.empresa_id || ""),
   processoId: item.processo_id || null,
   titulo: item.titulo || 'Cotação',
   observacao: item.observacao || null,
@@ -217,10 +224,12 @@ const mapCotacao = (item: any): Cotacao => ({
 });
 
 export const quotationService = {
-  async listarItensCatalogo(): Promise<ItemCatalogoCotacao[]> {
+  async listarItensCatalogo(organizacaoId: string, empresaId: string): Promise<ItemCatalogoCotacao[]> {
     const { data, error } = await supabase
       .from('itens_catalogo')
       .select('*')
+      .eq('organizacao_id', organizacaoId)
+      .eq('empresa_id', empresaId)
       .order('nome', { ascending: true });
 
     if (error) throw error;
@@ -229,6 +238,7 @@ export const quotationService = {
       .filter((item: any) => item.ativo !== false)
       .map((item: any) => ({
         id: String(item.id),
+        empresaId: String(item.empresa_id || ''),
         nome: primeiroTexto(
           item.nome,
           item.descricao,
@@ -247,11 +257,15 @@ export const quotationService = {
   },
 
   async listarFornecedoresDoItem(
-    itemCatalogoId: string
+    itemCatalogoId: string,
+    organizacaoId: string,
+    empresaId: string
   ): Promise<FornecedorCatalogoCotacao[]> {
     const { data: vinculos, error } = await supabase
       .from('itens_fornecedores')
       .select('*')
+      .eq('organizacao_id', organizacaoId)
+      .eq('empresa_id', empresaId)
       .eq('item_id', itemCatalogoId);
 
     if (error) throw error;
@@ -271,6 +285,8 @@ export const quotationService = {
         await supabase
           .from('fornecedores')
           .select('id, nome, cnpj')
+          .eq('organizacao_id', organizacaoId)
+          .eq('empresa_id', empresaId)
           .in('id', fornecedorIds);
 
       if (erroFornecedores) throw erroFornecedores;
@@ -351,7 +367,7 @@ export const quotationService = {
       );
   },
 
-  async listarCotacoes(): Promise<Cotacao[]> {
+  async listarCotacoes(organizacaoId: string, empresaId: string): Promise<Cotacao[]> {
     const { data, error } = await supabase
       .from('cotacoes')
       .select(`
@@ -362,6 +378,8 @@ export const quotationService = {
           cotacao_proposta_itens (*)
         )
       `)
+      .eq('organizacao_id', organizacaoId)
+      .eq('empresa_id', empresaId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -369,8 +387,8 @@ export const quotationService = {
     return (data || []).map(mapCotacao);
   },
 
-  async buscarCotacaoPorId(id: string): Promise<Cotacao> {
-    const { data, error } = await supabase
+  async buscarCotacaoPorId(id: string, organizacaoId?: string, empresaId?: string): Promise<Cotacao> {
+    let query = supabase
       .from('cotacoes')
       .select(`
         *,
@@ -380,8 +398,12 @@ export const quotationService = {
           cotacao_proposta_itens (*)
         )
       `)
-      .eq('id', id)
-      .single();
+      .eq('id', id);
+
+    if (organizacaoId) query = query.eq('organizacao_id', organizacaoId);
+    if (empresaId) query = query.eq('empresa_id', empresaId);
+
+    const { data, error } = await query.single();
 
     if (error) throw error;
 
@@ -401,6 +423,8 @@ export const quotationService = {
       .from('cotacoes')
       .insert({
         user_id: userId,
+        organizacao_id: params.organizacaoId,
+        empresa_id: params.empresaId,
         processo_id: null,
         titulo: params.titulo,
         observacao: params.observacao || null,
@@ -435,7 +459,7 @@ export const quotationService = {
       throw erroItens;
     }
 
-    return this.buscarCotacaoPorId(cotacao.id);
+    return this.buscarCotacaoPorId(cotacao.id, params.organizacaoId, params.empresaId);
   },
 
   async salvarProposta(

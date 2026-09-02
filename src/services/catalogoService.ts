@@ -122,6 +122,15 @@ const mapItemFornecedorFromDb = (item: any): ItemFornecedor => ({
   updatedAt: item.updated_at,
 });
 
+
+const exigirEmpresaId = (empresaId?: string | null): string => {
+  const id = String(empresaId || "").trim();
+  if (!id) {
+    throw new Error("Selecione uma empresa antes de acessar o catálogo.");
+  }
+  return id;
+};
+
 const tratarErroDuplicidade = (
   error: any,
   mensagem: string,
@@ -136,13 +145,16 @@ const tratarErroDuplicidade = (
 export const catalogoService = {
   async listarSegmentos(
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<SegmentoItem[]> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { data, error } = await supabase
       .from("segmentos_itens")
       .select("*")
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .order("nome", { ascending: true });
 
     if (error) throw error;
@@ -153,8 +165,10 @@ export const catalogoService = {
   async criarSegmento(
     item: NovoSegmentoItemInput,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<SegmentoItem> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
     const nome = item.nome?.trim();
 
     if (!nome) {
@@ -165,6 +179,7 @@ export const catalogoService = {
       .from("segmentos_itens")
       .insert({
         organizacao_id: orgId,
+        empresa_id: empId,
         nome,
         descricao: item.descricao?.trim() || null,
         ativo: item.ativo ?? true,
@@ -186,8 +201,10 @@ export const catalogoService = {
     id: string,
     item: AtualizarSegmentoItemInput,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<SegmentoItem> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
     const payload: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -215,6 +232,7 @@ export const catalogoService = {
       .update(payload)
       .eq("id", id)
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .select()
       .single();
 
@@ -231,13 +249,16 @@ export const catalogoService = {
   async excluirSegmento(
     id: string,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<void> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { count, error: countError } = await supabase
       .from("itens_catalogo")
       .select("id", { count: "exact", head: true })
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .eq("segmento_id", id);
 
     if (countError) throw countError;
@@ -252,15 +273,18 @@ export const catalogoService = {
       .from("segmentos_itens")
       .delete()
       .eq("id", id)
-      .eq("organizacao_id", orgId);
+      .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId);
 
     if (error) throw error;
   },
 
   async listarItens(
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemCatalogo[]> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { data, error } = await supabase
       .from("itens_catalogo")
@@ -270,6 +294,7 @@ export const catalogoService = {
           segmentos_itens (
             id,
             organizacao_id,
+            empresa_id,
             nome,
             descricao,
             ativo,
@@ -283,6 +308,7 @@ export const catalogoService = {
         `,
       )
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .order("nome", { ascending: true });
 
     if (error) throw error;
@@ -293,12 +319,14 @@ export const catalogoService = {
   async buscarItens(
     termo: string,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemCatalogo[]> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
     const pesquisa = termo.trim();
 
     if (!pesquisa) {
-      return this.listarItens(orgId);
+      return this.listarItens(orgId, empId);
     }
 
     const { data, error } = await supabase
@@ -309,6 +337,7 @@ export const catalogoService = {
           segmentos_itens (
             id,
             organizacao_id,
+            empresa_id,
             nome,
             descricao,
             ativo,
@@ -322,6 +351,7 @@ export const catalogoService = {
         `,
       )
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .or(
         `nome.ilike.%${pesquisa}%,codigo_interno.ilike.%${pesquisa}%,descricao.ilike.%${pesquisa}%,marca_referencia.ilike.%${pesquisa}%`,
       )
@@ -335,8 +365,10 @@ export const catalogoService = {
   async listarItensPorSegmento(
     segmentoId: string,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemCatalogo[]> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { data, error } = await supabase
       .from("itens_catalogo")
@@ -346,6 +378,7 @@ export const catalogoService = {
           segmentos_itens (
             id,
             organizacao_id,
+            empresa_id,
             nome,
             descricao,
             ativo,
@@ -359,6 +392,7 @@ export const catalogoService = {
         `,
       )
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .eq("segmento_id", segmentoId)
       .order("nome", { ascending: true });
 
@@ -370,8 +404,10 @@ export const catalogoService = {
   async criarItem(
     item: NovoItemCatalogoInput,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemCatalogo> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
     const nome = item.nome?.trim();
     const unidadeMedida = item.unidadeMedida?.trim().toUpperCase();
 
@@ -391,6 +427,7 @@ export const catalogoService = {
       .from("itens_catalogo")
       .insert({
         organizacao_id: orgId,
+        empresa_id: empId,
         segmento_id: item.segmentoId,
         nome,
         descricao: item.descricao?.trim() || null,
@@ -406,6 +443,7 @@ export const catalogoService = {
           segmentos_itens (
             id,
             organizacao_id,
+            empresa_id,
             nome,
             descricao,
             ativo,
@@ -430,8 +468,10 @@ export const catalogoService = {
     id: string,
     item: AtualizarItemCatalogoInput,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemCatalogo> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
     const payload: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -489,12 +529,14 @@ export const catalogoService = {
       .update(payload)
       .eq("id", id)
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .select(
         `
           *,
           segmentos_itens (
             id,
             organizacao_id,
+            empresa_id,
             nome,
             descricao,
             ativo,
@@ -518,13 +560,16 @@ export const catalogoService = {
   async excluirItem(
     id: string,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<void> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { count, error: countError } = await supabase
       .from("itens_fornecedores")
       .select("id", { count: "exact", head: true })
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .eq("item_id", id);
 
     if (countError) throw countError;
@@ -539,7 +584,8 @@ export const catalogoService = {
       .from("itens_catalogo")
       .delete()
       .eq("id", id)
-      .eq("organizacao_id", orgId);
+      .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId);
 
     if (error) throw error;
   },
@@ -547,8 +593,10 @@ export const catalogoService = {
   async listarFornecedoresItem(
     itemId: string,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemFornecedor[]> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { data, error } = await supabase
       .from("itens_fornecedores")
@@ -559,6 +607,7 @@ export const catalogoService = {
         `,
       )
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .eq("item_id", itemId)
       .order("fornecedor_preferencial", { ascending: false })
       .order("created_at", { ascending: true });
@@ -571,8 +620,10 @@ export const catalogoService = {
   async vincularFornecedor(
     item: VincularFornecedorItemInput,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemFornecedor> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     if (!item.itemId) {
       throw new Error("Informe o item.");
@@ -590,6 +641,7 @@ export const catalogoService = {
           updated_at: new Date().toISOString(),
         })
         .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
         .eq("item_id", item.itemId);
 
       if (preferencialError) throw preferencialError;
@@ -599,6 +651,7 @@ export const catalogoService = {
       .from("itens_fornecedores")
       .insert({
         organizacao_id: orgId,
+        empresa_id: empId,
         item_id: item.itemId,
         fornecedor_id: item.fornecedorId,
         codigo_fornecedor: item.codigoFornecedor?.trim() || null,
@@ -643,14 +696,17 @@ export const catalogoService = {
     id: string,
     item: AtualizarFornecedorItemInput,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemFornecedor> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { data: vinculoAtual, error: vinculoError } = await supabase
       .from("itens_fornecedores")
       .select("item_id")
       .eq("id", id)
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .single();
 
     if (vinculoError) throw vinculoError;
@@ -663,6 +719,7 @@ export const catalogoService = {
           updated_at: new Date().toISOString(),
         })
         .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
         .eq("item_id", vinculoAtual.item_id)
         .neq("id", id);
 
@@ -718,6 +775,7 @@ export const catalogoService = {
       .update(payload)
       .eq("id", id)
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .select(
         `
           *,
@@ -734,27 +792,33 @@ export const catalogoService = {
   async removerFornecedor(
     id: string,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<void> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { error } = await supabase
       .from("itens_fornecedores")
       .delete()
       .eq("id", id)
-      .eq("organizacao_id", orgId);
+      .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId);
 
     if (error) throw error;
   },
 
   async listarFornecedoresDisponiveis(
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<Fornecedor[]> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { data, error } = await supabase
       .from("fornecedores")
       .select("*")
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .order("nome", { ascending: true });
 
     if (error) throw error;
@@ -775,13 +839,16 @@ export const catalogoService = {
   async listarItensPorFornecedor(
     fornecedorId: string,
     organizacaoId?: string,
+    empresaId?: string,
   ): Promise<ItemCatalogo[]> {
     const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
 
     const { data: vinculos, error: vinculosError } = await supabase
       .from("itens_fornecedores")
       .select("item_id")
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .eq("fornecedor_id", fornecedorId)
       .eq("ativo", true);
 
@@ -801,6 +868,7 @@ export const catalogoService = {
           segmentos_itens (
             id,
             organizacao_id,
+            empresa_id,
             nome,
             descricao,
             ativo,
@@ -814,6 +882,7 @@ export const catalogoService = {
         `,
       )
       .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
       .in("id", itemIds)
       .order("nome", { ascending: true });
 

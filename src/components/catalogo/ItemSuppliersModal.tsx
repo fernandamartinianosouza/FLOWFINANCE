@@ -23,6 +23,8 @@ import {
 type Props = {
   aberto: boolean;
   item: ItemCatalogo | null;
+  organizacaoId: string;
+  empresaId: string;
   onFechar: () => void;
   onAlterado: () => Promise<void> | void;
 };
@@ -74,6 +76,8 @@ const parseOptionalNumber = (value: string): number | null => {
 export const ItemSuppliersModal: React.FC<Props> = ({
   aberto,
   item,
+  organizacaoId,
+  empresaId,
   onFechar,
   onAlterado,
 }) => {
@@ -93,8 +97,8 @@ export const ItemSuppliersModal: React.FC<Props> = ({
       setCarregando(true);
       setErro("");
       const [fornecedoresData, vinculosData] = await Promise.all([
-        catalogoService.listarFornecedoresDisponiveis(),
-        catalogoService.listarFornecedoresItem(item.id),
+        catalogoService.listarFornecedoresDisponiveis(organizacaoId, empresaId),
+        catalogoService.listarFornecedoresItem(item.id, organizacaoId, empresaId),
       ]);
       setFornecedores(fornecedoresData);
       setVinculos(vinculosData);
@@ -193,9 +197,9 @@ export const ItemSuppliersModal: React.FC<Props> = ({
           observacoes: payload.observacoes,
           fornecedorPreferencial: payload.fornecedorPreferencial,
           ativo: payload.ativo,
-        });
+        }, organizacaoId, empresaId);
       } else {
-        await catalogoService.vincularFornecedor(payload);
+        await catalogoService.vincularFornecedor(payload, organizacaoId, empresaId);
       }
 
       limparFormulario();
@@ -215,7 +219,7 @@ export const ItemSuppliersModal: React.FC<Props> = ({
     try {
       setRemovendoId(vinculo.id);
       setErro("");
-      await catalogoService.removerFornecedor(vinculo.id);
+      await catalogoService.removerFornecedor(vinculo.id, organizacaoId, empresaId);
       if (editando?.id === vinculo.id) limparFormulario();
       await carregar();
       await onAlterado();
