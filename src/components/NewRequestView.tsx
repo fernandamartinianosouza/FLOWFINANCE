@@ -110,12 +110,12 @@ const usuarioLogado =
   }, [centrosCustos, planoId]);
 
   useEffect(() => {
-    if (centrosFiltrados.length > 0) {
-      setCentroId(centrosFiltrados[0].id);
-    } else {
+    // Centro de custo é opcional. Ao trocar o plano, apenas limpamos
+    // uma seleção que não pertença mais ao plano escolhido.
+    if (centroId && !centrosFiltrados.some((c: any) => c.id === centroId)) {
       setCentroId('');
     }
-  }, [centrosFiltrados]);
+  }, [centrosFiltrados, centroId]);
 
   const handleFile = (file: File) => {
     setArquivoAnexo(file);
@@ -414,15 +414,14 @@ const usuarioLogado =
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                Centro de Custo
+                Centro de Custo <span className="font-medium normal-case">(opcional)</span>
               </label>
               <select
                 value={centroId}
                 onChange={(e) => setCentroId(e.target.value)}
                 className="w-full bg-slate-50 border-0 focus:ring-1 focus:ring-[#0F172A]/25 rounded-[12px] px-3.5 py-2.5 text-xs text-slate-700 font-medium"
-                required
               >
-                <option value="">Selecione</option>
+                <option value="">Sem centro de custo</option>
                 {centrosFiltrados.map((cc: any) => (
                   <option key={cc.id} value={cc.id}>
                     {cc.nome}
