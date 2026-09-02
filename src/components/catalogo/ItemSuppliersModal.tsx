@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { catalogoService } from "../../services/catalogoService";
+import { usePermissions } from "../../context/PermissionsContext";
 import {
   Fornecedor,
   ItemCatalogo,
@@ -81,6 +82,7 @@ export const ItemSuppliersModal: React.FC<Props> = ({
   onFechar,
   onAlterado,
 }) => {
+  const { temPermissao } = usePermissions();
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [vinculos, setVinculos] = useState<ItemFornecedor[]>([]);
   const [form, setForm] = useState<FormState>(initialForm);
@@ -138,6 +140,7 @@ export const ItemSuppliersModal: React.FC<Props> = ({
   };
 
   const iniciarEdicao = (vinculo: ItemFornecedor) => {
+    if (!temPermissao("compras", "editar")) { setErro("Você não tem permissão para editar vínculos de fornecedores."); return; }
     setEditando(vinculo);
     setForm({
       fornecedorId: vinculo.fornecedorId,
@@ -164,6 +167,8 @@ export const ItemSuppliersModal: React.FC<Props> = ({
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!item) return;
+    const acao = editando ? "editar" : "criar";
+    if (!temPermissao("compras", acao)) { setErro("Você não tem permissão para esta ação."); return; }
 
     if (!form.fornecedorId) {
       setErro("Selecione um fornecedor.");
@@ -213,6 +218,7 @@ export const ItemSuppliersModal: React.FC<Props> = ({
   };
 
   const remover = async (vinculo: ItemFornecedor) => {
+    if (!temPermissao("compras", "excluir")) { setErro("Você não tem permissão para remover vínculos de fornecedores."); return; }
     const nome = vinculo.fornecedor?.nome || "este fornecedor";
     if (!window.confirm(`Remover o vínculo com ${nome}?`)) return;
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { usePermissions } from '../context/PermissionsContext';
 import { formatarReal } from '../utils';
 import {
   Building2,
@@ -19,6 +20,7 @@ export const CompaniesView: React.FC = () => {
     excluirEmpresa,
     processos,
   } = useFinance();
+  const { temPermissao } = usePermissions();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [empresaEditandoId, setEmpresaEditandoId] = useState<string | null>(null);
@@ -40,11 +42,19 @@ export const CompaniesView: React.FC = () => {
   };
 
   const abrirCadastro = () => {
+    if (!temPermissao('empresas', 'criar')) {
+      alert('Você não tem permissão para cadastrar empresas.');
+      return;
+    }
     limparFormulario();
     setModalOpen(true);
   };
 
   const abrirEdicao = (empresa: any) => {
+    if (!temPermissao('empresas', 'editar')) {
+      alert('Você não tem permissão para editar empresas.');
+      return;
+    }
     setEmpresaEditandoId(empresa.id);
     setNome(empresa.nome);
     setCnpj(empresa.cnpj);
@@ -60,6 +70,10 @@ export const CompaniesView: React.FC = () => {
   };
 
   const handleExcluir = (id: string) => {
+    if (!temPermissao('empresas', 'excluir')) {
+      alert('Você não tem permissão para excluir empresas.');
+      return;
+    }
     if (!window.confirm('Deseja realmente excluir esta empresa?')) return;
 
     excluirEmpresa(id);
@@ -67,6 +81,12 @@ export const CompaniesView: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const acao = empresaEditandoId ? 'editar' : 'criar';
+    if (!temPermissao('empresas', acao)) {
+      alert('Você não tem permissão para esta ação.');
+      return;
+    }
 
     if (!nome || !cnpj || !contaBancaria || !saldoInicial) {
       alert('Preencha os dados cadastrais da empresa.');

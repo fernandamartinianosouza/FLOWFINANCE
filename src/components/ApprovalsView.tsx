@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { usePermissions } from '../context/PermissionsContext';
 import { ProcessoCompra, StatusProcesso } from '../types';
 import { formatarReal } from '../utils';
 import {
@@ -25,6 +26,7 @@ export const ApprovalsView: React.FC = () => {
     reprovarProcesso,
     solicitarAjustes,
   } = useFinance();
+  const { temPermissao } = usePermissions();
 
   const aprovacoesPendentes = useMemo(
     () =>
@@ -103,6 +105,11 @@ export const ApprovalsView: React.FC = () => {
   ) => {
     if (processando) return;
 
+    if (!temPermissao('autorizacoes', 'aprovar')) {
+      alert('Você não tem permissão para aprovar, reprovar ou solicitar ajustes.');
+      return;
+    }
+
     try {
       setProcessando(true);
 
@@ -138,6 +145,11 @@ export const ApprovalsView: React.FC = () => {
   ) => {
     if (processando) return;
 
+    if (!temPermissao('autorizacoes', 'aprovar')) {
+      alert('Você não tem permissão para aprovar, reprovar ou solicitar ajustes.');
+      return;
+    }
+
     try {
       setProcessando(true);
 
@@ -160,6 +172,11 @@ export const ApprovalsView: React.FC = () => {
     item: ProcessoCompra
   ) => {
     if (processando) return;
+
+    if (!temPermissao('autorizacoes', 'aprovar')) {
+      alert('Você não tem permissão para aprovar, reprovar ou solicitar ajustes.');
+      return;
+    }
 
     try {
       setProcessando(true);

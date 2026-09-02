@@ -34,7 +34,8 @@ import { UsersAdminView } from './views/UsersAdminView';
 import { AuthView } from './views/AuthView';
 
 import { useAuth } from './context/AuthContext';
-import { podeAcessar } from './config/permissions';
+import { usePermissions } from './context/PermissionsContext';
+import { obterPermissaoView } from './config/viewPermissions';
 import { PermissionsProvider } from './context/PermissionsContext';
 
 const verificarDefinicaoSenhaNaUrl = () => {
@@ -89,8 +90,12 @@ const AppContent: React.FC = () => {
   const {
     user,
     loading,
-    perfil,
   } = useAuth();
+
+  const {
+    temPermissao,
+    carregandoPermissoes,
+  } = usePermissions();
 
   const [
     deveDefinirSenha,
@@ -143,22 +148,39 @@ const AppContent: React.FC = () => {
   }, [activeView, setActiveView]);
 
   useEffect(() => {
-    if (
-      user &&
-      perfil &&
-      activeView !== 'processos' &&
-      !podeAcessar(
-        perfil,
-        activeView
-      )
-    ) {
-      setActiveView('dashboard');
+    if (!user || carregandoPermissoes) return;
+
+    const permissao = obterPermissaoView(activeView);
+
+    if (!temPermissao(permissao.modulo, permissao.acao)) {
+      const fallback = [
+        'dashboard',
+        'contas-pagar',
+        'fluxo-caixa',
+        'solicitacao',
+        'catalogo-itens',
+        'cotacoes',
+        'planejamento-compras',
+        'autorizacoes',
+        'fornecedores',
+        'empresas',
+        'rh-financeiro',
+        'usuarios',
+      ].find(view => {
+        const regra = obterPermissaoView(view);
+        return temPermissao(regra.modulo, regra.acao);
+      });
+
+      if (fallback && fallback !== activeView) {
+        setActiveView(fallback);
+      }
     }
   }, [
     user,
-    perfil,
     activeView,
     setActiveView,
+    temPermissao,
+    carregandoPermissoes,
   ]);
 
   const concluirDefinicaoSenha = () => {
@@ -250,19 +272,16 @@ const AppContent: React.FC = () => {
     return <AuthView />;
   }
 
-  if (
-    perfil &&
-    activeView !== 'processos' &&
-    !podeAcessar(
-      perfil,
-      activeView
-    )
-  ) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F6F8FC] text-sm font-bold text-slate-500">
-        Redirecionando...
-      </div>
-    );
+  if (!carregandoPermissoes) {
+    const permissaoAtual = obterPermissaoView(activeView);
+
+    if (!temPermissao(permissaoAtual.modulo, permissaoAtual.acao)) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-[#F6F8FC] text-sm font-bold text-slate-500">
+          Acesso não permitido. Redirecionando...
+        </div>
+      );
+    }
   }
 
   return (

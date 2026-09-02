@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { usePermissions } from '../context/PermissionsContext';
 import { formatarReal } from '../utils';
 import {
   Users, Plus, X, Mail, Phone, CheckCircle, Pencil, Trash2, Wallet,
@@ -50,6 +51,7 @@ export const SuppliersView: React.FC = () => {
     fornecedores, processos, cadastrarFornecedor, editarFornecedor, excluirFornecedor,
     organizacaoAtivaId, empresaAtivaId, recarregarDados,
   } = useFinance();
+  const { temPermissao } = usePermissions();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -105,12 +107,20 @@ export const SuppliersView: React.FC = () => {
   const ticketMedio = totalComprado / Math.max(1, totalProcessos);
 
   const abrirCadastro = () => {
+    if (!temPermissao('fornecedores', 'criar')) {
+      alert('Você não tem permissão para cadastrar fornecedores.');
+      return;
+    }
     setFornecedorEditandoId(null);
     setForm(initialForm);
     setModalOpen(true);
   };
 
   const abrirEdicao = (f: any) => {
+    if (!temPermissao('fornecedores', 'editar')) {
+      alert('Você não tem permissão para editar fornecedores.');
+      return;
+    }
     setFornecedorEditandoId(f.id);
     setForm({
       razaoSocial: f.razaoSocial || f.nome || '', nomeFantasia: f.nomeFantasia || '', cnpj: f.cnpj || '',
@@ -123,6 +133,11 @@ export const SuppliersView: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const acao = fornecedorEditandoId ? 'editar' : 'criar';
+    if (!temPermissao('fornecedores', acao)) {
+      alert('Você não tem permissão para esta ação.');
+      return;
+    }
     if (!form.razaoSocial.trim()) return alert('Informe a Razão Social / Nome Completo.');
 
     const dados = {
@@ -157,6 +172,10 @@ export const SuppliersView: React.FC = () => {
   };
 
   const confirmarImportacao = async () => {
+    if (!temPermissao('fornecedores', 'importar')) {
+      alert('Você não tem permissão para importar fornecedores.');
+      return;
+    }
     if (!organizacaoAtivaId) return alert('Selecione uma organização antes de importar.');
     setImportando(true); setResultado('');
     try {
@@ -216,7 +235,7 @@ export const SuppliersView: React.FC = () => {
                 <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center"><Users className="w-5 h-5 text-slate-600" /></div>
                 <div className="flex gap-2">
                   <IconButton title="Editar" onClick={() => abrirEdicao(f)}><Pencil className="w-3.5 h-3.5" /></IconButton>
-                  <IconButton danger title="Excluir" onClick={() => window.confirm('Deseja excluir este fornecedor?') && excluirFornecedor(f.id)}><Trash2 className="w-3.5 h-3.5" /></IconButton>
+                  <IconButton danger title="Excluir" onClick={() => { if (!temPermissao('fornecedores', 'excluir')) { alert('Você não tem permissão para excluir fornecedores.'); return; } if (window.confirm('Deseja excluir este fornecedor?')) excluirFornecedor(f.id); }}><Trash2 className="w-3.5 h-3.5" /></IconButton>
                 </div>
               </div>
               <span className="text-[10px] font-mono text-slate-400">{documentoFormatado(f.cnpj)}</span>

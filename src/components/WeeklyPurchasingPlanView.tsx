@@ -16,6 +16,7 @@ import {
   Clock3,
   Edit3,
   History,
+  FileSpreadsheet,
   Loader2,
   Lock,
   Plus,
@@ -26,9 +27,9 @@ import {
   TrendingDown,
   Wallet,
   X,
-  FileSpreadsheet,
 } from "lucide-react";
 import { useFinance } from "../context/FinanceContext";
+import { usePermissions } from "../context/PermissionsContext";
 import {
   ItemPlanejamentoSemanal,
   OrcamentoSemanalCompra,
@@ -145,6 +146,7 @@ export const WeeklyPurchasingPlanView:
       processos,
       setActiveView,
     } = useFinance();
+    const { temPermissao } = usePermissions();
 
     const [
       referenciaSemana,
@@ -175,6 +177,12 @@ export const WeeklyPurchasingPlanView:
     const [salvando, setSalvando] =
       useState(false);
 
+    const [importandoExcel, setImportandoExcel] = useState(false);
+    const [modalImportacao, setModalImportacao] = useState(false);
+    const [arquivoImportacao, setArquivoImportacao] = useState("");
+    const [tetoImportado, setTetoImportado] = useState<number | null>(null);
+    const [comprasImportadas, setComprasImportadas] = useState<CompraImportadaExcel[]>([]);
+
     const [erro, setErro] =
       useState<string | null>(null);
 
@@ -191,33 +199,6 @@ export const WeeklyPurchasingPlanView:
       observacaoTeto,
       setObservacaoTeto,
     ] = useState("");
-
-    const [
-  importandoExcel,
-  setImportandoExcel,
-] = useState(false);
-
-const [
-  modalImportacao,
-  setModalImportacao,
-] = useState(false);
-
-const [
-  arquivoImportacao,
-  setArquivoImportacao,
-] = useState("");
-
-const [
-  tetoImportado,
-  setTetoImportado,
-] = useState<number | null>(null);
-
-const [
-  comprasImportadas,
-  setComprasImportadas,
-] = useState<
-  CompraImportadaExcel[]
->([]);
 
     const [formItem, setFormItem] =
       useState<FormItem>(formItemInicial);
@@ -413,6 +394,7 @@ const [
       event: FormEvent
     ) => {
       event.preventDefault();
+      if (!temPermissao("compras", orcamento ? "editar" : "criar")) { alert("Você não tem permissão para alterar o teto semanal."); return; }
 
       const teto = Number(
         tetoDigitado
@@ -462,227 +444,105 @@ const [
       }
     };
 
-    const normalizarTexto = (
-  valor: string
-) =>
-  valor
-    .normalize("NFD")
-    .replace(
-      /[\u0300-\u036f]/g,
-      ""
-    )
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+    const normalizarTexto = (valor: string) =>
+      valor
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
 
-const selecionarExcel = async (
-  event: React.ChangeEvent<HTMLInputElement>
-) => {
-  const file =
-    event.target.files?.[0];
+    const selecionarExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (!temPermissao("compras", "importar")) { alert("Você não tem permissão para importar planejamento."); return; }
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
 
-  event.target.value = "";
-
-  if (!file) {
-    return;
-  }
-
-  try {
-    setImportandoExcel(true);
-
-    const resultado =
-      await lerModeloTetoSemanal(
-        file,
-        dataInicio
-      );
-
-    if (
-      resultado.compras.length === 0
-    ) {
-      throw new Error(
-        "A semana foi encontrada, mas não há compras preenchidas nela."
-      );
-    }
-
-    setArquivoImportacao(
-      `${file.name} • ${resultado.aba} • ${resultado.semana}`
-    );
-
-    setTetoImportado(
-      resultado.teto
-    );
-
-    setComprasImportadas(
-      resultado.compras
-    );
-
-    setModalImportacao(true);
-  } catch (error: any) {
-    alert(
-      error?.message ||
-        "Não foi possível ler o arquivo Excel."
-    );
-  } finally {
-    setImportandoExcel(false);
-  }
-};
-
-const confirmarImportacaoExcel =
-  async () => {
-    if (!organizacaoAtivaId) {
-      return;
-    }
-
-    if (
-      orcamento?.status ===
-      "fechado"
-    ) {
-      alert(
-        "Reabra a semana antes de importar compras."
-      );
-      return;
-    }
-
-    const novas =
-      comprasImportadas.filter(
-        compra =>
-          !itens.some(
-            item =>
-              normalizarTexto(
-                item.descricao
-              ) ===
-                normalizarTexto(
-                  compra.fornecedor
-                ) &&
-              item.dataPlanejada ===
-                compra.dataPlanejada &&
-              Math.abs(
-                Number(item.valor) -
-                  compra.valor
-              ) < 0.005
-          )
-      );
-
-    if (novas.length === 0) {
-      alert(
-        "Todos os registros desta planilha já constam no planejamento da semana."
-      );
-      return;
-    }
-
-    try {
-      setImportandoExcel(true);
-
-      let semana = orcamento;
-
-      /*
-       * Se ainda não existir teto
-       * cadastrado na semana,
-       * utiliza o teto do Excel.
-       */
-      if (!semana) {
-        if (
-          !tetoImportado ||
-          tetoImportado <= 0
-        ) {
-          throw new Error(
-            "A planilha não possui um teto válido para criar esta semana."
-          );
+      try {
+        setImportandoExcel(true);
+        const resultado = await lerModeloTetoSemanal(file, dataInicio);
+        if (resultado.compras.length === 0) {
+          throw new Error("A semana foi encontrada, mas não há compras preenchidas nela.");
         }
+        setArquivoImportacao(`${file.name} • ${resultado.aba} • ${resultado.semana}`);
+        setTetoImportado(resultado.teto);
+        setComprasImportadas(resultado.compras);
+        setModalImportacao(true);
+      } catch (error: any) {
+        alert(error?.message || "Não foi possível ler o arquivo Excel.");
+      } finally {
+        setImportandoExcel(false);
+      }
+    };
 
-        semana =
-          await planejamentoSemanalService.salvarOrcamento({
-            organizacaoId:
-              organizacaoAtivaId,
+    const confirmarImportacaoExcel = async () => {
+      if (!temPermissao("compras", "importar")) { alert("Você não tem permissão para importar planejamento."); return; }
+      if (!organizacaoAtivaId) return;
+      if (orcamento?.status === "fechado") {
+        alert("Reabra a semana antes de importar compras.");
+        return;
+      }
 
-            empresaId:
-              empresaAtivaId ||
-              null,
+      const novas = comprasImportadas.filter(compra =>
+        !itens.some(item =>
+          normalizarTexto(item.descricao) === normalizarTexto(compra.fornecedor) &&
+          item.dataPlanejada === compra.dataPlanejada &&
+          Math.abs(Number(item.valor) - compra.valor) < 0.005
+        )
+      );
 
+      if (novas.length === 0) {
+        alert("Todos os registros desta planilha já constam no planejamento da semana.");
+        return;
+      }
+
+      try {
+        setImportandoExcel(true);
+        let semana = orcamento;
+        if (!semana) {
+          if (!tetoImportado || tetoImportado <= 0) {
+            throw new Error("A planilha não possui um teto válido para criar esta semana.");
+          }
+          semana = await planejamentoSemanalService.salvarOrcamento({
+            organizacaoId: organizacaoAtivaId,
+            empresaId: empresaAtivaId || null,
             dataInicio,
             dataFim,
-
-            teto:
-              tetoImportado,
-
-            observacao:
-              `Teto importado de ${arquivoImportacao}.`,
+            teto: tetoImportado,
+            observacao: `Teto importado de ${arquivoImportacao}.`,
           });
-      }
+        }
 
-      for (const compra of novas) {
-        /*
-         * Procura automaticamente
-         * o fornecedor pelo nome.
-         */
-        const fornecedor =
-          fornecedores.find(
-            item =>
-              normalizarTexto(
-                item.nome
-              ) ===
-              normalizarTexto(
-                compra.fornecedor
-              )
+        for (const compra of novas) {
+          const fornecedor = fornecedores.find(item =>
+            normalizarTexto(item.nome) === normalizarTexto(compra.fornecedor)
           );
+          await planejamentoSemanalService.adicionarItem({
+            organizacaoId: organizacaoAtivaId,
+            orcamentoSemanalId: semana.id,
+            descricao: compra.fornecedor,
+            fornecedorId: fornecedor?.id || null,
+            valor: compra.valor,
+            prioridade: "media",
+            urgente: false,
+            dataPlanejada: compra.dataPlanejada,
+            observacao: `Importado do Excel (${compra.origemAba}, linha ${compra.linha}).`,
+          });
+        }
 
-        await planejamentoSemanalService.adicionarItem({
-          organizacaoId:
-            organizacaoAtivaId,
-
-          orcamentoSemanalId:
-            semana.id,
-
-          descricao:
-            compra.fornecedor,
-
-          fornecedorId:
-            fornecedor?.id ||
-            null,
-
-          valor:
-            compra.valor,
-
-          prioridade:
-            "media",
-
-          urgente:
-            false,
-
-          dataPlanejada:
-            compra.dataPlanejada,
-
-          observacao:
-            `Importado do Excel (${compra.origemAba}, linha ${compra.linha}).`,
-        });
+        setModalImportacao(false);
+        setComprasImportadas([]);
+        await carregar();
+        alert(`${novas.length} compra(s) importada(s) com sucesso.`);
+      } catch (error: any) {
+        alert(error?.message || "Erro ao importar as compras.");
+      } finally {
+        setImportandoExcel(false);
       }
-
-      setModalImportacao(
-        false
-      );
-
-      setComprasImportadas(
-        []
-      );
-
-      await carregar();
-
-      alert(
-        `${novas.length} compra(s) importada(s) com sucesso.`
-      );
-    } catch (error: any) {
-      alert(
-        error?.message ||
-          "Erro ao importar as compras."
-      );
-    } finally {
-      setImportandoExcel(
-        false
-      );
-    }
-  };
+    };
 
     const abrirNovoItem = () => {
+      if (!temPermissao("compras", "criar")) { alert("Você não tem permissão para adicionar compras ao planejamento."); return; }
       if (!orcamento) {
         alert(
           "Cadastre o teto da semana antes de adicionar compras."
@@ -745,6 +605,7 @@ const confirmarImportacaoExcel =
       event: FormEvent
     ) => {
       event.preventDefault();
+      if (!temPermissao("compras", itemEditando ? "editar" : "criar")) { alert("Você não tem permissão para esta ação."); return; }
 
       if (!orcamento) return;
 
@@ -838,6 +699,7 @@ const confirmarImportacaoExcel =
     const editarItem = (
       item: ItemPlanejamentoSemanal
     ) => {
+      if (!temPermissao("compras", "editar")) { alert("Você não tem permissão para editar o planejamento."); return; }
       setItemEditando(item);
       setFormItem({
         processoId:
@@ -942,6 +804,7 @@ const confirmarImportacaoExcel =
         | "concluido"
         | "cancelado"
     ) => {
+      if (!temPermissao("compras", "editar")) { alert("Você não tem permissão para alterar o status da compra."); return; }
       try {
         await planejamentoSemanalService.atualizarItem(
           item.id,
@@ -960,6 +823,7 @@ const confirmarImportacaoExcel =
     const excluirItem = async (
       item: ItemPlanejamentoSemanal
     ) => {
+      if (!temPermissao("compras", "excluir")) { alert("Você não tem permissão para excluir itens do planejamento."); return; }
       if (
         !confirm(
           `Excluir "${item.descricao}" do planejamento?`
@@ -983,6 +847,7 @@ const confirmarImportacaoExcel =
     };
 
     const fecharOuReabrir = async () => {
+      if (!temPermissao("compras", "editar")) { alert("Você não tem permissão para alterar o status do planejamento."); return; }
       if (!orcamento) return;
 
       try {
@@ -1089,54 +954,22 @@ const confirmarImportacaoExcel =
             </button>
 
             <input
-  id="weekly-plan-excel-input"
-  type="file"
-  accept=".xlsx,.xls"
-  className="hidden"
-  onChange={selecionarExcel}
-/>
+              id="weekly-plan-excel-input"
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={selecionarExcel}
+            />
 
-<button
-  type="button"
-  onClick={() =>
-    document
-      .getElementById(
-        "weekly-plan-excel-input"
-      )
-      ?.click()
-  }
-  disabled={
-    importandoExcel ||
-    orcamento?.status ===
-      "fechado"
-  }
-  className="
-    inline-flex
-    items-center
-    gap-2
-    rounded-xl
-    border
-    border-emerald-200
-    bg-emerald-50
-    px-4
-    py-2.5
-    text-xs
-    font-bold
-    text-emerald-700
-    transition
-    hover:bg-emerald-100
-    disabled:cursor-not-allowed
-    disabled:opacity-50
-  "
->
-  {importandoExcel ? (
-    <Loader2 className="h-4 w-4 animate-spin" />
-  ) : (
-    <FileSpreadsheet className="h-4 w-4" />
-  )}
-
-  Importar Excel
-</button>
+            <button
+              type="button"
+              onClick={() => document.getElementById("weekly-plan-excel-input")?.click()}
+              disabled={importandoExcel || orcamento?.status === "fechado"}
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {importandoExcel ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Importar Excel
+            </button>
 
             <button
               type="button"
@@ -1916,248 +1749,85 @@ const confirmarImportacaoExcel =
         )}
 
         {modalImportacao && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-    <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+            <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between border-b border-slate-100 p-5">
+                <div>
+                  <h2 className="text-lg font-black text-slate-900">Prévia da importação</h2>
+                  <p className="mt-1 text-xs text-slate-500">{arquivoImportacao}</p>
+                </div>
+                <button type="button" onClick={() => setModalImportacao(false)} className="rounded-xl p-2 hover:bg-slate-100">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
 
-      <div className="flex items-start justify-between border-b border-slate-100 p-5">
-        <div>
-          <h2 className="text-lg font-black text-slate-900">
-            Prévia da importação
-          </h2>
+              <div className="grid gap-3 border-b border-slate-100 bg-slate-50 p-4 sm:grid-cols-3">
+                <div className="rounded-2xl bg-white p-4">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Registros encontrados</p>
+                  <p className="mt-1 text-xl font-black text-slate-900">{comprasImportadas.length}</p>
+                </div>
+                <div className="rounded-2xl bg-white p-4">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Total das compras</p>
+                  <p className="mt-1 text-xl font-black text-slate-900">{dinheiro(comprasImportadas.reduce((total, item) => total + item.valor, 0))}</p>
+                </div>
+                <div className="rounded-2xl bg-white p-4">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Teto no Excel</p>
+                  <p className="mt-1 text-xl font-black text-indigo-700">{tetoImportado ? dinheiro(tetoImportado) : "Não identificado"}</p>
+                </div>
+              </div>
 
-          <p className="mt-1 text-xs text-slate-500">
-            {arquivoImportacao}
-          </p>
-        </div>
+              <div className="max-h-[52vh] overflow-auto">
+                <table className="w-full min-w-[720px]">
+                  <thead className="sticky top-0 bg-slate-50 text-left text-[10px] uppercase text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3">Data</th>
+                      <th className="px-5 py-3">Fornecedor / descrição</th>
+                      <th className="px-5 py-3 text-right">Valor</th>
+                      <th className="px-5 py-3">Cadastro</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {comprasImportadas.map((compra, index) => {
+                      const fornecedor = fornecedores.find(item => normalizarTexto(item.nome) === normalizarTexto(compra.fornecedor));
+                      const duplicado = itens.some(item =>
+                        normalizarTexto(item.descricao) === normalizarTexto(compra.fornecedor) &&
+                        item.dataPlanejada === compra.dataPlanejada &&
+                        Math.abs(Number(item.valor) - compra.valor) < 0.005
+                      );
+                      return (
+                        <tr key={`${compra.dataPlanejada}-${compra.linha}-${index}`} className={duplicado ? "bg-amber-50/50" : ""}>
+                          <td className="px-5 py-3 text-xs font-semibold text-slate-700">{formatarData(compra.dataPlanejada)}</td>
+                          <td className="px-5 py-3 text-xs font-bold text-slate-900">{compra.fornecedor}</td>
+                          <td className="px-5 py-3 text-right text-xs font-black text-slate-900">{dinheiro(compra.valor)}</td>
+                          <td className="px-5 py-3 text-xs">
+                            {duplicado ? (
+                              <span className="rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-700">Já existe</span>
+                            ) : fornecedor ? (
+                              <span className="rounded-full bg-emerald-100 px-2 py-1 font-bold text-emerald-700">Fornecedor vinculado</span>
+                            ) : (
+                              <span className="rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-600">Como descrição</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-        <button
-          type="button"
-          onClick={() =>
-            setModalImportacao(
-              false
-            )
-          }
-          className="rounded-xl p-2 hover:bg-slate-100"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      <div className="grid gap-3 border-b border-slate-100 bg-slate-50 p-4 sm:grid-cols-3">
-
-        <div className="rounded-2xl bg-white p-4">
-          <p className="text-[10px] font-bold uppercase text-slate-400">
-            Registros encontrados
-          </p>
-
-          <p className="mt-1 text-xl font-black text-slate-900">
-            {
-              comprasImportadas.length
-            }
-          </p>
-        </div>
-
-        <div className="rounded-2xl bg-white p-4">
-          <p className="text-[10px] font-bold uppercase text-slate-400">
-            Total das compras
-          </p>
-
-          <p className="mt-1 text-xl font-black text-slate-900">
-            {dinheiro(
-              comprasImportadas.reduce(
-                (
-                  total,
-                  item
-                ) =>
-                  total +
-                  item.valor,
-                0
-              )
-            )}
-          </p>
-        </div>
-
-        <div className="rounded-2xl bg-white p-4">
-          <p className="text-[10px] font-bold uppercase text-slate-400">
-            Teto no Excel
-          </p>
-
-          <p className="mt-1 text-xl font-black text-indigo-700">
-            {tetoImportado
-              ? dinheiro(
-                  tetoImportado
-                )
-              : "Não identificado"}
-          </p>
-        </div>
-
-      </div>
-
-      <div className="max-h-[52vh] overflow-auto">
-        <table className="w-full min-w-[720px]">
-
-          <thead className="sticky top-0 bg-slate-50 text-left text-[10px] uppercase text-slate-500">
-            <tr>
-              <th className="px-5 py-3">
-                Data
-              </th>
-
-              <th className="px-5 py-3">
-                Fornecedor / descrição
-              </th>
-
-              <th className="px-5 py-3 text-right">
-                Valor
-              </th>
-
-              <th className="px-5 py-3">
-                Cadastro
-              </th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-slate-100">
-
-            {comprasImportadas.map(
-              (
-                compra,
-                index
-              ) => {
-                const fornecedor =
-                  fornecedores.find(
-                    item =>
-                      normalizarTexto(
-                        item.nome
-                      ) ===
-                      normalizarTexto(
-                        compra.fornecedor
-                      )
-                  );
-
-                const duplicado =
-                  itens.some(
-                    item =>
-                      normalizarTexto(
-                        item.descricao
-                      ) ===
-                        normalizarTexto(
-                          compra.fornecedor
-                        ) &&
-                      item.dataPlanejada ===
-                        compra.dataPlanejada &&
-                      Math.abs(
-                        Number(
-                          item.valor
-                        ) -
-                          compra.valor
-                      ) <
-                        0.005
-                  );
-
-                return (
-                  <tr
-                    key={`${compra.dataPlanejada}-${compra.linha}-${index}`}
-                    className={
-                      duplicado
-                        ? "bg-amber-50/50"
-                        : ""
-                    }
-                  >
-
-                    <td className="px-5 py-3 text-xs font-semibold text-slate-700">
-                      {formatarData(
-                        compra.dataPlanejada
-                      )}
-                    </td>
-
-                    <td className="px-5 py-3 text-xs font-bold text-slate-900">
-                      {
-                        compra.fornecedor
-                      }
-                    </td>
-
-                    <td className="px-5 py-3 text-right text-xs font-black text-slate-900">
-                      {dinheiro(
-                        compra.valor
-                      )}
-                    </td>
-
-                    <td className="px-5 py-3 text-xs">
-
-                      {duplicado ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-700">
-                          Já existe
-                        </span>
-                      ) : fornecedor ? (
-                        <span className="rounded-full bg-emerald-100 px-2 py-1 font-bold text-emerald-700">
-                          Fornecedor vinculado
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-600">
-                          Como descrição
-                        </span>
-                      )}
-
-                    </td>
-                  </tr>
-                );
-              }
-            )}
-
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex flex-col gap-3 border-t border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
-
-        <p className="text-xs text-slate-500">
-          Registros já existentes
-          serão ignorados.
-          Fornecedores com nome
-          idêntico serão vinculados
-          automaticamente.
-        </p>
-
-        <div className="flex justify-end gap-2">
-
-          <button
-            type="button"
-            onClick={() =>
-              setModalImportacao(
-                false
-              )
-            }
-            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600"
-          >
-            Cancelar
-          </button>
-
-          <button
-            type="button"
-            onClick={
-              confirmarImportacaoExcel
-            }
-            disabled={
-              importandoExcel
-            }
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
-          >
-
-            {importandoExcel ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileSpreadsheet className="h-4 w-4" />
-            )}
-
-            Confirmar importação
-          </button>
-
-        </div>
-      </div>
-
-    </div>
-  </div>
-)}
+              <div className="flex flex-col gap-3 border-t border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500">Registros já existentes serão ignorados. Fornecedores com nome idêntico serão vinculados automaticamente.</p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setModalImportacao(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600">Cancelar</button>
+                  <button type="button" onClick={confirmarImportacaoExcel} disabled={importandoExcel} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+                    {importandoExcel ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                    Confirmar importação
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {modalItem && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">

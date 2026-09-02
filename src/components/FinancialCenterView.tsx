@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { usePermissions } from '../context/PermissionsContext';
 import { formatarReal } from '../utils';
 import {
   OrcamentoMensal,
@@ -98,6 +99,7 @@ export const FinancialCenterView: React.FC = () => {
     editarCentroCusto,
     excluirCentroCusto,
   } = useFinance() as any;
+  const { temPermissao } = usePermissions();
 
   const [competencia, setCompetencia] = useState(
     competenciaAtual()
@@ -689,11 +691,13 @@ export const FinancialCenterView: React.FC = () => {
   };
 
   const abrirNovoPlano = () => {
+    if (!temPermissao('plano_financeiro', 'criar')) { alert('Você não tem permissão para cadastrar planos.'); return; }
     limparPlano();
     setModalPlanoOpen(true);
   };
 
   const abrirNovoCentro = () => {
+    if (!temPermissao('plano_financeiro', 'criar')) { alert('Você não tem permissão para cadastrar centros de custo.'); return; }
     limparCentro();
     setCentroPlanoId(
       planosFinanceiros[0]
@@ -707,6 +711,7 @@ export const FinancialCenterView: React.FC = () => {
     planoId?: string,
     centroId?: string
   ) => {
+    if (!temPermissao('plano_financeiro', 'criar')) { alert('Você não tem permissão para criar orçamentos.'); return; }
     limparOrcamento();
 
     const planoInicial =
@@ -721,6 +726,7 @@ export const FinancialCenterView: React.FC = () => {
   };
 
   const abrirEdicaoPlano = (plano: any) => {
+    if (!temPermissao('plano_financeiro', 'editar')) { alert('Você não tem permissão para editar planos.'); return; }
     setPlanoEditandoId(obterPlanoId(plano));
     setPlanoNome(plano.nome || '');
     setPlanoDescricao(plano.descricao || '');
@@ -728,6 +734,7 @@ export const FinancialCenterView: React.FC = () => {
   };
 
   const abrirEdicaoCentro = (centro: any) => {
+    if (!temPermissao('plano_financeiro', 'editar')) { alert('Você não tem permissão para editar centros de custo.'); return; }
     setCentroEditandoId(obterCentroId(centro));
     setCentroNome(centro.nome || '');
     setCentroDescricao(centro.descricao || '');
@@ -740,6 +747,7 @@ export const FinancialCenterView: React.FC = () => {
   const abrirEdicaoOrcamento = (
     orcamento: OrcamentoMensal
   ) => {
+    if (!temPermissao('plano_financeiro', 'editar')) { alert('Você não tem permissão para editar orçamentos.'); return; }
     setOrcamentoEditandoId(orcamento.id);
     setOrcamentoPlanoId(
       orcamento.planoFinanceiroId
@@ -757,6 +765,7 @@ export const FinancialCenterView: React.FC = () => {
   const abrirCopiarOrcamento = (
     orcamento: OrcamentoMensal
   ) => {
+    if (!temPermissao('plano_financeiro', 'criar')) { alert('Você não tem permissão para copiar orçamentos.'); return; }
     const proximo = new Date(
       orcamento.ano,
       orcamento.mes,
@@ -800,6 +809,8 @@ export const FinancialCenterView: React.FC = () => {
     e: React.FormEvent
   ) => {
     e.preventDefault();
+    const acaoPermissao = planoEditandoId ? 'editar' : 'criar';
+    if (!temPermissao('plano_financeiro', acaoPermissao as any)) { alert('Você não tem permissão para esta ação.'); return; }
 
     if (!planoNome.trim()) {
       alert('Informe o nome do plano de conta.');
@@ -846,6 +857,8 @@ export const FinancialCenterView: React.FC = () => {
     e: React.FormEvent
   ) => {
     e.preventDefault();
+    const acaoPermissao = centroEditandoId ? 'editar' : 'criar';
+    if (!temPermissao('plano_financeiro', acaoPermissao as any)) { alert('Você não tem permissão para esta ação.'); return; }
 
     if (!centroNome.trim() || !centroPlanoId) {
       alert(
@@ -898,6 +911,8 @@ export const FinancialCenterView: React.FC = () => {
     e: React.FormEvent
   ) => {
     e.preventDefault();
+    const acaoPermissao = orcamentoEditandoId ? 'editar' : 'criar';
+    if (!temPermissao('plano_financeiro', acaoPermissao as any)) { alert('Você não tem permissão para esta ação.'); return; }
 
     if (!organizacaoAtivaId) {
       alert('Nenhuma organização ativa foi encontrada.');
@@ -971,6 +986,8 @@ export const FinancialCenterView: React.FC = () => {
     e: React.FormEvent
   ) => {
     e.preventDefault();
+    const acaoPermissao = 'criar';
+    if (!temPermissao('plano_financeiro', acaoPermissao as any)) { alert('Você não tem permissão para esta ação.'); return; }
 
     if (!orcamentoCopiando || !competenciaDestino) {
       alert('Informe a competência de destino.');
@@ -1012,6 +1029,7 @@ export const FinancialCenterView: React.FC = () => {
   };
 
   const handleExcluirPlano = async (id: string) => {
+    if (!temPermissao('plano_financeiro', 'excluir')) { alert('Você não tem permissão para excluir registros do plano financeiro.'); return; }
     if (
       !window.confirm(
         'Deseja realmente excluir este plano de conta? Os centros e orçamentos vinculados também poderão ser excluídos.'
@@ -1032,6 +1050,7 @@ export const FinancialCenterView: React.FC = () => {
   };
 
   const handleExcluirCentro = async (id: string) => {
+    if (!temPermissao('plano_financeiro', 'excluir')) { alert('Você não tem permissão para excluir registros do plano financeiro.'); return; }
     if (
       !window.confirm(
         'Deseja realmente excluir este centro de custo? O orçamento mensal vinculado também poderá ser excluído.'
@@ -1054,6 +1073,7 @@ export const FinancialCenterView: React.FC = () => {
   const handleExcluirOrcamento = async (
     orcamento: OrcamentoMensal
   ) => {
+    if (!temPermissao('plano_financeiro', 'excluir')) { alert('Você não tem permissão para excluir registros do plano financeiro.'); return; }
     if (
       !window.confirm(
         `Deseja excluir o orçamento de ${formatarReal(
@@ -1091,6 +1111,7 @@ export const FinancialCenterView: React.FC = () => {
   const handleSelecionarPlanilha = async (
     arquivo?: File
   ) => {
+    if (!temPermissao('plano_financeiro', 'importar')) { alert('Você não tem permissão para importar plano financeiro.'); return; }
     if (!arquivo) return;
 
     try {
@@ -1128,6 +1149,7 @@ export const FinancialCenterView: React.FC = () => {
     );
 
   const handleConfirmarImportacao = async () => {
+    if (!temPermissao('plano_financeiro', 'importar')) { alert('Você não tem permissão para importar plano financeiro.'); return; }
     if (!organizacaoAtivaId) {
       alert('Não foi possível identificar a organização ativa.');
       return;

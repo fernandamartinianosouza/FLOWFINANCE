@@ -24,7 +24,7 @@ export const MODULOS_PERMISSOES: DefinicaoModuloPermissao[] = [
   { id: 'plano_financeiro', label: 'Plano Financeiro', acoes: ['visualizar', 'criar', 'editar', 'excluir', 'importar', 'exportar'] },
   { id: 'fornecedores', label: 'Fornecedores', acoes: ['visualizar', 'criar', 'editar', 'excluir', 'importar', 'exportar'] },
   { id: 'empresas', label: 'Empresas', acoes: ['visualizar', 'criar', 'editar', 'excluir'] },
-  { id: 'rh', label: 'RH Financeiro', acoes: ['visualizar', 'criar', 'editar', 'excluir', 'exportar'] },
+  { id: 'rh', label: 'RH Financeiro', acoes: ['visualizar', 'criar', 'editar', 'excluir', 'importar', 'exportar'] },
   { id: 'usuarios', label: 'Usuários e permissões', acoes: ['visualizar', 'criar', 'editar', 'excluir'] },
 ];
 

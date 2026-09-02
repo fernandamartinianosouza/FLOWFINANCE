@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { usePermissions } from '../context/PermissionsContext';
 import { ProcessoCompra } from '../types';
 import { formatarReal } from '../utils';
 import { 
@@ -22,6 +23,7 @@ export const ReconciliationView: React.FC = () => {
     planosFinanceiros,
     conciliarPagamento 
   } = useFinance();
+  const { temPermissao } = usePermissions();
 
   // Filtrar processos aguardando conciliação
   const conciliacoesPendentes = processos.filter(p => p.status === 'conciliacao');
@@ -44,6 +46,10 @@ export const ReconciliationView: React.FC = () => {
   const processo = processos.find(p => p.id === selectedId);
 
   const handleConciliar = (p: ProcessoCompra) => {
+    if (!temPermissao('conciliacao', 'conciliar')) {
+      alert('Você não tem permissão para conciliar pagamentos.');
+      return;
+    }
     conciliarPagamento(p.id);
   };
 

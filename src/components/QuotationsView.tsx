@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { useAuth } from '../context/AuthContext';
+import { usePermissions } from '../context/PermissionsContext';
 import { formatarReal } from '../utils';
 import {
   Cotacao,
@@ -62,6 +63,7 @@ export const QuotationsView: React.FC = () => {
   const finance = useFinance() as any;
   const { fornecedores = [], organizacaoAtivaId, empresaAtivaId } = finance;
   const { nomeUsuario } = useAuth();
+  const { temPermissao } = usePermissions();
 
   const [catalogo, setCatalogo] = useState<
     ItemCatalogoCotacao[]
@@ -165,6 +167,7 @@ export const QuotationsView: React.FC = () => {
   }, [cotacao?.id]);
 
   const abrirNova = () => {
+    if (!temPermissao('compras', 'criar')) { alert('Você não tem permissão para criar cotações.'); return; }
     setTitulo(
       `Cotação ${new Date().toLocaleDateString('pt-BR')}`
     );
@@ -177,6 +180,7 @@ export const QuotationsView: React.FC = () => {
     event: React.FormEvent
   ) => {
     event.preventDefault();
+    if (!temPermissao('compras', 'criar')) { alert('Você não tem permissão para criar cotações.'); return; }
 
     const itensValidos = itens
       .map(item => {
@@ -558,6 +562,7 @@ export const QuotationsView: React.FC = () => {
     event: React.FormEvent
   ) => {
     event.preventDefault();
+    if (!temPermissao('compras', 'editar')) { alert('Você não tem permissão para editar cotações.'); return; }
 
     if (!cotacao || !fornecedorId) return;
 
@@ -623,6 +628,7 @@ export const QuotationsView: React.FC = () => {
   const selecionarMelhorOpcao = async (
     proposta: CotacaoProposta
   ) => {
+    if (!temPermissao('compras', 'editar')) { alert('Você não tem permissão para selecionar propostas.'); return; }
     if (!cotacao) return;
 
     const menor = melhor?.id === proposta.id;
@@ -662,6 +668,7 @@ export const QuotationsView: React.FC = () => {
   };
 
   const gerarSolicitacao = async () => {
+    if (!temPermissao('compras', 'criar')) { alert('Você não tem permissão para gerar solicitações.'); return; }
     if (
       !cotacao?.propostaEscolhidaId ||
       !cotacao.fornecedorEscolhidoId
@@ -776,6 +783,7 @@ export const QuotationsView: React.FC = () => {
   };
 
   const gerarPdf = () => {
+    if (!temPermissao('compras', 'exportar')) { alert('Você não tem permissão para exportar cotações.'); return; }
     if (!cotacao) return;
 
     const linhas = cotacao.propostas

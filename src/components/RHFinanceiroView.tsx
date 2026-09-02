@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
+import { usePermissions } from '../context/PermissionsContext';
 import {
   calcularDataPagamento,
   RHLancamento,
@@ -41,6 +42,7 @@ const competenciaAtual = () => new Date().toISOString().slice(0, 7);
 
 export const RHFinanceiroView: React.FC = () => {
   const { organizacaoAtivaId, empresaAtivaId, empresas } = useFinance() as any;
+  const { temPermissao } = usePermissions();
   const empresa = empresas.find((item: any) => item.id === empresaAtivaId);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -111,6 +113,10 @@ export const RHFinanceiroView: React.FC = () => {
 
   const selecionarArquivo = async (arquivo?: File) => {
     if (!arquivo) return;
+    if (!temPermissao('rh', 'importar')) {
+      alert('Você não tem permissão para importar lançamentos do RH.');
+      return;
+    }
     try {
       setArquivoNome(arquivo.name);
       const linhas = await rhFinanceiroService.lerExcel(
@@ -129,6 +135,10 @@ export const RHFinanceiroView: React.FC = () => {
   };
 
   const confirmarImportacao = async () => {
+    if (!temPermissao('rh', 'importar')) {
+      alert('Você não tem permissão para importar lançamentos do RH.');
+      return;
+    }
     if (!organizacaoAtivaId || !empresaAtivaId) return;
     const validas = preview.filter(item => item.status === 'valido');
     if (!validas.length) return;
@@ -158,6 +168,10 @@ export const RHFinanceiroView: React.FC = () => {
     item: RHLancamento,
     novoStatus: 'pendente' | 'programado' | 'pago' | 'cancelado'
   ) => {
+    if (!temPermissao('rh', 'editar')) {
+      alert('Você não tem permissão para editar lançamentos do RH.');
+      return;
+    }
     try {
       await rhFinanceiroService.atualizarStatus(
         item.id,
@@ -171,6 +185,10 @@ export const RHFinanceiroView: React.FC = () => {
   };
 
   const excluir = async (item: RHLancamento) => {
+    if (!temPermissao('rh', 'excluir')) {
+      alert('Você não tem permissão para excluir lançamentos do RH.');
+      return;
+    }
     if (!window.confirm(`Excluir o lançamento de ${item.colaborador}?`)) return;
     try {
       await rhFinanceiroService.excluir(item.id, organizacaoAtivaId);

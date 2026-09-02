@@ -13,16 +13,27 @@ export const permissoesService = {
       p_organizacao_id: organizacaoId,
       ...(userId ? { p_user_id: userId } : {}),
     });
+
     if (error) throw error;
-    return (data || []).map((p: any) => ({ modulo: p.modulo, acao: p.acao, permitido: p.permitido !== false }));
+
+    return (data || []).map((p: any) => ({
+      modulo: p.modulo as ModuloPermissao,
+      acao: p.acao as AcaoPermissao,
+      permitido: p.permitido === true,
+    }));
   },
 
-  async salvar(organizacaoId: string, userId: string, permissoes: PermissaoUsuario[]) {
+  async salvar(
+    organizacaoId: string,
+    userId: string,
+    permissoes: PermissaoUsuario[]
+  ) {
     const { error } = await supabase.rpc('definir_permissoes_usuario', {
       p_organizacao_id: organizacaoId,
       p_user_id: userId,
       p_permissoes: permissoes,
     });
+
     if (error) throw error;
   },
 };

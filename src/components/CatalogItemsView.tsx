@@ -19,6 +19,7 @@ import {
 
 import { catalogoService } from "../services/catalogoService";
 import { useFinance } from "../context/FinanceContext";
+import { usePermissions } from "../context/PermissionsContext";
 import ItemSuppliersModal from "./catalogo/ItemSuppliersModal";
 import {
   ItemCatalogo,
@@ -180,6 +181,7 @@ const LoadingState = () => (
 
 export const CatalogItemsView: React.FC = () => {
   const { organizacaoAtivaId, empresaAtivaId } = useFinance();
+  const { temPermissao } = usePermissions();
   const [itens, setItens] = useState<ItemCatalogo[]>([]);
   const [segmentos, setSegmentos] = useState<SegmentoItem[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -313,6 +315,7 @@ export const CatalogItemsView: React.FC = () => {
   }, [itens, segmentos]);
 
   const abrirNovoItem = () => {
+    if (!temPermissao("compras", "criar")) { alert("Você não tem permissão para criar itens."); return; }
     setErro("");
     setModalItem({
       aberto: true,
@@ -321,6 +324,7 @@ export const CatalogItemsView: React.FC = () => {
   };
 
   const abrirEdicaoItem = (item: ItemCatalogo) => {
+    if (!temPermissao("compras", "editar")) { alert("Você não tem permissão para editar itens."); return; }
     setErro("");
     setModalItem({
       aberto: true,
@@ -329,6 +333,7 @@ export const CatalogItemsView: React.FC = () => {
   };
 
   const abrirNovoSegmento = () => {
+    if (!temPermissao("compras", "criar")) { alert("Você não tem permissão para criar segmentos."); return; }
     setErro("");
     setModalSegmento({
       aberto: true,
@@ -337,6 +342,7 @@ export const CatalogItemsView: React.FC = () => {
   };
 
   const abrirEdicaoSegmento = (segmento: SegmentoItem) => {
+    if (!temPermissao("compras", "editar")) { alert("Você não tem permissão para editar segmentos."); return; }
     setErro("");
     setModalSegmento({
       aberto: true,
@@ -368,6 +374,7 @@ export const CatalogItemsView: React.FC = () => {
   };
 
   const confirmarExclusao = async () => {
+    if (!temPermissao("compras", "excluir")) { alert("Você não tem permissão para excluir itens ou segmentos."); return; }
     if (!confirmacao.aberto) return;
 
     try {
@@ -401,6 +408,8 @@ export const CatalogItemsView: React.FC = () => {
     dados: NovoItemCatalogoInput,
     itemId?: string,
   ) => {
+    const acao = itemId ? "editar" : "criar";
+    if (!temPermissao("compras", acao)) { alert("Você não tem permissão para esta ação."); return; }
     try {
       setSalvando(true);
       setErro("");
@@ -430,6 +439,8 @@ export const CatalogItemsView: React.FC = () => {
     dados: NovoSegmentoItemInput,
     segmentoId?: string,
   ) => {
+    const acao = segmentoId ? "editar" : "criar";
+    if (!temPermissao("compras", acao)) { alert("Você não tem permissão para esta ação."); return; }
     try {
       setSalvando(true);
       setErro("");

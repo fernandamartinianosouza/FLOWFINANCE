@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 
 import { useFinance } from '../context/FinanceContext';
 import { useAuth } from '../context/AuthContext';
-import { podeAcessar } from '../config/permissions';
+import { usePermissions } from '../context/PermissionsContext';
+import { obterPermissaoView } from '../config/viewPermissions';
 
 import {
   LayoutDashboard,
@@ -36,6 +37,14 @@ export const Sidebar: React.FC = () => {
     perfil,
     nomeUsuario,
   } = useAuth();
+
+  const { temPermissao, carregandoPermissoes } = usePermissions();
+
+  const podeAbrirView = (view: string) => {
+    if (carregandoPermissoes) return true;
+    const regra = obterPermissaoView(view);
+    return temPermissao(regra.modulo, regra.acao);
+  };
 
   const aguardandoAprovacao =
     processos.filter(
@@ -199,30 +208,16 @@ export const Sidebar: React.FC = () => {
     menuGroups
       .map(group => ({
         ...group,
-        items: group.items.filter(
-          item =>
-            podeAcessar(
-              perfil,
-              item.id
-            )
-        ),
+        items: group.items.filter(item => podeAbrirView(item.id)),
       }))
-      .filter(
-        group =>
-          group.items.length > 0
-      );
+      .filter(group => group.items.length > 0);
 
   useEffect(() => {
-    if (!perfil) {
+    if (!perfil || carregandoPermissoes) {
       return;
     }
 
-    if (
-      !podeAcessar(
-        perfil,
-        activeView
-      )
-    ) {
+    if (!podeAbrirView(activeView)) {
       const primeiraViewPermitida =
         menuGroupsPermitidos[0]
           ?.items[0]?.id ||
@@ -236,19 +231,15 @@ export const Sidebar: React.FC = () => {
     perfil,
     activeView,
     setActiveView,
+    carregandoPermissoes,
+    temPermissao,
   ]);
 
   const podeCriarSolicitacao =
-    podeAcessar(
-      perfil,
-      'solicitacao'
-    );
+    temPermissao('compras', 'criar');
 
   const podeCriarConta =
-    podeAcessar(
-      perfil,
-      'nova-conta'
-    );
+    temPermissao('contas_pagar', 'criar');
 
   const formatarBadge = (
     valor?: number
