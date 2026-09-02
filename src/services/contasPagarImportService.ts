@@ -203,9 +203,7 @@ export const contasPagarImportService = {
           textos.includes('vencimentos') &&
           textos.includes('plano de contas') &&
           textos.includes('fornecedor') &&
-          (textos.includes('previsto') ||
-            textos.includes('valor total') ||
-            textos.includes('valor'))
+          textos.includes('real')
         );
       });
 
@@ -230,12 +228,6 @@ export const contasPagarImportService = {
       const colFornecedor = localizarColuna(cabecalhos, [
         'fornecedor',
         'favorecido',
-      ]);
-      const colValorTotal = localizarColuna(cabecalhos, [
-        'valor total',
-        'previsto',
-        'valor previsto',
-        'valor',
       ]);
       const colValorReal = localizarColuna(cabecalhos, ['real', 'valor real']);
       const colPago = localizarColuna(cabecalhos, ['pago', 'valor pago']);
@@ -319,7 +311,7 @@ export const contasPagarImportService = {
 
     if (resultado.length === 0) {
       throw new Error(
-        'Não foram encontrados lançamentos com Vencimento, Plano de Contas, Fornecedor e Valor Total/Previsto nas abas da planilha.'
+        'Não foram encontrados lançamentos no modelo esperado: VENCIMENTOS, PARCELAS, PLANO DE CONTAS, FORNECEDOR, REAL e PAGO.'
       );
     }
 

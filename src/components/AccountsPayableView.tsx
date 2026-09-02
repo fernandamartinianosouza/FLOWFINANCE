@@ -2476,8 +2476,8 @@ export const AccountsPayableView: React.FC = () => {
               cnpjCpf: identificadorFornecedor,
               email: '',
               telefone: '',
-              pix: linha.pix || '',
-              pixChave: linha.pix || '',
+              pix: '',
+              pixChave: '',
               ativo: true,
             } as any);
 
@@ -2508,13 +2508,12 @@ export const AccountsPayableView: React.FC = () => {
           fornecedorExistente = resultadoFornecedor || {
             id: fornecedorId,
             nome: linha.fornecedor,
-            pix: linha.pix || '',
-            pixChave: linha.pix || '',
+            pix: '',
+            pixChave: '',
           };
         }
 
         const pixConta =
-          linha.pix ||
           fornecedorExistente?.pix ||
           fornecedorExistente?.pixChave ||
           fornecedorExistente?.chavePix ||
@@ -3069,7 +3068,7 @@ export const AccountsPayableView: React.FC = () => {
                 const favorecido =
                   processo.tipoPagamento === 'interno'
                     ? processo.beneficiarioInterno || 'Pagamento interno'
-                    : fornecedor?.nome || '-';
+                    : fornecedor?.nome || processo.pixFavorecido || processo.descricao || '-';
 
                 const metodo = String(
                   processo.metodoPagamento ||
@@ -3337,7 +3336,7 @@ export const AccountsPayableView: React.FC = () => {
               processo.tipoPagamento === 'interno'
                 ? processo.beneficiarioInterno ||
                   'Pagamento interno'
-                : fornecedor?.nome || '-';
+                : fornecedor?.nome || processo.pixFavorecido || processo.descricao || '-';
 
             const marcadaExclusao =
               contasExclusaoSelecionadas.has(String(processo.id));
@@ -4210,6 +4209,8 @@ export const AccountsPayableView: React.FC = () => {
             ? contaDetalhes.beneficiarioInterno ||
               'Pagamento interno'
             : fornecedorDetalhes?.nome ||
+              contaDetalhes.pixFavorecido ||
+              contaDetalhes.descricao ||
               'Não informado';
 
         const statusTexto = pagaDetalhes
