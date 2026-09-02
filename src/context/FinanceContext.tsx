@@ -245,25 +245,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     )?.perfil || null;
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [empresaAtivaId, setEmpresaAtivaId] = useState<string>('');
-
-  const [fornecedoresTodos, setFornecedoresTodos] = useState<Fornecedor[]>([]);
+  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [planosFinanceirosTodos, setPlanosFinanceirosTodos] = useState<PlanoFinanceiro[]>([]);
   const [centrosCustosTodos, setCentrosCustosTodos] = useState<CentroCusto[]>([]);
   const [processosTodos, setProcessosTodos] = useState<ProcessoCompra[]>([]);
   const [alertas, setAlertas] = useState<AlertaSistema[]>([]);
 
-  const fornecedores = useMemo(
-    () =>
-      empresaAtivaId
-        ? fornecedoresTodos.filter(
-            (fornecedor: any) =>
-              String(fornecedor.empresaId || '') ===
-              String(empresaAtivaId)
-          )
-        : [],
-    [fornecedoresTodos, empresaAtivaId]
-  );
+  const [empresaAtivaId, setEmpresaAtivaId] = useState<string>('');
 
   const planosFinanceiros = useMemo(
     () =>
@@ -356,7 +344,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       );
 
       setEmpresas(dados.empresas);
-      setFornecedoresTodos(dados.fornecedores);
+      setFornecedores(dados.fornecedores);
       setPlanosFinanceirosTodos(dados.planosFinanceiros);
       setCentrosCustosTodos(dados.centrosCustos);
       setProcessosTodos(dados.processos);
@@ -396,7 +384,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setOrganizacoesUsuario([]);
         setOrganizacaoAtivaIdState('');
         setEmpresas([]);
-        setFornecedoresTodos([]);
+        setFornecedores([]);
         setPlanosFinanceirosTodos([]);
         setCentrosCustosTodos([]);
         setProcessosTodos([]);
@@ -1353,7 +1341,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ultimaCompra: dataHoje,
           };
 
-          setFornecedoresTodos(prev =>
+          setFornecedores(prev =>
             prev.map(item =>
               item.id === fornecedor.id
                 ? atualizadoFornecedor
@@ -1499,19 +1487,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dados: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
   ): Promise<Fornecedor> => {
     try {
-      if (!empresaAtivaId) {
-  throw new Error(
-    'Selecione uma empresa antes de cadastrar o fornecedor.'
-  );
-}
+      const novo = await financeService.criarFornecedor({
+        ...dados,
+        organizacaoId: organizacaoAtivaIdState,
+      });
 
-const novo = await financeService.criarFornecedor({
-  ...dados,
-  organizacaoId: organizacaoAtivaIdState,
-  empresaId: empresaAtivaId,
-});
-
-      setFornecedoresTodos(prev => [...prev, novo]);
+      setFornecedores(prev => [...prev, novo]);
       return novo;
     } catch (error: any) {
       console.error('Erro ao cadastrar fornecedor:', error);
@@ -1526,14 +1507,13 @@ const novo = await financeService.criarFornecedor({
   ) => {
     try {
       const atualizado = await financeService.editarFornecedor(id, {
-  ...dados,
-  organizacaoId: organizacaoAtivaIdState,
-  empresaId: empresaAtivaId,
-});
+        ...dados,
+        organizacaoId: organizacaoAtivaIdState,
+      });
 
-      setFornecedoresTodos(prev =>
-  prev.map(f => (f.id === id ? atualizado : f))
-);
+      setFornecedores(prev =>
+        prev.map(f => (f.id === id ? atualizado : f))
+      );
     } catch (error: any) {
       console.error('Erro ao editar fornecedor:', error);
       alert(error.message || 'Erro ao editar fornecedor.');
@@ -1548,9 +1528,7 @@ const novo = await financeService.criarFornecedor({
 
     try {
       await financeService.excluirFornecedor(id, organizacaoAtivaIdState);
-      setFornecedoresTodos(prev =>
-  prev.filter(f => f.id !== id)
-);
+      setFornecedores(prev => prev.filter(f => f.id !== id));
       return true;
     } catch (error: any) {
       console.error('Erro ao excluir fornecedor:', error);

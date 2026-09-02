@@ -257,13 +257,18 @@ export const contasPagarImportService = {
           colFornecedor >= 0
             ? String(linha[colFornecedor] ?? '').trim()
             : '';
-        const valorTotal =
-          colValorTotal >= 0 ? parseValor(linha[colValorTotal]) : null;
+        // Regra da importação: a coluna REAL da planilha é o valor oficial da conta.
+        // PREVISTO não deve definir o Valor Total importado.
         const valorReal =
           colValorReal >= 0 ? parseValor(linha[colValorReal]) : null;
-          if (!valorReal || valorReal <= 0) {
-  continue;
-}
+
+        // Só importamos linhas com REAL preenchido e maior que zero.
+        if (!valorReal || valorReal <= 0) {
+          continue;
+        }
+
+        // O Valor Total do FLOWFINANCE deve ser exatamente o REAL da planilha.
+        const valorTotal = valorReal;
         const valorPagoPlanilha =
           colPago >= 0 ? parseValor(linha[colPago]) : null;
         const parcela =
@@ -289,7 +294,7 @@ export const contasPagarImportService = {
         if (!vencimento) erros.push('Vencimento inválido');
         if (!planoConta) erros.push('Plano de contas não informado');
         if (!fornecedor) erros.push('Fornecedor não informado');
-        if (!valorTotal || valorTotal <= 0) erros.push('Valor Total inválido');
+        if (!valorReal || valorReal <= 0) erros.push('Valor Real inválido');
 
         resultado.push({
           aba: nomeAba,
@@ -299,8 +304,7 @@ export const contasPagarImportService = {
           vencimento,
           parcela,
           valorTotal: valorTotal || 0,
-          valorReal:
-            valorReal !== null && valorReal > 0 ? valorReal : null,
+          valorReal,
           valorPagoPlanilha:
             valorPagoPlanilha !== null && valorPagoPlanilha > 0
               ? valorPagoPlanilha
@@ -315,7 +319,7 @@ export const contasPagarImportService = {
 
     if (resultado.length === 0) {
       throw new Error(
-        'Não foram encontrados lançamentos com a coluna REAL preenchida nas abas da planilha.'
+        'Não foram encontrados lançamentos com Vencimento, Plano de Contas, Fornecedor e Valor Total/Previsto nas abas da planilha.'
       );
     }
 
