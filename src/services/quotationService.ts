@@ -609,6 +609,65 @@ export const quotationService = {
 
     if (erroCotacao) throw erroCotacao;
 
+    // A proposta selecionada representa o preço efetivamente escolhido pela compra.
+    // Atualizamos o último preço do vínculo item x fornecedor; o trigger do banco
+    // registra automaticamente o histórico (melhora/piora) quando houver mudança.
+    const { data: dadosPreco, error: erroDadosPreco } = await supabase
+      .from('cotacoes')
+      .select(`
+        organizacao_id,
+        empresa_id,
+        cotacao_itens (
+          id,
+          item_catalogo_id
+        ),
+        cotacao_propostas (
+          id,
+          cotacao_proposta_itens (
+            cotacao_item_id,
+            valor_unitario
+          )
+        )
+      `)
+      .eq('id', cotacaoId)
+      .single();
+
+    if (erroDadosPreco) throw erroDadosPreco;
+
+    const propostaSelecionada = (dadosPreco?.cotacao_propostas || []).find(
+      (proposta: any) => String(proposta.id) === String(propostaId)
+    );
+
+    if (propostaSelecionada) {
+      const itemCatalogoPorCotacao = new Map(
+        (dadosPreco?.cotacao_itens || []).map((item: any) => [
+          String(item.id),
+          item.item_catalogo_id ? String(item.item_catalogo_id) : '',
+        ])
+      );
+
+      for (const itemProposta of propostaSelecionada.cotacao_proposta_itens || []) {
+        const itemCatalogoId = itemCatalogoPorCotacao.get(
+          String(itemProposta.cotacao_item_id)
+        );
+
+        if (!itemCatalogoId) continue;
+
+        const { error: erroAtualizacaoPreco } = await supabase
+          .from('itens_fornecedores')
+          .update({
+            ultimo_preco: numeroSeguro(itemProposta.valor_unitario),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('organizacao_id', dadosPreco.organizacao_id)
+          .eq('empresa_id', dadosPreco.empresa_id)
+          .eq('item_id', itemCatalogoId)
+          .eq('fornecedor_id', fornecedorId);
+
+        if (erroAtualizacaoPreco) throw erroAtualizacaoPreco;
+      }
+    }
+
     return this.buscarCotacaoPorId(cotacaoId);
   },
 
@@ -631,6 +690,21 @@ export const quotationService = {
       .eq('id', cotacaoId);
 
     if (error) throw error;
+
+    // Se a cotação nasceu de uma solicitação do almoxarifado,
+    // encerra o ciclo da solicitação quando a compra segue para a solicitação formal.
+    const { error: erroEstoque } = await supabase
+      .from('estoque_solicitacoes')
+      .update({
+        status: 'atendida',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('cotacao_id', cotacaoId)
+      .eq('status', 'em_cotacao');
+
+    if (erroEstoque && erroEstoque.code !== '42P01') {
+      throw erroEstoque;
+    }
   },
 
   calcularTotalProposta(

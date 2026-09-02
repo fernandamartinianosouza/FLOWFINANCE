@@ -123,6 +123,50 @@ const mapItemFornecedorFromDb = (item: any): ItemFornecedor => ({
 });
 
 
+export type TipoVariacaoPreco = "inicial" | "melhora" | "piora" | "igual";
+
+export interface HistoricoPrecoFornecedor {
+  id: string;
+  organizacaoId: string;
+  empresaId: string;
+  itemId: string;
+  fornecedorId: string;
+  valorAnterior: number | null;
+  valorNovo: number;
+  variacaoValor: number | null;
+  variacaoPercentual: number | null;
+  tipo: TipoVariacaoPreco;
+  origem?: string | null;
+  alteradoPor?: string | null;
+  createdAt: string;
+}
+
+const mapHistoricoPrecoFromDb = (item: any): HistoricoPrecoFornecedor => ({
+  id: String(item.id),
+  organizacaoId: String(item.organizacao_id || ""),
+  empresaId: String(item.empresa_id || ""),
+  itemId: String(item.item_id || ""),
+  fornecedorId: String(item.fornecedor_id || ""),
+  valorAnterior:
+    item.valor_anterior === null || item.valor_anterior === undefined
+      ? null
+      : Number(item.valor_anterior),
+  valorNovo: Number(item.valor_novo || 0),
+  variacaoValor:
+    item.variacao_valor === null || item.variacao_valor === undefined
+      ? null
+      : Number(item.variacao_valor),
+  variacaoPercentual:
+    item.variacao_percentual === null || item.variacao_percentual === undefined
+      ? null
+      : Number(item.variacao_percentual),
+  tipo: (item.tipo || "inicial") as TipoVariacaoPreco,
+  origem: item.origem || null,
+  alteradoPor: item.alterado_por || null,
+  createdAt: item.created_at,
+});
+
+
 const exigirEmpresaId = (empresaId?: string | null): string => {
   const id = String(empresaId || "").trim();
   if (!id) {
@@ -787,6 +831,29 @@ export const catalogoService = {
     if (error) throw error;
 
     return mapItemFornecedorFromDb(data);
+  },
+
+  async listarHistoricoPrecosFornecedor(
+    itemId: string,
+    fornecedorId: string,
+    organizacaoId?: string,
+    empresaId?: string,
+  ): Promise<HistoricoPrecoFornecedor[]> {
+    const orgId = await resolverOrganizacaoId(organizacaoId);
+    const empId = exigirEmpresaId(empresaId);
+
+    const { data, error } = await supabase
+      .from("historico_precos_fornecedores")
+      .select("*")
+      .eq("organizacao_id", orgId)
+      .eq("empresa_id", empId)
+      .eq("item_id", itemId)
+      .eq("fornecedor_id", fornecedorId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map(mapHistoricoPrecoFromDb);
   },
 
   async removerFornecedor(

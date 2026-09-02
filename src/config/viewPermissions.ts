@@ -11,6 +11,7 @@ const MAPA_VIEWS: Record<string, PermissaoView> = {
   processos: { modulo: 'contas_pagar', acao: 'visualizar' },
   solicitacao: { modulo: 'compras', acao: 'criar' },
   'catalogo-itens': { modulo: 'compras', acao: 'visualizar' },
+  estoque: { modulo: 'estoque', acao: 'visualizar' },
   cotacoes: { modulo: 'compras', acao: 'visualizar' },
   'planejamento-compras': { modulo: 'compras', acao: 'visualizar' },
   autorizacoes: { modulo: 'autorizacoes', acao: 'visualizar' },

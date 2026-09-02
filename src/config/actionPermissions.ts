@@ -4,7 +4,7 @@ export type AcaoPermissao =
   | 'importar' | 'exportar' | 'anexar' | 'excluir_anexo' | 'estornar';
 
 export type ModuloPermissao =
-  | 'dashboard' | 'compras' | 'autorizacoes' | 'contas_pagar'
+  | 'dashboard' | 'compras' | 'estoque' | 'autorizacoes' | 'contas_pagar'
   | 'contas_receber' | 'conciliacao' | 'plano_financeiro'
   | 'fornecedores' | 'empresas' | 'rh' | 'usuarios';
 
@@ -17,6 +17,7 @@ export interface DefinicaoModuloPermissao {
 export const MODULOS_PERMISSOES: DefinicaoModuloPermissao[] = [
   { id: 'dashboard', label: 'Dashboard', acoes: ['visualizar', 'exportar'] },
   { id: 'compras', label: 'Compras e solicitações', acoes: ['visualizar', 'criar', 'editar', 'excluir', 'importar', 'exportar', 'anexar', 'excluir_anexo'] },
+  { id: 'estoque', label: 'Estoque / Almoxarifado', acoes: ['visualizar', 'criar', 'editar', 'excluir', 'importar', 'exportar'] },
   { id: 'autorizacoes', label: 'Autorizações', acoes: ['visualizar', 'aprovar'] },
   { id: 'contas_pagar', label: 'Contas a Pagar', acoes: ['visualizar', 'criar', 'editar', 'excluir', 'pagar', 'estornar', 'importar', 'exportar', 'anexar', 'excluir_anexo'] },
   { id: 'contas_receber', label: 'Contas a Receber', acoes: ['visualizar', 'criar', 'editar', 'excluir', 'receber', 'estornar', 'importar', 'exportar', 'anexar', 'excluir_anexo'] },
@@ -40,7 +41,7 @@ export const permissoesPadraoPerfil = (perfil: string) => {
   if (perfil === 'admin' || perfil === 'diretoria') return todas;
   if (perfil === 'consulta') return MODULOS_PERMISSOES.map(m => ({ modulo: m.id, acao: 'visualizar' as AcaoPermissao, permitido: true }));
   const modulos = perfil === 'compras'
-    ? ['dashboard', 'compras', 'fornecedores']
+    ? ['dashboard', 'compras', 'estoque', 'fornecedores']
     : ['dashboard', 'contas_pagar', 'contas_receber', 'conciliacao', 'plano_financeiro', 'fornecedores'];
   return todas.filter(p => modulos.includes(p.modulo));
 };

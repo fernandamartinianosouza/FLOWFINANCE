@@ -29,6 +29,7 @@ import { NewAccountView } from './components/NewAccountView';
 import { WeeklyPurchasingPlanView } from './components/WeeklyPurchasingPlanView';
 import { RHFinanceiroView } from './components/RHFinanceiroView';
 import CatalogItemsView from './components/CatalogItemsView';
+import StockView from './components/StockView';
 
 import { UsersAdminView } from './views/UsersAdminView';
 import { AuthView } from './views/AuthView';
@@ -159,6 +160,7 @@ const AppContent: React.FC = () => {
         'fluxo-caixa',
         'solicitacao',
         'catalogo-itens',
+        'estoque',
         'cotacoes',
         'planejamento-compras',
         'autorizacoes',
@@ -201,6 +203,9 @@ const AppContent: React.FC = () => {
 
       case 'catalogo-itens':
         return <CatalogItemsView />;
+
+      case 'estoque':
+        return <StockView />;
 
       case 'cotacoes':
         return <QuotationsView />;

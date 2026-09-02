@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   Edit3,
+  History,
   Loader2,
   Plus,
   Star,
@@ -12,7 +13,10 @@ import {
   X,
 } from "lucide-react";
 
-import { catalogoService } from "../../services/catalogoService";
+import {
+  catalogoService,
+  HistoricoPrecoFornecedor,
+} from "../../services/catalogoService";
 import { usePermissions } from "../../context/PermissionsContext";
 import {
   Fornecedor,
@@ -91,6 +95,9 @@ export const ItemSuppliersModal: React.FC<Props> = ({
   const [salvando, setSalvando] = useState(false);
   const [removendoId, setRemovendoId] = useState<string | null>(null);
   const [erro, setErro] = useState("");
+  const [historicoAberto, setHistoricoAberto] = useState<ItemFornecedor | null>(null);
+  const [historico, setHistorico] = useState<HistoricoPrecoFornecedor[]>([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
   const carregar = async () => {
     if (!item) return;
@@ -216,6 +223,42 @@ export const ItemSuppliersModal: React.FC<Props> = ({
       setSalvando(false);
     }
   };
+
+  const abrirHistorico = async (vinculo: ItemFornecedor) => {
+    if (!item) return;
+
+    try {
+      setHistoricoAberto(vinculo);
+      setHistorico([]);
+      setCarregandoHistorico(true);
+      setErro("");
+
+      const dados = await catalogoService.listarHistoricoPrecosFornecedor(
+        item.id,
+        vinculo.fornecedorId,
+        organizacaoId,
+        empresaId,
+      );
+
+      setHistorico(dados);
+    } catch (error) {
+      setHistoricoAberto(null);
+      setErro(getErrorMessage(error));
+    } finally {
+      setCarregandoHistorico(false);
+    }
+  };
+
+  const resumoHistorico = historico.length
+    ? (() => {
+        const cronologico = [...historico].reverse();
+        const primeiro = cronologico[0]?.valorNovo ?? 0;
+        const ultimo = cronologico[cronologico.length - 1]?.valorNovo ?? 0;
+        const diferenca = ultimo - primeiro;
+        const percentual = primeiro > 0 ? (diferenca / primeiro) * 100 : 0;
+        return { primeiro, ultimo, diferenca, percentual };
+      })()
+    : null;
 
   const remover = async (vinculo: ItemFornecedor) => {
     if (!temPermissao("compras", "excluir")) { setErro("Você não tem permissão para remover vínculos de fornecedores."); return; }
@@ -462,6 +505,9 @@ export const ItemSuppliersModal: React.FC<Props> = ({
                       </div>
 
                       <div className="flex gap-1 self-end sm:self-auto">
+                        <button type="button" onClick={() => void abrirHistorico(vinculo)} className="rounded-lg p-2 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600" title="Histórico de preços">
+                          <History size={17} />
+                        </button>
                         <button type="button" onClick={() => iniciarEdicao(vinculo)} className="rounded-lg p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Editar vínculo">
                           <Edit3 size={17} />
                         </button>
@@ -496,6 +542,109 @@ export const ItemSuppliersModal: React.FC<Props> = ({
           </section>
         </div>
       </div>
+
+      {historicoAberto && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <header className="flex items-start justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
+              <div>
+                <div className="flex items-center gap-2">
+                  <History size={20} className="text-emerald-600" />
+                  <h3 className="text-lg font-semibold text-slate-900">Histórico de preços</h3>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {item.nome} • {historicoAberto.fornecedor?.nome || "Fornecedor"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoricoAberto(null)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Fechar histórico"
+              >
+                <X size={20} />
+              </button>
+            </header>
+
+            <div className="max-h-[calc(90vh-76px)] overflow-y-auto p-5 sm:p-6">
+              {carregandoHistorico ? (
+                <div className="flex min-h-52 items-center justify-center">
+                  <Loader2 className="animate-spin text-emerald-600" size={28} />
+                </div>
+              ) : historico.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+                  <History className="mx-auto text-slate-400" size={30} />
+                  <p className="mt-3 font-medium text-slate-800">Ainda não há mudanças de preço registradas.</p>
+                  <p className="mt-1 text-sm text-slate-500">As próximas alterações do último preço ficarão registradas automaticamente.</p>
+                </div>
+              ) : (
+                <>
+                  {resumoHistorico && (
+                    <div className="mb-5 grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Primeiro preço</p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">{moeda.format(resumoHistorico.primeiro)}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Preço atual</p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">{moeda.format(resumoHistorico.ultimo)}</p>
+                      </div>
+                      <div className={`rounded-xl border p-4 ${resumoHistorico.diferenca < 0 ? "border-emerald-200 bg-emerald-50" : resumoHistorico.diferenca > 0 ? "border-red-200 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Evolução</p>
+                        <p className={`mt-1 text-lg font-semibold ${resumoHistorico.diferenca < 0 ? "text-emerald-700" : resumoHistorico.diferenca > 0 ? "text-red-700" : "text-slate-700"}`}>
+                          {resumoHistorico.diferenca < 0 ? "Melhora" : resumoHistorico.diferenca > 0 ? "Piora" : "Sem alteração"} {Math.abs(resumoHistorico.percentual).toFixed(2)}%
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {resumoHistorico.diferenca < 0 ? "Economia de " : resumoHistorico.diferenca > 0 ? "Aumento de " : "Variação de "}{moeda.format(Math.abs(resumoHistorico.diferenca))}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3">Data</th>
+                            <th className="px-4 py-3">Preço anterior</th>
+                            <th className="px-4 py-3">Novo preço</th>
+                            <th className="px-4 py-3">Resultado</th>
+                            <th className="px-4 py-3 text-right">Variação</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {historico.map((registro) => (
+                            <tr key={registro.id} className="bg-white">
+                              <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                                {new Date(registro.createdAt).toLocaleDateString("pt-BR")}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                                {registro.valorAnterior == null ? "—" : moeda.format(registro.valorAnterior)}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
+                                {moeda.format(registro.valorNovo)}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${registro.tipo === "melhora" ? "bg-emerald-100 text-emerald-700" : registro.tipo === "piora" ? "bg-red-100 text-red-700" : registro.tipo === "inicial" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+                                  {registro.tipo === "melhora" ? "Melhora" : registro.tipo === "piora" ? "Piora" : registro.tipo === "inicial" ? "Preço inicial" : "Sem alteração"}
+                                </span>
+                              </td>
+                              <td className={`whitespace-nowrap px-4 py-3 text-right font-medium ${registro.tipo === "melhora" ? "text-emerald-700" : registro.tipo === "piora" ? "text-red-700" : "text-slate-500"}`}>
+                                {registro.variacaoPercentual == null ? "—" : `${registro.variacaoPercentual > 0 ? "+" : ""}${registro.variacaoPercentual.toFixed(2)}%`}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

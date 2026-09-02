@@ -24,6 +24,7 @@ import {
   ReceiptText,
   Package,
   CalendarRange,
+  Warehouse,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -101,6 +102,11 @@ export const Sidebar: React.FC = () => {
           id: 'catalogo-itens',
           label: 'Catálogo de Itens',
           icon: Package,
+        },
+        {
+          id: 'estoque',
+          label: 'Estoque',
+          icon: Warehouse,
         },
         {
           id: 'cotacoes',

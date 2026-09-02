@@ -10,6 +10,7 @@ import {
   ItemCatalogoCotacao,
   quotationService,
 } from '../services/quotationService';
+import { SolicitacaoEstoque, estoqueService } from '../services/estoqueService';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -22,6 +23,8 @@ import {
   ShoppingCart,
   Trash2,
   X,
+  Warehouse,
+  ArrowRight,
 } from 'lucide-react';
 
 interface ItemRascunho {
@@ -61,7 +64,7 @@ const novoItem = (): ItemRascunho => ({
 
 export const QuotationsView: React.FC = () => {
   const finance = useFinance() as any;
-  const { fornecedores = [], organizacaoAtivaId, empresaAtivaId } = finance;
+  const { fornecedores = [], empresas = [], organizacaoAtivaId, empresaAtivaId } = finance;
   const { nomeUsuario } = useAuth();
   const { temPermissao } = usePermissions();
 
@@ -69,6 +72,8 @@ export const QuotationsView: React.FC = () => {
     ItemCatalogoCotacao[]
   >([]);
   const [cotacoes, setCotacoes] = useState<Cotacao[]>([]);
+  const [solicitacoesEstoque, setSolicitacoesEstoque] = useState<SolicitacaoEstoque[]>([]);
+  const [convertendoSolicitacaoId, setConvertendoSolicitacaoId] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState('');
   const [selecionadaId, setSelecionadaId] =
@@ -125,18 +130,21 @@ export const QuotationsView: React.FC = () => {
       if (!organizacaoAtivaId || !empresaAtivaId) {
         setCatalogo([]);
         setCotacoes([]);
+        setSolicitacoesEstoque([]);
         setSelecionadaId(null);
         return;
       }
 
-      const [listaCatalogo, listaCotacoes] =
+      const [listaCatalogo, listaCotacoes, listaSolicitacoesEstoque] =
         await Promise.all([
           quotationService.listarItensCatalogo(organizacaoAtivaId, empresaAtivaId),
           quotationService.listarCotacoes(organizacaoAtivaId, empresaAtivaId),
+          estoqueService.listarSolicitacoes(organizacaoAtivaId, empresaAtivaId, 'pendente'),
         ]);
 
       setCatalogo(listaCatalogo);
       setCotacoes(listaCotacoes);
+      setSolicitacoesEstoque(listaSolicitacoesEstoque);
     } catch (error: any) {
       console.error(error);
       alert(
@@ -165,6 +173,55 @@ export const QuotationsView: React.FC = () => {
 
     carregarFornecedoresAutomaticamente();
   }, [cotacao?.id]);
+
+  const transformarSolicitacaoEstoqueEmCotacao = async (solicitacao: SolicitacaoEstoque) => {
+    if (!temPermissao('compras', 'criar')) {
+      alert('Você não tem permissão para criar cotações.');
+      return;
+    }
+
+    if (!organizacaoAtivaId || !empresaAtivaId) {
+      alert('Selecione uma empresa antes de criar a cotação.');
+      return;
+    }
+
+    try {
+      setConvertendoSolicitacaoId(solicitacao.id);
+
+      const cotacaoCriada = await quotationService.criarCotacao({
+        organizacaoId: organizacaoAtivaId,
+        empresaId: empresaAtivaId,
+        titulo: solicitacao.titulo || `Cotação - Estoque ${new Date().toLocaleDateString('pt-BR')}`,
+        observacao: [
+          'Origem: solicitação do Estoque / Almoxarifado.',
+          solicitacao.solicitadoPor ? `Solicitado por: ${solicitacao.solicitadoPor}.` : '',
+          solicitacao.urgencia ? `Urgência: ${solicitacao.urgencia}.` : '',
+          solicitacao.justificativa || '',
+        ].filter(Boolean).join('\n'),
+        criadoPor: nomeUsuario || undefined,
+        itens: solicitacao.itens.map(item => ({
+          itemCatalogoId: item.itemCatalogoId,
+          descricao: item.descricao,
+          quantidade: item.quantidade,
+          unidade: item.unidade,
+          especificacao: [
+            item.observacao || '',
+            `Saldo no estoque ao solicitar: ${item.saldoNoMomento} ${item.unidade}`,
+          ].filter(Boolean).join(' • '),
+        })),
+      });
+
+      await estoqueService.vincularCotacao(solicitacao.id, cotacaoCriada.id);
+      setSolicitacoesEstoque(atual => atual.filter(item => item.id !== solicitacao.id));
+      setCotacoes(atual => [cotacaoCriada, ...atual.filter(item => item.id !== cotacaoCriada.id)]);
+      setSelecionadaId(cotacaoCriada.id);
+    } catch (error: any) {
+      console.error(error);
+      alert(error.message || 'Não foi possível transformar a solicitação em cotação.');
+    } finally {
+      setConvertendoSolicitacaoId(null);
+    }
+  };
 
   const abrirNova = () => {
     if (!temPermissao('compras', 'criar')) { alert('Você não tem permissão para criar cotações.'); return; }
@@ -668,114 +725,82 @@ export const QuotationsView: React.FC = () => {
   };
 
   const gerarSolicitacao = async () => {
-    if (!temPermissao('compras', 'criar')) { alert('Você não tem permissão para gerar solicitações.'); return; }
+    if (!temPermissao('compras', 'criar')) {
+      alert('Você não tem permissão para gerar solicitações.');
+      return;
+    }
+
     if (
       !cotacao?.propostaEscolhidaId ||
       !cotacao.fornecedorEscolhidoId
     ) {
-      alert(
-        'Selecione primeiro a melhor opção.'
-      );
+      alert('Selecione primeiro a melhor opção.');
       return;
     }
 
     const proposta = cotacao.propostas.find(
-      item =>
-        item.id === cotacao.propostaEscolhidaId
+      item => item.id === cotacao.propostaEscolhidaId
     );
 
     if (!proposta) return;
 
     const fornecedor = fornecedores.find(
-      (item: any) =>
-        item.id === proposta.fornecedorId
+      (item: any) => item.id === proposta.fornecedorId
     );
 
-    const total =
-      quotationService.calcularTotalProposta(
-        proposta
-      );
+    const total = quotationService.calcularTotalProposta(proposta);
 
-    const criarProcesso =
-      finance.adicionarProcesso ||
-      finance.criarProcesso ||
-      finance.novoProcesso;
+    const descricaoItens = cotacao.itens
+      .map(item => {
+        const especificacao = item.especificacao
+          ? ` - ${item.especificacao}`
+          : '';
+        return `${item.quantidade} ${item.unidade} - ${item.descricao}${especificacao}`;
+      })
+      .join(' | ');
 
-    if (typeof criarProcesso !== 'function') {
-      alert(
-        'Não encontrei adicionarProcesso/criarProcesso no FinanceContext. Envie o FinanceContext para conectar este botão ao cadastro de solicitações.'
-      );
-      return;
-    }
+    const observacaoCotacao = [
+      `Cotação: ${cotacao.titulo}`,
+      `Fornecedor selecionado: ${fornecedor?.nome || 'Fornecedor selecionado'}`,
+      `Condição de pagamento: ${proposta.condicaoPagamento || '-'}`,
+      `Prazo de entrega: ${
+        proposta.prazoEntregaDias
+          ? `${proposta.prazoEntregaDias} dias`
+          : '-'
+      }`,
+      `Frete: ${proposta.tipoFrete || '-'} - ${formatarReal(proposta.frete)}`,
+      `Valor da proposta: ${formatarReal(total)}`,
+    ].join('\n');
 
-    const payload = {
-      empresaId: empresaAtivaId,
-      descricao: cotacao.itens
-        .map(
-          item =>
-            `${item.quantidade} ${item.unidade} - ${item.descricao}`
-        )
-        .join(' | '),
-      titulo: `Solicitação: ${cotacao.titulo}`,
-      fornecedorId: proposta.fornecedorId,
-      valor: total,
-      status: 'solicitacao',
-      observacao: [
-        `Cotação: ${cotacao.titulo}`,
-        `Fornecedor: ${
-          fornecedor?.nome ||
-          'Fornecedor selecionado'
-        }`,
-        `Faturamento: ${
-          proposta.condicaoPagamento || '-'
-        }`,
-        `Entrega: ${
-          proposta.prazoEntregaDias
-            ? `${proposta.prazoEntregaDias} dias`
-            : '-'
-        }`,
-        `Frete: ${
-          proposta.tipoFrete || '-'
-        } - ${formatarReal(proposta.frete)}`,
-      ].join('\n'),
+    const rascunhoSolicitacao = {
+      origem: 'cotacao',
       cotacaoId: cotacao.id,
+      empresaId: empresaAtivaId,
+      fornecedorId: proposta.fornecedorId,
+      tipoPagamento: 'fornecedor',
+      descricao: descricaoItens,
+      valor: total,
+      observacaoPagamento: observacaoCotacao,
     };
 
     try {
       setGerandoSolicitacao(true);
 
-      const processoCriado =
-        await criarProcesso(payload);
-
-      const processoId =
-        processoCriado?.dbId ||
-        processoCriado?.id ||
-        null;
-
-      await quotationService.marcarSolicitacaoGerada(
-        cotacao.id,
-        processoId
+      sessionStorage.setItem(
+        'flowfinance:solicitacao-cotacao',
+        JSON.stringify(rascunhoSolicitacao)
       );
 
-      const atualizada =
-        await quotationService.buscarCotacaoPorId(
-          cotacao.id
-        );
+      if (typeof finance.setActiveView !== 'function') {
+        throw new Error('Não foi possível abrir a página de Nova Solicitação.');
+      }
 
-      setCotacoes(atual =>
-        atual.map(item =>
-          item.id === atualizada.id
-            ? atualizada
-            : item
-        )
-      );
-
-      alert('Solicitação gerada com sucesso.');
+      finance.setActiveView('solicitacao');
     } catch (error: any) {
       console.error(error);
       alert(
         error.message ||
-          'Erro ao gerar solicitação.'
+          'Não foi possível enviar a cotação para Nova Solicitação.'
       );
     } finally {
       setGerandoSolicitacao(false);
@@ -783,40 +808,196 @@ export const QuotationsView: React.FC = () => {
   };
 
   const gerarPdf = () => {
-    if (!temPermissao('compras', 'exportar')) { alert('Você não tem permissão para exportar cotações.'); return; }
+    if (!temPermissao('compras', 'exportar')) {
+      alert('Você não tem permissão para exportar cotações.');
+      return;
+    }
     if (!cotacao) return;
 
-    const linhas = cotacao.propostas
-      .map(proposta => {
-        const fornecedor = fornecedores.find(
+    const escaparHtml = (valor: unknown) =>
+      String(valor ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    const formatarData = (valor?: string | null) => {
+      if (!valor) return '-';
+      const data = new Date(valor);
+      return Number.isNaN(data.getTime())
+        ? escaparHtml(valor)
+        : data.toLocaleDateString('pt-BR');
+    };
+
+    const empresa = empresas.find(
+      (item: any) => String(item.id) === String(empresaAtivaId)
+    );
+
+    const propostaVencedora = cotacao.propostas.find(
+      proposta => proposta.selecionada
+    );
+
+    const fornecedorVencedor = propostaVencedora
+      ? fornecedores.find(
           (item: any) =>
-            item.id === proposta.fornecedorId
+            String(item.id) ===
+            String(propostaVencedora.fornecedorId)
+        )
+      : null;
+
+    const linhasItensCotacao = cotacao.itens
+      .map((item, indice) => {
+        const itemCatalogo = catalogo.find(
+          registro =>
+            String(registro.id) ===
+            String(item.itemCatalogoId)
         );
 
         return `
-          <tr class="${
-            proposta.selecionada ? 'vencedora' : ''
-          }">
-            <td>${
-              fornecedor?.nome || 'Fornecedor'
-            }</td>
-            <td>${
-              proposta.condicaoPagamento || '-'
-            }</td>
-            <td>${
-              proposta.prazoEntregaDias
-                ? `${proposta.prazoEntregaDias} dias`
-                : '-'
-            }</td>
-            <td>${proposta.tipoFrete || '-'}</td>
-            <td>${formatarReal(
-              proposta.frete
-            )}</td>
-            <td>${formatarReal(
-              quotationService.calcularTotalProposta(
-                proposta
-              )
-            )}</td>
+          <tr>
+            <td class="center">${indice + 1}</td>
+            <td>${escaparHtml(itemCatalogo?.codigo || '-')}</td>
+            <td>
+              <strong>${escaparHtml(item.descricao || itemCatalogo?.nome || 'Item')}</strong>
+              ${
+                item.especificacao
+                  ? `<div class="muted small">${escaparHtml(item.especificacao)}</div>`
+                  : ''
+              }
+            </td>
+            <td class="center">${escaparHtml(item.quantidade)}</td>
+            <td class="center">${escaparHtml(item.unidade || itemCatalogo?.unidade || 'UN')}</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    const blocosPropostas = cotacao.propostas
+      .map((proposta, propostaIndex) => {
+        const fornecedor = fornecedores.find(
+          (item: any) =>
+            String(item.id) === String(proposta.fornecedorId)
+        );
+
+        const subtotalItens = proposta.itens.reduce(
+          (total, item) => total + numeroSeguro(item.valorTotal),
+          0
+        );
+        const totalFinal =
+          quotationService.calcularTotalProposta(proposta);
+
+        const linhas = cotacao.itens
+          .map((item, indice) => {
+            const itemCatalogo = catalogo.find(
+              registro =>
+                String(registro.id) ===
+                String(item.itemCatalogoId)
+            );
+            const preco = proposta.itens.find(
+              registro =>
+                String(registro.cotacaoItemId) ===
+                String(item.id)
+            );
+            const valorUnitario = numeroSeguro(
+              preco?.valorUnitario
+            );
+            const valorTotal = preco
+              ? numeroSeguro(preco.valorTotal) ||
+                valorUnitario * numeroSeguro(item.quantidade)
+              : 0;
+
+            return `
+              <tr>
+                <td class="center">${indice + 1}</td>
+                <td>${escaparHtml(itemCatalogo?.codigo || '-')}</td>
+                <td>
+                  <strong>${escaparHtml(item.descricao || itemCatalogo?.nome || 'Item')}</strong>
+                  ${
+                    preco?.marca
+                      ? `<div class="muted small">Marca: ${escaparHtml(preco.marca)}</div>`
+                      : ''
+                  }
+                </td>
+                <td class="center">${escaparHtml(item.quantidade)}</td>
+                <td class="center">${escaparHtml(item.unidade || itemCatalogo?.unidade || 'UN')}</td>
+                <td class="money">${preco ? formatarReal(valorUnitario) : '-'}</td>
+                <td class="money"><strong>${preco ? formatarReal(valorTotal) : '-'}</strong></td>
+              </tr>
+            `;
+          })
+          .join('');
+
+        return `
+          <section class="proposal ${proposta.selecionada ? 'winner' : ''}">
+            <div class="proposal-header">
+              <div>
+                <div class="proposal-title">
+                  ${proposta.selecionada ? '<span class="badge">VENCEDOR</span>' : ''}
+                  ${escaparHtml(fornecedor?.nome || `Fornecedor ${propostaIndex + 1}`)}
+                </div>
+                ${
+                  fornecedor?.cnpj
+                    ? `<div class="muted">CNPJ: ${escaparHtml(fornecedor.cnpj)}</div>`
+                    : ''
+                }
+              </div>
+              <div class="proposal-total">${formatarReal(totalFinal)}</div>
+            </div>
+
+            <div class="info-grid">
+              <div><span>Pagamento</span><strong>${escaparHtml(proposta.condicaoPagamento || '-')}</strong></div>
+              <div><span>Prazo de entrega</span><strong>${proposta.prazoEntregaDias ? `${proposta.prazoEntregaDias} dias` : '-'}</strong></div>
+              <div><span>Frete</span><strong>${escaparHtml(proposta.tipoFrete || '-')}</strong></div>
+              <div><span>Valor do frete</span><strong>${formatarReal(proposta.frete)}</strong></div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th class="center">#</th>
+                  <th>Código</th>
+                  <th>Item / Marca</th>
+                  <th class="center">Qtd.</th>
+                  <th class="center">Un.</th>
+                  <th class="money">Valor unit.</th>
+                  <th class="money">Total item</th>
+                </tr>
+              </thead>
+              <tbody>${linhas || '<tr><td colspan="7">Sem itens informados.</td></tr>'}</tbody>
+            </table>
+
+            <div class="totals">
+              <div><span>Subtotal dos itens</span><strong>${formatarReal(subtotalItens)}</strong></div>
+              <div><span>Frete</span><strong>${formatarReal(proposta.frete)}</strong></div>
+              <div><span>Desconto</span><strong>- ${formatarReal(proposta.desconto)}</strong></div>
+              <div class="grand-total"><span>Total da proposta</span><strong>${formatarReal(totalFinal)}</strong></div>
+            </div>
+
+            ${
+              proposta.observacao
+                ? `<div class="note"><strong>Observações do fornecedor:</strong><br>${escaparHtml(proposta.observacao)}</div>`
+                : ''
+            }
+          </section>
+        `;
+      })
+      .join('');
+
+    const resumoComparativo = cotacao.propostas
+      .map(proposta => {
+        const fornecedor = fornecedores.find(
+          (item: any) =>
+            String(item.id) === String(proposta.fornecedorId)
+        );
+        return `
+          <tr class="${proposta.selecionada ? 'vencedora' : ''}">
+            <td>${escaparHtml(fornecedor?.nome || 'Fornecedor')}</td>
+            <td>${escaparHtml(proposta.condicaoPagamento || '-')}</td>
+            <td class="center">${proposta.prazoEntregaDias ? `${proposta.prazoEntregaDias} dias` : '-'}</td>
+            <td>${escaparHtml(proposta.tipoFrete || '-')}</td>
+            <td class="money">${formatarReal(proposta.frete)}</td>
+            <td class="money"><strong>${formatarReal(quotationService.calcularTotalProposta(proposta))}</strong></td>
           </tr>
         `;
       })
@@ -825,88 +1006,250 @@ export const QuotationsView: React.FC = () => {
     const janela = window.open(
       '',
       '_blank',
-      'width=1100,height=800'
+      'width=1200,height=900'
     );
 
     if (!janela) {
-      alert(
-        'Permita pop-ups para gerar o PDF.'
-      );
+      alert('Permita pop-ups para gerar o PDF.');
       return;
     }
 
     janela.document.write(`
       <!doctype html>
-      <html>
+      <html lang="pt-BR">
         <head>
           <meta charset="utf-8">
-          <title>${cotacao.titulo}</title>
+          <title>${escaparHtml(cotacao.titulo)}</title>
           <style>
+            @page { size: A4; margin: 12mm; }
+            * { box-sizing: border-box; }
             body {
-              font-family: Arial, sans-serif;
+              margin: 0;
+              font-family: Arial, Helvetica, sans-serif;
               color: #0f172a;
-              padding: 32px;
+              background: #ffffff;
+              font-size: 10.5px;
+              line-height: 1.35;
+            }
+            .toolbar {
+              display: flex;
+              justify-content: flex-end;
+              margin-bottom: 14px;
+            }
+            .toolbar button {
+              border: 0;
+              border-radius: 8px;
+              padding: 9px 14px;
+              background: #111827;
+              color: white;
+              cursor: pointer;
+            }
+            .header {
+              border-bottom: 2px solid #0f172a;
+              padding-bottom: 12px;
+              margin-bottom: 14px;
+              display: flex;
+              justify-content: space-between;
+              gap: 20px;
+            }
+            .brand { font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+            h1 { font-size: 20px; line-height: 1.1; margin: 4px 0; }
+            h2 { font-size: 13px; margin: 0 0 8px; }
+            .document-meta { text-align: right; min-width: 210px; }
+            .document-meta div { margin-bottom: 3px; }
+            .muted { color: #64748b; }
+            .small { font-size: 9px; margin-top: 2px; }
+            .section { margin: 15px 0; page-break-inside: avoid; }
+            .section-title {
               font-size: 12px;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: .04em;
+              margin: 0 0 7px;
             }
-            h1 { font-size: 22px; }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 18px;
-            }
+            table { width: 100%; border-collapse: collapse; }
             th, td {
               border: 1px solid #cbd5e1;
-              padding: 9px;
-              text-align: left;
+              padding: 6px 7px;
+              vertical-align: top;
             }
-            th { background: #f1f5f9; }
-            .vencedora {
+            th {
+              background: #f1f5f9;
+              font-size: 9px;
+              text-transform: uppercase;
+              color: #334155;
+            }
+            .center { text-align: center; }
+            .money { text-align: right; white-space: nowrap; }
+            .proposal {
+              margin-top: 16px;
+              border: 1px solid #cbd5e1;
+              border-radius: 8px;
+              padding: 11px;
+              page-break-inside: avoid;
+            }
+            .proposal.winner { border: 2px solid #15803d; }
+            .proposal-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              gap: 12px;
+              margin-bottom: 9px;
+            }
+            .proposal-title { font-size: 13px; font-weight: 700; }
+            .proposal-total { font-size: 16px; font-weight: 700; }
+            .badge {
+              display: inline-block;
+              padding: 2px 6px;
+              margin-right: 6px;
+              border-radius: 4px;
               background: #dcfce7;
-              font-weight: bold;
+              color: #166534;
+              font-size: 8px;
+            }
+            .info-grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 6px;
+              margin-bottom: 9px;
+            }
+            .info-grid > div {
+              border: 1px solid #e2e8f0;
+              padding: 6px;
+              border-radius: 5px;
+            }
+            .info-grid span { display: block; color: #64748b; font-size: 8px; }
+            .info-grid strong { display: block; margin-top: 2px; }
+            .totals {
+              width: 300px;
+              margin: 8px 0 0 auto;
+            }
+            .totals > div {
+              display: flex;
+              justify-content: space-between;
+              gap: 12px;
+              padding: 3px 0;
+            }
+            .grand-total {
+              border-top: 1px solid #94a3b8;
+              margin-top: 3px;
+              padding-top: 6px !important;
+              font-size: 12px;
+            }
+            .note {
+              margin-top: 8px;
+              padding: 7px;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 5px;
+            }
+            .vencedora { background: #f0fdf4; }
+            .decision {
+              border: 1px solid #cbd5e1;
+              border-left: 4px solid #0f172a;
+              padding: 10px;
+              margin-top: 15px;
+              page-break-inside: avoid;
+            }
+            .decision-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 8px 18px;
+              margin-bottom: 8px;
+            }
+            .footer {
+              margin-top: 18px;
+              padding-top: 8px;
+              border-top: 1px solid #e2e8f0;
+              color: #64748b;
+              font-size: 8px;
+              text-align: center;
             }
             @media print {
-              button { display: none; }
-              body { padding: 0; }
+              .toolbar { display: none; }
+              body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
             }
           </style>
         </head>
         <body>
-          <button onclick="window.print()">
-            Imprimir / Salvar como PDF
-          </button>
-          <h1>Mapa comparativo de cotação</h1>
-          <p>
-            <strong>${cotacao.titulo}</strong><br>
-            Responsável: ${
-              cotacao.criadoPor || '-'
-            }
-          </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Fornecedor</th>
-                <th>Faturamento</th>
-                <th>Entrega</th>
-                <th>Frete</th>
-                <th>Valor do frete</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${
-                linhas ||
-                '<tr><td colspan="6">Sem fornecedores.</td></tr>'
-              }
-            </tbody>
-          </table>
-          <p>
-            <strong>Justificativa:</strong>
-            ${
-              cotacao.justificativaEscolha || '-'
-            }
-          </p>
+          <div class="toolbar">
+            <button onclick="window.print()">Imprimir / Salvar como PDF</button>
+          </div>
+
+          <header class="header">
+            <div>
+              <div class="brand">FLOWFINANCE</div>
+              <h1>Mapa Comparativo de Cotação</h1>
+              <div><strong>${escaparHtml(cotacao.titulo)}</strong></div>
+            </div>
+            <div class="document-meta">
+              <div><strong>Empresa:</strong> ${escaparHtml(empresa?.nome || '-')}</div>
+              ${empresa?.cnpj ? `<div><strong>CNPJ:</strong> ${escaparHtml(empresa.cnpj)}</div>` : ''}
+              <div><strong>Responsável:</strong> ${escaparHtml(cotacao.criadoPor || '-')}</div>
+              <div><strong>Data:</strong> ${formatarData(cotacao.createdAt)}</div>
+              <div><strong>Status:</strong> ${escaparHtml(cotacao.status || '-')}</div>
+            </div>
+          </header>
+
+          <section class="section">
+            <div class="section-title">Itens solicitados</div>
+            <table>
+              <thead>
+                <tr>
+                  <th class="center">#</th>
+                  <th>Código</th>
+                  <th>Item / Especificação</th>
+                  <th class="center">Qtd.</th>
+                  <th class="center">Un.</th>
+                </tr>
+              </thead>
+              <tbody>${linhasItensCotacao || '<tr><td colspan="5">Nenhum item informado.</td></tr>'}</tbody>
+            </table>
+          </section>
+
+          <section class="section">
+            <div class="section-title">Resumo comparativo</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Fornecedor</th>
+                  <th>Pagamento</th>
+                  <th class="center">Entrega</th>
+                  <th>Frete</th>
+                  <th class="money">Valor frete</th>
+                  <th class="money">Total</th>
+                </tr>
+              </thead>
+              <tbody>${resumoComparativo || '<tr><td colspan="6">Nenhuma proposta cadastrada.</td></tr>'}</tbody>
+            </table>
+          </section>
+
+          <section class="section">
+            <div class="section-title">Detalhamento das propostas</div>
+            ${blocosPropostas || '<div class="note">Nenhuma proposta cadastrada.</div>'}
+          </section>
+
+          <section class="decision">
+            <h2>Resultado da cotação</h2>
+            <div class="decision-grid">
+              <div><strong>Fornecedor selecionado:</strong><br>${escaparHtml(fornecedorVencedor?.nome || 'Não selecionado')}</div>
+              <div><strong>Valor final:</strong><br>${propostaVencedora ? formatarReal(quotationService.calcularTotalProposta(propostaVencedora)) : '-'}</div>
+            </div>
+            <div><strong>Justificativa da escolha:</strong><br>${escaparHtml(cotacao.justificativaEscolha || '-')}</div>
+          </section>
+
+          ${
+            cotacao.observacao
+              ? `<section class="note"><strong>Observações gerais:</strong><br>${escaparHtml(cotacao.observacao)}</section>`
+              : ''
+          }
+
+          <div class="footer">
+            Documento gerado pelo FLOWFINANCE - ${new Date().toLocaleString('pt-BR')}
+          </div>
+
           <script>
-            setTimeout(() => window.print(), 400);
+            setTimeout(() => window.print(), 500);
           </script>
         </body>
       </html>
@@ -966,7 +1309,7 @@ export const QuotationsView: React.FC = () => {
                   <ShoppingCart className="w-4 h-4" />
                   {gerandoSolicitacao
                     ? 'Gerando...'
-                    : 'Gerar solicitação'}
+                    : 'Enviar para solicitação'}
                 </button>
               )}
           </div>
@@ -1401,6 +1744,68 @@ export const QuotationsView: React.FC = () => {
           Nova cotação
         </button>
       </div>
+
+      {solicitacoesEstoque.length > 0 && (
+        <div className="rounded-[18px] border border-blue-100 bg-blue-50/40 p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-blue-100 text-blue-700">
+              <Warehouse className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Solicitações do Almoxarifado</h2>
+              <p className="mt-1 text-[10px] text-slate-500">
+                {solicitacoesEstoque.length} solicitação(ões) aguardando o setor de Compras iniciar a cotação.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {solicitacoesEstoque.map(solicitacao => (
+              <div key={solicitacao.id} className="rounded-[14px] border border-blue-100 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-900">{solicitacao.titulo}</h3>
+                    <p className="mt-1 text-[9px] text-slate-400">
+                      {new Date(solicitacao.createdAt).toLocaleString('pt-BR')} • {solicitacao.solicitadoPor || 'Almoxarifado'}
+                    </p>
+                  </div>
+                  <span className={`rounded-full px-2 py-1 text-[9px] font-bold ${
+                    solicitacao.urgencia === 'alta'
+                      ? 'bg-red-50 text-red-700'
+                      : solicitacao.urgencia === 'baixa'
+                        ? 'bg-slate-100 text-slate-600'
+                        : 'bg-amber-50 text-amber-700'
+                  }`}>
+                    {solicitacao.urgencia.toUpperCase()}
+                  </span>
+                </div>
+
+                <div className="mt-3 space-y-1.5">
+                  {solicitacao.itens.slice(0, 4).map(item => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-[9px] bg-slate-50 px-3 py-2">
+                      <span className="min-w-0 truncate text-[10px] font-semibold text-slate-700">{item.descricao}</span>
+                      <span className="shrink-0 text-[10px] font-bold text-slate-900">{item.quantidade} {item.unidade}</span>
+                    </div>
+                  ))}
+                  {solicitacao.itens.length > 4 && (
+                    <div className="text-[9px] text-slate-400">+ {solicitacao.itens.length - 4} outro(s) item(ns)</div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => transformarSolicitacaoEstoqueEmCotacao(solicitacao)}
+                  disabled={convertendoSolicitacaoId === solicitacao.id}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] bg-blue-700 px-3 py-2.5 text-[10px] font-bold text-white disabled:opacity-60"
+                >
+                  {convertendoSolicitacaoId === solicitacao.id ? 'Criando cotação...' : 'Transformar em cotação'}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="max-w-md bg-white border border-slate-100 rounded-[14px] px-4 py-2.5 flex items-center gap-2">
         <Search className="w-4 h-4 text-slate-400" />

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionsContext';
 import { Urgencia } from '../types';
 import { Send, Upload, CheckCircle, CreditCard } from 'lucide-react';
+import { quotationService } from '../services/quotationService';
 
 export const NewRequestView: React.FC = () => {
   const finance = useFinance();
@@ -49,6 +50,37 @@ const usuarioLogado =
 
   const [enviando, setEnviando] = useState(false);
   const [sucesso, setSucesso] = useState(false);
+  const [cotacaoOrigemId, setCotacaoOrigemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const chave = 'flowfinance:solicitacao-cotacao';
+    const bruto = sessionStorage.getItem(chave);
+
+    if (!bruto) return;
+
+    try {
+      const rascunho = JSON.parse(bruto);
+
+      if (rascunho?.origem !== 'cotacao') return;
+
+      if (rascunho.empresaId) setEmpresaId(String(rascunho.empresaId));
+      if (rascunho.fornecedorId) {
+        setFornecedorId(String(rascunho.fornecedorId));
+        setTipoPagamento('fornecedor');
+      }
+      if (rascunho.descricao) setDescricao(String(rascunho.descricao));
+      if (rascunho.valor != null) setValor(String(rascunho.valor));
+      if (rascunho.observacaoPagamento) {
+        setObservacaoPagamento(String(rascunho.observacaoPagamento));
+      }
+      if (rascunho.cotacaoId) {
+        setCotacaoOrigemId(String(rascunho.cotacaoId));
+      }
+    } catch (error) {
+      console.error('Erro ao carregar dados da cotação:', error);
+      sessionStorage.removeItem(chave);
+    }
+  }, []);
 
   useEffect(() => {
     if (!empresaId && empresas.length > 0) setEmpresaId(empresas[0].id);
@@ -161,7 +193,7 @@ const usuarioLogado =
         anexoUpload = await uploadAnexoProcesso(arquivoAnexo);
       }
 
-      await criarSolicitacao({
+      const processoCriado = await criarSolicitacao({
         tipoPagamento,
         fornecedorId:
           tipoPagamento === 'fornecedor'
@@ -198,6 +230,21 @@ const usuarioLogado =
         pixObservacao:
           observacaoPagamento.trim() || null,
       });
+
+      if (cotacaoOrigemId) {
+        const processoId =
+          (processoCriado as any)?.dbId ||
+          (processoCriado as any)?.id ||
+          null;
+
+        await quotationService.marcarSolicitacaoGerada(
+          cotacaoOrigemId,
+          processoId
+        );
+
+        sessionStorage.removeItem('flowfinance:solicitacao-cotacao');
+        setCotacaoOrigemId(null);
+      }
 
       setSucesso(true);
 
