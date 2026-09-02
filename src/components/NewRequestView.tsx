@@ -18,7 +18,16 @@ const usuarioLogado =
   'Usuário logado';
 
   const empresas = finance.empresas ?? [];
-  const fornecedores = finance.fornecedores ?? [];
+  // Na solicitação de Compras, todos os fornecedores cadastrados na
+  // organização devem ficar disponíveis, independentemente da empresa
+  // à qual foram originalmente vinculados.
+  const fornecedores = useMemo(() => {
+    const lista = finance.fornecedoresTodos ?? finance.fornecedores ?? [];
+
+    return [...lista].sort((a: any, b: any) =>
+      String(a?.nome || '').localeCompare(String(b?.nome || ''), 'pt-BR')
+    );
+  }, [finance.fornecedoresTodos, finance.fornecedores]);
   const planosFinanceiros = finance.planosFinanceiros ?? [];
   const centrosCustos = finance.centrosCustos ?? [];
 

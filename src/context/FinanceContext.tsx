@@ -47,6 +47,7 @@ interface FinanceContextType {
 
   empresas: Empresa[];
   fornecedores: Fornecedor[];
+  fornecedoresTodos: Fornecedor[];
   planosFinanceiros: PlanoFinanceiro[];
   centrosCustos: CentroCusto[];
   processos: ProcessoCompra[];
@@ -1791,6 +1792,7 @@ const novo = await financeService.criarFornecedor({
 
         empresas,
         fornecedores,
+        fornecedoresTodos,
         planosFinanceiros,
         centrosCustos,
         processos,
