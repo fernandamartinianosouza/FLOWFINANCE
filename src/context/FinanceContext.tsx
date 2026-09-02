@@ -245,7 +245,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     )?.perfil || null;
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
+  const [fornecedoresTodos, setFornecedoresTodos] = useState<Fornecedor[]>([]);
+
+const fornecedores = useMemo(
+  () =>
+    empresaAtivaId
+      ? fornecedoresTodos.filter(
+          (fornecedor: any) =>
+            String(fornecedor.empresaId || '') ===
+            String(empresaAtivaId)
+        )
+      : [],
+  [fornecedoresTodos, empresaAtivaId]
+);
   const [planosFinanceirosTodos, setPlanosFinanceirosTodos] = useState<PlanoFinanceiro[]>([]);
   const [centrosCustosTodos, setCentrosCustosTodos] = useState<CentroCusto[]>([]);
   const [processosTodos, setProcessosTodos] = useState<ProcessoCompra[]>([]);
@@ -344,7 +356,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       );
 
       setEmpresas(dados.empresas);
-      setFornecedores(dados.fornecedores);
+      setFornecedoresTodos(dados.fornecedores);
       setPlanosFinanceirosTodos(dados.planosFinanceiros);
       setCentrosCustosTodos(dados.centrosCustos);
       setProcessosTodos(dados.processos);
@@ -384,7 +396,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setOrganizacoesUsuario([]);
         setOrganizacaoAtivaIdState('');
         setEmpresas([]);
-        setFornecedores([]);
+        setFornecedoresTodos([]);
         setPlanosFinanceirosTodos([]);
         setCentrosCustosTodos([]);
         setProcessosTodos([]);
@@ -1487,12 +1499,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     dados: Omit<Fornecedor, 'id' | 'historicoCompras' | 'ultimaCompra' | 'tempoMedioPagamento' | 'organizacaoId'>
   ): Promise<Fornecedor> => {
     try {
-      const novo = await financeService.criarFornecedor({
-        ...dados,
-        organizacaoId: organizacaoAtivaIdState,
-      });
+      if (!empresaAtivaId) {
+  throw new Error(
+    'Selecione uma empresa antes de cadastrar o fornecedor.'
+  );
+}
 
-      setFornecedores(prev => [...prev, novo]);
+const novo = await financeService.criarFornecedor({
+  ...dados,
+  organizacaoId: organizacaoAtivaIdState,
+  empresaId: empresaAtivaId,
+});
+
+      setFornecedoresTodos(prev => [...prev, novo]);
       return novo;
     } catch (error: any) {
       console.error('Erro ao cadastrar fornecedor:', error);
@@ -1507,13 +1526,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   ) => {
     try {
       const atualizado = await financeService.editarFornecedor(id, {
-        ...dados,
-        organizacaoId: organizacaoAtivaIdState,
-      });
+  ...dados,
+  organizacaoId: organizacaoAtivaIdState,
+  empresaId: empresaAtivaId,
+});
 
-      setFornecedores(prev =>
-        prev.map(f => (f.id === id ? atualizado : f))
-      );
+      setFornecedoresTodos(prev =>
+  prev.map(f => (f.id === id ? atualizado : f))
+);
     } catch (error: any) {
       console.error('Erro ao editar fornecedor:', error);
       alert(error.message || 'Erro ao editar fornecedor.');
@@ -1528,7 +1548,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     try {
       await financeService.excluirFornecedor(id, organizacaoAtivaIdState);
-      setFornecedores(prev => prev.filter(f => f.id !== id));
+      setFornecedoresTodos(prev =>
+  prev.filter(f => f.id !== id)
+);
       return true;
     } catch (error: any) {
       console.error('Erro ao excluir fornecedor:', error);
