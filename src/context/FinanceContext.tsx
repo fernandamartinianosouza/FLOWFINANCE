@@ -245,25 +245,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     )?.perfil || null;
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [fornecedoresTodos, setFornecedoresTodos] = useState<Fornecedor[]>([]);
+  const [empresaAtivaId, setEmpresaAtivaId] = useState<string>('');
 
-const fornecedores = useMemo(
-  () =>
-    empresaAtivaId
-      ? fornecedoresTodos.filter(
-          (fornecedor: any) =>
-            String(fornecedor.empresaId || '') ===
-            String(empresaAtivaId)
-        )
-      : [],
-  [fornecedoresTodos, empresaAtivaId]
-);
+  const [fornecedoresTodos, setFornecedoresTodos] = useState<Fornecedor[]>([]);
   const [planosFinanceirosTodos, setPlanosFinanceirosTodos] = useState<PlanoFinanceiro[]>([]);
   const [centrosCustosTodos, setCentrosCustosTodos] = useState<CentroCusto[]>([]);
   const [processosTodos, setProcessosTodos] = useState<ProcessoCompra[]>([]);
   const [alertas, setAlertas] = useState<AlertaSistema[]>([]);
 
-  const [empresaAtivaId, setEmpresaAtivaId] = useState<string>('');
+  const fornecedores = useMemo(
+    () =>
+      empresaAtivaId
+        ? fornecedoresTodos.filter(
+            (fornecedor: any) =>
+              String(fornecedor.empresaId || '') ===
+              String(empresaAtivaId)
+          )
+        : [],
+    [fornecedoresTodos, empresaAtivaId]
+  );
 
   const planosFinanceiros = useMemo(
     () =>
@@ -1353,7 +1353,7 @@ const fornecedores = useMemo(
             ultimaCompra: dataHoje,
           };
 
-          setFornecedores(prev =>
+          setFornecedoresTodos(prev =>
             prev.map(item =>
               item.id === fornecedor.id
                 ? atualizadoFornecedor
