@@ -644,24 +644,17 @@ export const financeService = {
     const orgId = await resolverOrganizacaoId(organizacaoId);
 
     /*
-     * O Supabase/PostgREST pode limitar a quantidade de linhas retornadas
-     * em uma única requisição.
+     * Otimização de carregamento:
+     * - até 1000 processos: apenas uma consulta, como antes;
+     * - acima de 1000: o primeiro lote é carregado imediatamente e os
+     *   demais lotes são buscados em paralelo, em vez de um por vez.
      *
-     * Por isso, carregamos os processos em lotes de 1000 registros até
-     * não existir mais nenhum lote completo.
-     *
-     * A paginação visual da tela de Contas a Pagar continua funcionando
-     * normalmente (ex.: 30 itens por página), mas agora o FinanceContext
-     * recebe todos os processos existentes no banco para a organização.
+     * Não há corte de dados: todos os processos continuam sendo carregados.
      */
     const TAMANHO_LOTE = 1000;
+    const CONCORRENCIA = 4;
 
-    let inicio = 0;
-    let todosOsProcessos: any[] = [];
-
-    while (true) {
-      const fim = inicio + TAMANHO_LOTE - 1;
-
+    const buscarLote = async (inicio: number, fim: number) => {
       const { data, error } = await supabase
         .from("processos_compra")
         .select(
@@ -674,12 +667,8 @@ export const financeService = {
         )
         .eq("organizacao_id", orgId)
         .or("excluido.is.null,excluido.eq.false")
-        .order("created_at", {
-          ascending: false,
-        })
-        .order("id", {
-          ascending: false,
-        })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
         .range(inicio, fim);
 
       if (error) {
@@ -687,25 +676,68 @@ export const financeService = {
           `Erro ao carregar processos do intervalo ${inicio}-${fim}:`,
           error,
         );
-
         throw error;
       }
 
-      const lote = data || [];
+      return data || [];
+    };
 
-      todosOsProcessos = [
-        ...todosOsProcessos,
-        ...lote,
-      ];
+    const primeiroLote = await buscarLote(0, TAMANHO_LOTE - 1);
 
-      if (lote.length < TAMANHO_LOTE) {
-        break;
-      }
-
-      inicio += TAMANHO_LOTE;
+    if (primeiroLote.length < TAMANHO_LOTE) {
+      return primeiroLote.map(mapProcessoFromDb);
     }
 
-    return todosOsProcessos.map(mapProcessoFromDb);
+    const { count, error: countError } = await supabase
+      .from("processos_compra")
+      .select("id", { count: "exact", head: true })
+      .eq("organizacao_id", orgId)
+      .or("excluido.is.null,excluido.eq.false");
+
+    if (countError) {
+      // Fallback seguro: mantém a paginação sequencial se a contagem falhar.
+      const todos = [...primeiroLote];
+      let inicio = TAMANHO_LOTE;
+
+      while (true) {
+        const lote = await buscarLote(
+          inicio,
+          inicio + TAMANHO_LOTE - 1,
+        );
+
+        todos.push(...lote);
+
+        if (lote.length < TAMANHO_LOTE) break;
+        inicio += TAMANHO_LOTE;
+      }
+
+      return todos.map(mapProcessoFromDb);
+    }
+
+    const total = Number(count || primeiroLote.length);
+    const intervalos: Array<[number, number]> = [];
+
+    for (let inicio = TAMANHO_LOTE; inicio < total; inicio += TAMANHO_LOTE) {
+      intervalos.push([
+        inicio,
+        Math.min(inicio + TAMANHO_LOTE - 1, total - 1),
+      ]);
+    }
+
+    const demaisLotes: any[][] = [];
+
+    for (let i = 0; i < intervalos.length; i += CONCORRENCIA) {
+      const grupo = intervalos.slice(i, i + CONCORRENCIA);
+      const resultados = await Promise.all(
+        grupo.map(([inicio, fim]) => buscarLote(inicio, fim)),
+      );
+      demaisLotes.push(...resultados);
+    }
+
+    return [
+      ...primeiroLote,
+      ...demaisLotes.flat(),
+    ].map(mapProcessoFromDb);
   },
 
   async criarProcesso(item: any) {
@@ -1010,7 +1042,8 @@ export const financeService = {
       .eq("organizacao_id", orgId)
       .order("created_at", {
         ascending: false,
-      });
+      })
+      .limit(100);
 
     if (error) throw error;
 

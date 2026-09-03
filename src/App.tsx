@@ -1,4 +1,6 @@
 import React, {
+  Suspense,
+  lazy,
   useEffect,
   useState,
 } from 'react';
@@ -10,28 +12,61 @@ import {
 
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
-import { DashboardView } from './components/DashboardView';
-import { NewRequestView } from './components/NewRequestView';
-import { ApprovalsView } from './components/ApprovalsView';
-import { AccountsPayableView } from './components/AccountsPayableView';
-import { ReconciliationView } from './components/ReconciliationView';
-import { FinancialCenterView } from './components/FinancialCenterView';
-import { CalendarView } from './components/CalendarView';
-import { CashFlowView } from './components/CashFlowView';
-import { CompaniesView } from './components/CompaniesView';
-import { SuppliersView } from './components/SuppliersView';
-import { PaymentScheduleView } from './components/PaymentScheduleView';
-import { QuotationsView } from './components/QuotationsView';
 import { MobileNavigation } from './components/MobileNavigation';
 import { MobileTopBar } from './components/MobileTopBar';
 import { PasswordAccessView } from './components/auth/PasswordAccessView';
-import { NewAccountView } from './components/NewAccountView';
-import { WeeklyPurchasingPlanView } from './components/WeeklyPurchasingPlanView';
-import { RHFinanceiroView } from './components/RHFinanceiroView';
-import CatalogItemsView from './components/CatalogItemsView';
-import StockView from './components/StockView';
+// Telas carregadas sob demanda para reduzir o JavaScript inicial do sistema.
+const DashboardView = lazy(() =>
+  import('./components/DashboardView').then(m => ({ default: m.DashboardView }))
+);
+const NewRequestView = lazy(() =>
+  import('./components/NewRequestView').then(m => ({ default: m.NewRequestView }))
+);
+const ApprovalsView = lazy(() =>
+  import('./components/ApprovalsView').then(m => ({ default: m.ApprovalsView }))
+);
+const AccountsPayableView = lazy(() =>
+  import('./components/AccountsPayableView').then(m => ({ default: m.AccountsPayableView }))
+);
+const ReconciliationView = lazy(() =>
+  import('./components/ReconciliationView').then(m => ({ default: m.ReconciliationView }))
+);
+const FinancialCenterView = lazy(() =>
+  import('./components/FinancialCenterView').then(m => ({ default: m.FinancialCenterView }))
+);
+const CalendarView = lazy(() =>
+  import('./components/CalendarView').then(m => ({ default: m.CalendarView }))
+);
+const CashFlowView = lazy(() =>
+  import('./components/CashFlowView').then(m => ({ default: m.CashFlowView }))
+);
+const CompaniesView = lazy(() =>
+  import('./components/CompaniesView').then(m => ({ default: m.CompaniesView }))
+);
+const SuppliersView = lazy(() =>
+  import('./components/SuppliersView').then(m => ({ default: m.SuppliersView }))
+);
+const PaymentScheduleView = lazy(() =>
+  import('./components/PaymentScheduleView').then(m => ({ default: m.PaymentScheduleView }))
+);
+const QuotationsView = lazy(() =>
+  import('./components/QuotationsView').then(m => ({ default: m.QuotationsView }))
+);
+const NewAccountView = lazy(() =>
+  import('./components/NewAccountView').then(m => ({ default: m.NewAccountView }))
+);
+const WeeklyPurchasingPlanView = lazy(() =>
+  import('./components/WeeklyPurchasingPlanView').then(m => ({ default: m.WeeklyPurchasingPlanView }))
+);
+const RHFinanceiroView = lazy(() =>
+  import('./components/RHFinanceiroView').then(m => ({ default: m.RHFinanceiroView }))
+);
+const CatalogItemsView = lazy(() => import('./components/CatalogItemsView'));
+const StockView = lazy(() => import('./components/StockView'));
+const UsersAdminView = lazy(() =>
+  import('./views/UsersAdminView').then(m => ({ default: m.UsersAdminView }))
+);
 
-import { UsersAdminView } from './views/UsersAdminView';
 import { AuthView } from './views/AuthView';
 
 import { useAuth } from './context/AuthContext';
@@ -81,6 +116,15 @@ const limparParametroDefinirSenha = () => {
     novaUrl || '/'
   );
 };
+
+const ViewLoading: React.FC = () => (
+  <div className="flex min-h-[40vh] items-center justify-center">
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-500 shadow-sm">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+      Carregando módulo...
+    </div>
+  </div>
+);
 
 const AppContent: React.FC = () => {
   const {
@@ -311,7 +355,7 @@ const AppContent: React.FC = () => {
 
         <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-28 sm:px-5 lg:h-screen lg:px-10 lg:py-8 lg:pb-8">
           <div className="ff-page-container relative z-10 mx-auto w-full max-w-[1600px]">
-            {renderView()}
+            <Suspense fallback={<ViewLoading />}>{renderView()}</Suspense>
           </div>
         </main>
       </div>
