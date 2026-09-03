@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { STATUS_LABELS } from '../utils';
 import { financeService } from '../services/financeService';
+import { empresasPermissoesService } from '../services/empresasPermissoesService';
 import { useAuth } from './AuthContext';
 
 export type ActiveView =
@@ -353,19 +354,98 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setLoadingFinanceiro(true);
       setErroFinanceiro(null);
 
-      const dados = await financeService.carregarDados(
-        organizacaoAtivaIdState
+      const [dados, empresasPermitidasIds] = await Promise.all([
+        financeService.carregarDados(organizacaoAtivaIdState),
+        empresasPermissoesService.listarIds(organizacaoAtivaIdState),
+      ]);
+
+      const usuarioEhAdmin = perfilOrganizacaoAtiva === 'admin';
+      const empresasPermitidasSet = new Set(
+        empresasPermitidasIds.map(id => String(id))
       );
 
-      setEmpresas(dados.empresas);
-      setFornecedoresTodos(dados.fornecedores);
-      setPlanosFinanceirosTodos(dados.planosFinanceiros);
-      setCentrosCustosTodos(dados.centrosCustos);
-      setProcessosTodos(dados.processos);
-      setAlertas(dados.alertas);
+      const temAcessoEmpresa = (item: any) => {
+        if (usuarioEhAdmin) return true;
+
+        const empresaIdItem = String(
+          item?.empresaId ||
+          item?.empresa_id ||
+          ''
+        );
+
+        return Boolean(empresaIdItem) &&
+          empresasPermitidasSet.has(empresaIdItem);
+      };
+
+      const empresasPermitidas = usuarioEhAdmin
+        ? dados.empresas
+        : dados.empresas.filter((empresa: any) =>
+            empresasPermitidasSet.has(String(empresa.id))
+          );
+
+      const fornecedoresPermitidos = usuarioEhAdmin
+        ? dados.fornecedores
+        : dados.fornecedores.filter(temAcessoEmpresa);
+
+      const planosPermitidos = usuarioEhAdmin
+        ? dados.planosFinanceiros
+        : dados.planosFinanceiros.filter(temAcessoEmpresa);
+
+      const processosPermitidos = usuarioEhAdmin
+        ? dados.processos
+        : dados.processos.filter(temAcessoEmpresa);
+
+      const centrosPermitidos = usuarioEhAdmin
+        ? dados.centrosCustos
+        : dados.centrosCustos.filter((centro: any) => {
+            const empresaCentro = String(
+              centro?.empresaId || centro?.empresa_id || ''
+            );
+
+            if (empresaCentro) {
+              return empresasPermitidasSet.has(empresaCentro);
+            }
+
+            const planoId = String(
+              centro?.planoFinanceiroId ||
+              centro?.plano_financeiro_id ||
+              ''
+            );
+
+            return planosPermitidos.some(
+              (plano: any) => String(plano.id) === planoId
+            );
+          });
+
+      const idsProcessosPermitidos = new Set(
+        processosPermitidos.flatMap((processo: any) =>
+          [processo.id, processo.dbId, processo.db_id]
+            .filter(Boolean)
+            .map(String)
+        )
+      );
+
+      const alertasPermitidos = usuarioEhAdmin
+        ? dados.alertas
+        : dados.alertas.filter((alerta: any) => {
+            const processoId =
+              alerta?.processoId || alerta?.processo_id;
+
+            // Alertas gerais da organização continuam visíveis.
+            if (!processoId) return true;
+
+            return idsProcessosPermitidos.has(String(processoId));
+          });
+
+      setEmpresas(empresasPermitidas);
+      setFornecedoresTodos(fornecedoresPermitidos);
+      setPlanosFinanceirosTodos(planosPermitidos);
+      setCentrosCustosTodos(centrosPermitidos);
+      setProcessosTodos(processosPermitidos);
+      setAlertas(alertasPermitidos);
 
       setEmpresaAtivaId(atual => {
-        const empresaAtualAindaExiste = dados.empresas.some(
+        const empresaAtualAindaExiste = empresasPermitidas.some(
           empresa => empresa.id === atual
         );
 
@@ -373,7 +453,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           return atual;
         }
 
-        return dados.empresas[0]?.id || '';
+        return empresasPermitidas[0]?.id || '';
       });
     } catch (error: any) {
       console.error(
@@ -388,7 +468,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setLoadingFinanceiro(false);
     }
-  }, [user, organizacaoAtivaIdState]);
+  }, [user, organizacaoAtivaIdState, perfilOrganizacaoAtiva]);
 
   useEffect(() => {
     let cancelado = false;
