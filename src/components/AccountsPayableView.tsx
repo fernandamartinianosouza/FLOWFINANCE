@@ -329,6 +329,30 @@ export const AccountsPayableView: React.FC = () => {
   const contasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
 
+    // O plano selecionado pode existir com IDs diferentes entre empresas.
+    // Por isso, resolvemos também o nome do plano para permitir combinação
+    // correta com empresa, período e os demais filtros.
+    const planoSelecionado = planosFinanceiros.find(
+      (plano: any) =>
+        String(plano.id ?? plano.dbId ?? '') === String(planoFiltro)
+    );
+
+    const nomePlanoSelecionado = String(planoSelecionado?.nome || '')
+      .trim()
+      .toLocaleLowerCase('pt-BR');
+
+    const idsPlanosEquivalentes = new Set(
+      planosFinanceiros
+        .filter((plano: any) => {
+          if (!nomePlanoSelecionado) return false;
+          return String(plano?.nome || '')
+            .trim()
+            .toLocaleLowerCase('pt-BR') === nomePlanoSelecionado;
+        })
+        .map((plano: any) => String(plano.id ?? plano.dbId ?? ''))
+        .filter(Boolean)
+    );
+
     return todasContas
       .filter((processo: any) => {
         const fornecedor = fornecedores.find(
@@ -371,15 +395,34 @@ export const AccountsPayableView: React.FC = () => {
           return false;
         }
 
-        if (
-          planoFiltro &&
-          String(
-            processo.planoFinanceiroId ||
-              processo.planoId ||
+        if (planoFiltro) {
+          const processoPlanoId = String(
+            processo.planoFinanceiroId ??
+              processo.plano_financeiro_id ??
+              processo.planoId ??
+              processo.plano_id ??
               ''
-          ) !== planoFiltro
-        ) {
-          return false;
+          );
+
+          const nomePlanoProcesso = String(
+            processo.planoFinanceiroNome ??
+              processo.plano_financeiro_nome ??
+              processo.planoNome ??
+              processo.plano_nome ??
+              ''
+          )
+            .trim()
+            .toLocaleLowerCase('pt-BR');
+
+          const correspondePlano =
+            processoPlanoId === String(planoFiltro) ||
+            idsPlanosEquivalentes.has(processoPlanoId) ||
+            (Boolean(nomePlanoSelecionado) &&
+              nomePlanoProcesso === nomePlanoSelecionado);
+
+          if (!correspondePlano) {
+            return false;
+          }
         }
 
         if (
@@ -476,12 +519,14 @@ export const AccountsPayableView: React.FC = () => {
     busca,
     situacao,
     empresaFiltro,
+    planoFiltro,
     formaFiltro,
     dataInicio,
     dataFim,
     ordenacaoVencimento,
     fornecedores,
     empresas,
+    planosFinanceiros,
     contasVencidas,
     contasAVencer,
   ]);
@@ -564,6 +609,7 @@ export const AccountsPayableView: React.FC = () => {
     busca,
     situacao,
     empresaFiltro,
+    planoFiltro,
     formaFiltro,
     dataInicio,
     dataFim,
