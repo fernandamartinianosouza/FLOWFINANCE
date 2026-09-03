@@ -61,6 +61,7 @@ type FiltroSituacao =
   | 'todas'
   | 'vencidas'
   | 'a_vencer'
+  | 'em_aberto'
   | 'programadas'
   | 'nao_programadas'
   | 'pagas';
@@ -329,30 +330,6 @@ export const AccountsPayableView: React.FC = () => {
   const contasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
 
-    // O plano selecionado pode existir com IDs diferentes entre empresas.
-    // Por isso, resolvemos também o nome do plano para permitir combinação
-    // correta com empresa, período e os demais filtros.
-    const planoSelecionado = planosFinanceiros.find(
-      (plano: any) =>
-        String(plano.id ?? plano.dbId ?? '') === String(planoFiltro)
-    );
-
-    const nomePlanoSelecionado = String(planoSelecionado?.nome || '')
-      .trim()
-      .toLocaleLowerCase('pt-BR');
-
-    const idsPlanosEquivalentes = new Set(
-      planosFinanceiros
-        .filter((plano: any) => {
-          if (!nomePlanoSelecionado) return false;
-          return String(plano?.nome || '')
-            .trim()
-            .toLocaleLowerCase('pt-BR') === nomePlanoSelecionado;
-        })
-        .map((plano: any) => String(plano.id ?? plano.dbId ?? ''))
-        .filter(Boolean)
-    );
-
     return todasContas
       .filter((processo: any) => {
         const fornecedor = fornecedores.find(
@@ -396,7 +373,12 @@ export const AccountsPayableView: React.FC = () => {
         }
 
         if (planoFiltro) {
-          const processoPlanoId = String(
+          const planoSelecionado = planosFinanceiros.find(
+            (plano: any) =>
+              String(plano.id ?? plano.dbId ?? '') === planoFiltro
+          );
+
+          const planoProcessoId = String(
             processo.planoFinanceiroId ??
               processo.plano_financeiro_id ??
               processo.planoId ??
@@ -404,25 +386,18 @@ export const AccountsPayableView: React.FC = () => {
               ''
           );
 
-          const nomePlanoProcesso = String(
-            processo.planoFinanceiroNome ??
-              processo.plano_financeiro_nome ??
-              processo.planoNome ??
-              processo.plano_nome ??
-              ''
-          )
-            .trim()
-            .toLocaleLowerCase('pt-BR');
+          const planoProcesso = planosFinanceiros.find(
+            (plano: any) =>
+              String(plano.id ?? plano.dbId ?? '') === planoProcessoId
+          );
 
-          const correspondePlano =
-            processoPlanoId === String(planoFiltro) ||
-            idsPlanosEquivalentes.has(processoPlanoId) ||
-            (Boolean(nomePlanoSelecionado) &&
-              nomePlanoProcesso === nomePlanoSelecionado);
+          const mesmoId = planoProcessoId === planoFiltro;
+          const mesmoNome =
+            !!planoSelecionado?.nome &&
+            String(planoProcesso?.nome ?? '').trim().toLowerCase() ===
+              String(planoSelecionado.nome).trim().toLowerCase();
 
-          if (!correspondePlano) {
-            return false;
-          }
+          if (!mesmoId && !mesmoNome) return false;
         }
 
         if (
@@ -451,6 +426,13 @@ export const AccountsPayableView: React.FC = () => {
           dataFim &&
           (!vencimentoOriginal ||
             vencimentoOriginal > dataFim)
+        ) {
+          return false;
+        }
+
+        if (
+          situacao === 'em_aberto' &&
+          (contaPaga(processo) || obterSaldoPagar(processo) <= 0.001)
         ) {
           return false;
         }
@@ -494,7 +476,7 @@ export const AccountsPayableView: React.FC = () => {
 
         if (
           situacao === 'pagas' &&
-          !contaPaga(processo)
+          obterValorPago(processo) <= 0.001
         ) {
           return false;
         }
@@ -532,6 +514,9 @@ export const AccountsPayableView: React.FC = () => {
   ]);
 
   const resumoFinanceiroFiltrado = useMemo(() => {
+    const filtroEmAberto = ['vencidas', 'a_vencer', 'em_aberto'].includes(situacao);
+    const filtroPagas = situacao === 'pagas';
+
     return contasFiltradas.reduce(
       (
         resumo: {
@@ -542,24 +527,29 @@ export const AccountsPayableView: React.FC = () => {
         },
         processo: any
       ) => {
-        const valorTotal = Math.max(
-          Number(processo.valor || 0),
-          0
-        );
+        const valorTotal = Math.max(Number(processo.valor || 0), 0);
         const valorPago = obterValorPago(processo);
         const saldo = obterSaldoPagar(processo);
         const estaPaga = contaPaga(processo);
         const vencimento = dataBase(processo);
 
-        // TOTAL = valor original de todas as contas que passaram
-        // pelos filtros, independentemente de estarem pagas,
-        // vencidas, parcialmente pagas ou a vencer.
-        resumo.total += valorTotal;
+        // Regras dos cards por situação:
+        // - Vencidas / A vencer / Em aberto: Total = somente saldo pendente e Pago = 0.
+        // - Pagas: inclui qualquer valor efetivamente pago, inclusive pagamentos parciais;
+        //   Total = valor pago no recorte.
+        // - Demais filtros: Total continua sendo o valor original das contas filtradas.
+        if (filtroEmAberto) {
+          resumo.total += saldo;
+        } else if (filtroPagas) {
+          resumo.total += valorPago;
+        } else {
+          resumo.total += valorTotal;
+        }
 
-        // PAGO = valor efetivamente pago nas contas filtradas.
-        resumo.pago += valorPago;
+        if (!filtroEmAberto) {
+          resumo.pago += valorPago;
+        }
 
-        // VENCIDO / A VENCER = somente saldo ainda pendente.
         if (!estaPaga && saldo > 0.001) {
           if (vencimento && vencimento < hoje) {
             resumo.vencido += saldo;
@@ -570,14 +560,10 @@ export const AccountsPayableView: React.FC = () => {
 
         return resumo;
       },
-      {
-        aVencer: 0,
-        vencido: 0,
-        pago: 0,
-        total: 0,
-      }
+      { aVencer: 0, vencido: 0, pago: 0, total: 0 }
     );
-  }, [contasFiltradas, hoje]);
+  }, [contasFiltradas, hoje, situacao]);
+
 
   const totalPaginas = Math.max(
     1,
@@ -2818,6 +2804,9 @@ export const AccountsPayableView: React.FC = () => {
             </option>
             <option value="a_vencer">
               A vencer
+            </option>
+            <option value="em_aberto">
+              Em aberto
             </option>
             <option value="programadas">
               Programadas
