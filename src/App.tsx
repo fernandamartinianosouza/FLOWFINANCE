@@ -88,7 +88,11 @@ const verificarDefinicaoSenhaNaUrl = () => {
     url.searchParams.get('type') ||
     hashParams.get('type');
 
-  return definirSenha || tipoAuth === 'invite';
+  const redefinirSenha =
+    url.pathname === '/redefinir-senha' ||
+    tipoAuth === 'recovery';
+
+  return definirSenha || tipoAuth === 'invite' || redefinirSenha;
 };
 
 const limparParametroDefinirSenha = () => {
@@ -135,6 +139,7 @@ const AppContent: React.FC = () => {
   const {
     user,
     loading,
+    recuperandoSenha,
   } = useAuth();
 
   const {
@@ -304,6 +309,18 @@ const AppContent: React.FC = () => {
       <div className="flex min-h-screen items-center justify-center bg-[#F6F8FC] text-sm font-bold text-slate-500">
         Carregando FlowFinance...
       </div>
+    );
+  }
+
+  if (recuperandoSenha || window.location.pathname === '/redefinir-senha') {
+    return (
+      <PasswordAccessView
+        modo="redefinir-senha"
+        onConcluido={() => {
+          window.history.replaceState({}, '', '/');
+          window.location.reload();
+        }}
+      />
     );
   }
 

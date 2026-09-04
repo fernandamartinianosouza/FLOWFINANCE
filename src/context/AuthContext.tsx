@@ -373,6 +373,22 @@ export const AuthProvider: React.FC<{
             setRecuperandoSenha(
               true
             );
+
+            if (currentSession) {
+              usuarioAtualIdRef.current =
+                currentSession.user.id;
+
+              setSession(
+                currentSession
+              );
+
+              setUser(
+                currentSession.user
+              );
+            }
+
+            setLoading(false);
+            return;
           }
 
           /*
