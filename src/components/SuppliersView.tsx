@@ -142,7 +142,7 @@ export const SuppliersView: React.FC = () => {
 
     const dados = {
       nome: form.razaoSocial.trim(), razaoSocial: form.razaoSocial.trim(), nomeFantasia: form.nomeFantasia.trim(),
-      cnpj: form.cnpj.replace(/\D/g, ''), endereco: form.endereco.trim(), bairro: form.bairro.trim(),
+      cnpj: form.cnpj.replace(/\D/g, '').trim() || null, endereco: form.endereco.trim(), bairro: form.bairro.trim(),
       cidade: form.cidade.trim(), telefone: form.telefone.trim(), email: form.email.trim().toLowerCase(),
       vendedorPadrao: form.vendedorPadrao.trim(), chavePix: form.chavePix.trim(), prazo: form.prazo.trim(),
       entrega: form.entrega.trim(), frete: form.frete.trim(), empresaId: empresaAtivaId || undefined,
