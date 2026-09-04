@@ -183,6 +183,10 @@ export const AccountsPayableView: React.FC = () => {
 
   const [contasExclusaoSelecionadas, setContasExclusaoSelecionadas] =
     useState<Set<string>>(new Set());
+  // Snapshot imutável das contas que efetivamente entrarão na exclusão em massa.
+  // Evita que alterações de seleção após abrir o modal mudem a quantidade/itens.
+  const [contasExclusaoMassaSnapshot, setContasExclusaoMassaSnapshot] =
+    useState<any[]>([]);
   const [modalExclusaoMassaOpen, setModalExclusaoMassaOpen] =
     useState(false);
   const [confirmacaoExclusaoMassa, setConfirmacaoExclusaoMassa] =
@@ -607,14 +611,26 @@ export const AccountsPayableView: React.FC = () => {
     }
   }, [paginaAtual, totalPaginas]);
 
+  /*
+   * Segurança das ações em massa:
+   * ao trocar de página, limpamos qualquer seleção anterior.
+   * Assim nenhuma conta que não esteja visível na página atual
+   * pode entrar por engano em pagar, desfazer ou excluir em massa.
+   */
+  useEffect(() => {
+    setContasSelecionadas(new Set());
+    setContasEstornoSelecionadas(new Set());
+    setContasExclusaoSelecionadas(new Set());
+  }, [paginaAtual]);
+
   const contasElegiveisPagamentoMassa = useMemo(
     () =>
-      contasFiltradas.filter(
+      contasPaginadas.filter(
         (processo: any) =>
           !contaPaga(processo) &&
           obterSaldoPagar(processo) > 0.001
       ),
-    [contasFiltradas]
+    [contasPaginadas]
   );
 
   const contasSelecionadasDetalhes = useMemo(
@@ -697,12 +713,12 @@ export const AccountsPayableView: React.FC = () => {
 
   const contasElegiveisEstornoMassa = useMemo(
     () =>
-      contasFiltradas.filter(
+      contasPaginadas.filter(
         (processo: any) =>
           contaPaga(processo) &&
           obterValorPago(processo) > 0.001
       ),
-    [contasFiltradas]
+    [contasPaginadas]
   );
 
   const contasEstornoSelecionadasDetalhes = useMemo(
@@ -783,23 +799,35 @@ export const AccountsPayableView: React.FC = () => {
     );
   };
 
-  const contasExclusaoSelecionadasDetalhes = useMemo(
-    () =>
-      contasFiltradas.filter((processo: any) =>
-        contasExclusaoSelecionadas.has(String(processo.id))
-      ),
-    [contasFiltradas, contasExclusaoSelecionadas]
-  );
+  const contasExclusaoSelecionadasDetalhes = useMemo(() => {
+    // A seleção principal da linha também vale para exclusão. Assim o usuário
+    // pode marcar as contas na tabela e depois escolher a ação desejada.
+    // A seleção específica de exclusão (menu "Mais ações") continua suportada.
+    const idsSelecionados = new Set<string>([
+      ...contasExclusaoSelecionadas,
+      ...contasSelecionadas,
+      ...contasEstornoSelecionadas,
+    ]);
+
+    return contasPaginadas.filter((processo: any) =>
+      idsSelecionados.has(String(processo.id))
+    );
+  }, [
+    contasPaginadas,
+    contasExclusaoSelecionadas,
+    contasSelecionadas,
+    contasEstornoSelecionadas,
+  ]);
 
   const todasContasExclusaoSelecionadas =
-    contasFiltradas.length > 0 &&
-    contasFiltradas.every((processo: any) =>
+    contasPaginadas.length > 0 &&
+    contasPaginadas.every((processo: any) =>
       contasExclusaoSelecionadas.has(String(processo.id))
     );
 
   useEffect(() => {
     const idsVisiveis = new Set(
-      contasFiltradas.map((processo: any) => String(processo.id))
+      contasPaginadas.map((processo: any) => String(processo.id))
     );
 
     setContasExclusaoSelecionadas(anteriores => {
@@ -816,7 +844,7 @@ export const AccountsPayableView: React.FC = () => {
 
       return proximas;
     });
-  }, [contasFiltradas]);
+  }, [contasPaginadas]);
 
   const alternarContaExclusaoSelecionada = (processoId: string) => {
     setContasExclusaoSelecionadas(anteriores => {
@@ -840,7 +868,7 @@ export const AccountsPayableView: React.FC = () => {
 
     setContasExclusaoSelecionadas(
       new Set(
-        contasFiltradas.map((processo: any) => String(processo.id))
+        contasPaginadas.map((processo: any) => String(processo.id))
       )
     );
   };
@@ -910,15 +938,19 @@ export const AccountsPayableView: React.FC = () => {
   };
 
   const abrirExclusaoMassa = () => {
-    if (contasExclusaoSelecionadasDetalhes.length === 0) {
+    const contasSelecionadasAgora = [...contasExclusaoSelecionadasDetalhes];
+
+    if (contasSelecionadasAgora.length === 0) {
       alert('Selecione pelo menos uma conta para excluir.');
       return;
     }
 
+    // Congela exatamente as contas marcadas no instante em que o modal abre.
+    setContasExclusaoMassaSnapshot(contasSelecionadasAgora);
     setConfirmacaoExclusaoMassa('');
     setProgressoExclusaoMassa({
       atual: 0,
-      total: contasExclusaoSelecionadasDetalhes.length,
+      total: contasSelecionadasAgora.length,
     });
     setModalExclusaoMassaOpen(true);
   };
@@ -928,6 +960,7 @@ export const AccountsPayableView: React.FC = () => {
 
     setModalExclusaoMassaOpen(false);
     setConfirmacaoExclusaoMassa('');
+    setContasExclusaoMassaSnapshot([]);
   };
 
   const confirmarExclusaoMassa = async () => {
@@ -942,7 +975,7 @@ export const AccountsPayableView: React.FC = () => {
     const motivoMassa = window.prompt('Informe o motivo da exclusão em massa:')?.trim();
     if (!motivoMassa) { alert('O motivo da exclusão é obrigatório.'); return; }
 
-    const contas = [...contasExclusaoSelecionadasDetalhes];
+    const contas = [...contasExclusaoMassaSnapshot];
 
     if (contas.length === 0) {
       alert('Nenhuma conta permanece selecionada para exclusão.');
@@ -1009,6 +1042,7 @@ export const AccountsPayableView: React.FC = () => {
         alert(`${sucessos.length} conta(s) excluída(s) com sucesso.`);
         setModalExclusaoMassaOpen(false);
         setConfirmacaoExclusaoMassa('');
+        setContasExclusaoMassaSnapshot([]);
         return;
       }
 
@@ -2954,7 +2988,7 @@ export const AccountsPayableView: React.FC = () => {
                     Ações em massa
                   </p>
                   <p className="mt-0.5 text-[10px] text-slate-400">
-                    Selecione as contas e escolha a operação desejada.
+                    Selecione somente as contas desta página e escolha a operação desejada.
                   </p>
                 </div>
               </div>
@@ -2975,41 +3009,6 @@ export const AccountsPayableView: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-2 xl:items-end">
-              <div className="flex flex-wrap gap-2">
-                {contasElegiveisPagamentoMassa.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={alternarTodasContas}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-bold text-slate-600 transition hover:bg-slate-50"
-                  >
-                    {todasElegiveisSelecionadas
-                      ? 'Limpar em aberto'
-                      : 'Selecionar em aberto'}
-                  </button>
-                )}
-
-                {contasElegiveisEstornoMassa.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={alternarTodasContasPagas}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-bold text-slate-600 transition hover:bg-slate-50"
-                  >
-                    {todasPagasElegiveisSelecionadas
-                      ? 'Limpar pagas'
-                      : 'Selecionar pagas'}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={alternarTodasContasExclusao}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-bold text-slate-600 transition hover:bg-slate-50"
-                >
-                  {todasContasExclusaoSelecionadas
-                    ? 'Limpar exclusão'
-                    : 'Selecionar p/ excluir'}
-                </button>
-              </div>
 
               <div className="flex flex-wrap gap-2">
                 <button
@@ -3823,7 +3822,7 @@ export const AccountsPayableView: React.FC = () => {
                     Contas selecionadas
                   </p>
                   <p className="mt-2 text-2xl font-bold text-[#0F172A]">
-                    {contasExclusaoSelecionadasDetalhes.length}
+                    {contasExclusaoMassaSnapshot.length}
                   </p>
                 </div>
 
@@ -3838,7 +3837,7 @@ export const AccountsPayableView: React.FC = () => {
               </div>
 
               <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
-                {contasExclusaoSelecionadasDetalhes.map((processo: any) => (
+                {contasExclusaoMassaSnapshot.map((processo: any) => (
                   <div
                     key={processo.id}
                     className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2.5"
@@ -3912,7 +3911,7 @@ export const AccountsPayableView: React.FC = () => {
                   )}
                   {excluindoEmMassa
                     ? 'Excluindo...'
-                    : `Excluir ${contasExclusaoSelecionadasDetalhes.length} conta(s)`}
+                    : `Excluir ${contasExclusaoMassaSnapshot.length} conta(s)`}
                 </button>
               </div>
             </div>
